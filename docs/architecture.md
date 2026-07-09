@@ -320,7 +320,11 @@ Analyzer'ы выполняются последовательно в `processor`
 ### Phase 5 — Twitter + Web UI
 - `adapters/sources/twitter.py` (filtered stream)
 - React/Vite фронт поверх `/api` + SSE
-- LLM-скоринг с user feedback
+
+### Phase 6 — Персонализация (флагманская фича)
+`docs/phase-6-personalization.md`. Гибридный ранкер под интересы: LLM-судья против профиля +
+обучение на 👍/👎 из Telegram-бота (taste vector + tag/source affinity). Заменяет наивный
+`scorer` на `personal_score`. Зависит от Phase 3 (эмбеддинги) и Phase 4 (LLM + бот); Phase 5 не нужна.
 
 ---
 
