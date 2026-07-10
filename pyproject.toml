@@ -1,0 +1,33 @@
+[project]
+name = "homyak"
+version = "0.1.0"
+description = "Персональный агрегатор новостей под интересы (плагинная + event-driven архитектура)"
+requires-python = ">=3.13"
+dependencies = [
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "python-dotenv>=1.0",
+    "structlog>=24.1",
+]
+
+[project.scripts]
+# entry points появятся в Phase 2 (ingest-poll, processor, sweeper, api)
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["homyak"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
