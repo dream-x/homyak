@@ -11,10 +11,22 @@ dependencies = [
     "pydantic-settings>=2.2",
     "python-dotenv>=1.0",
     "structlog>=24.1",
+    # Phase 2
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "feedparser>=6.0",
+    "nats-py>=2.9",
+    "apscheduler>=3.10",
+    "pyyaml>=6.0",
+    "feedgen>=1.0",
 ]
 
 [project.scripts]
-# entry points появятся в Phase 2 (ingest-poll, processor, sweeper, api)
+homyak-ingest-poll = "homyak.pipeline.ingest_poll:main"
+homyak-processor = "homyak.pipeline.processor:main"
+homyak-sweeper = "homyak.pipeline.sweeper:main"
+homyak-api = "homyak.pipeline.serve:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -26,7 +38,15 @@ packages = ["homyak"]
 [dependency-groups]
 dev = [
     "ruff>=0.6",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "faker>=25.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100

@@ -1,0 +1,93 @@
+"""Универсальный RSS/Atom source-адаптер (PollSource). Один инстанс на фид из sources.yaml."""
+
+from __future__ import annotations
+
+import calendar
+from collections.abc import AsyncIterator
+from datetime import datetime, timezone
+
+import feedparser
+import httpx
+import structlog
+
+from homyak.core.config import RSSFeedConfig
+from homyak.core.interfaces import NewsItemDTO
+
+log = structlog.get_logger(__name__)
+
+_UA = "homyak/0.1 (+https://github.com/homyak)"
+
+
+def _parsed_to_dt(st) -> datetime | None:
+    if not st:
+        return None
+    return datetime.fromtimestamp(calendar.timegm(st), tz=timezone.utc)
+
+
+def _entry_published(e) -> datetime | None:
+    return _parsed_to_dt(getattr(e, "published_parsed", None)) or _parsed_to_dt(
+        getattr(e, "updated_parsed", None)
+    )
+
+
+def _media(e) -> list[str]:
+    urls: list[str] = []
+    for m in getattr(e, "media_content", []) or []:
+        if m.get("url"):
+            urls.append(m["url"])
+    for enc in getattr(e, "enclosures", []) or []:
+        if enc.get("href"):
+            urls.append(enc["href"])
+    return urls
+
+
+def _source_id(e) -> str:
+    return e.get("id") or e.get("link") or f"{e.get('title', '')}"
+
+
+class RSSSource:
+    def __init__(self, cfg: RSSFeedConfig) -> None:
+        self._cfg = cfg
+        self.name = f"rss:{cfg.name}"
+        self.interval_seconds = cfg.interval_seconds
+
+    async def poll(self, cursor: str | None) -> AsyncIterator[tuple[NewsItemDTO, str]]:
+        try:
+            async with httpx.AsyncClient(
+                timeout=30, follow_redirects=True, headers={"User-Agent": _UA}
+            ) as client:
+                resp = await client.get(self._cfg.url)
+                resp.raise_for_status()
+                content = resp.content
+        except Exception as e:
+            log.warning("rss_fetch_failed", source=self.name, error=str(e))
+            return
+
+        parsed = feedparser.parse(content)
+        cutoff = datetime.fromisoformat(cursor) if cursor else None
+
+        # сортируем по published ASC, чтобы курсор двигался монотонно
+        entries = sorted(
+            parsed.entries,
+            key=lambda e: (_entry_published(e) or datetime.min.replace(tzinfo=timezone.utc)),
+        )
+        max_cursor = cutoff
+        for e in entries:
+            pub = _entry_published(e)
+            if cutoff and pub and pub <= cutoff:
+                continue
+            dto = NewsItemDTO(
+                source_type="rss",
+                source_id=_source_id(e),
+                url=e.get("link"),
+                title=e.get("title"),
+                text=(e.get("summary") or e.get("description")),
+                media=_media(e),
+                author=e.get("author") or self._cfg.name,
+                published_at=pub,
+                category=self._cfg.category,
+            )
+            if pub and (max_cursor is None or pub > max_cursor):
+                max_cursor = pub
+            new_cursor = max_cursor.isoformat() if max_cursor else (cursor or "")
+            yield dto, new_cursor

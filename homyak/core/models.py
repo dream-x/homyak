@@ -38,6 +38,7 @@ class NewsItem(Base):
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
     source_id: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str | None] = mapped_column(Text)
+    url_normalized: Mapped[str | None] = mapped_column(Text)
     title: Mapped[str | None] = mapped_column(Text)
     text: Mapped[str | None] = mapped_column(Text)
     media: Mapped[list] = mapped_column(
@@ -79,6 +80,11 @@ class NewsItem(Base):
         Index("idx_news_published", sa_text("published_at DESC")),
         Index("idx_news_cluster", "cluster_id"),
         Index("idx_news_fts", "search_tsv", postgresql_using="gin"),
+        Index(
+            "idx_news_url_normalized",
+            "url_normalized",
+            postgresql_where=sa_text("url_normalized IS NOT NULL"),
+        ),
     )
 
 
