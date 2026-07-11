@@ -30,7 +30,8 @@ STREAM = "HOMYAK"
 SUBJECT_INGESTED = "homyak.items.ingested"
 SUBJECT_PROCESSED = "homyak.items.processed"
 SUBJECT_OUTPUT = "homyak.items.output"
-_SUBJECTS = ["homyak.items.*"]
+SUBJECT_FEEDBACK = "homyak.feedback.recorded"
+_SUBJECTS = ["homyak.items.*", "homyak.feedback.*"]
 
 MAX_AGE_SECONDS = 14 * 24 * 3600  # 14 дней
 MAX_BYTES = 5 * 1024**3  # 5 GB
@@ -111,6 +112,23 @@ class NatsBus:
         ).encode()
         await self.js.publish(SUBJECT_PROCESSED, payload)
 
+    async def publish_feedback(
+        self,
+        news_item_id: int,
+        signal: str,
+        topic: str | None = None,
+        action: str = "added",
+    ) -> None:
+        payload = json.dumps(
+            {
+                "news_item_id": news_item_id,
+                "signal": signal,
+                "topic": topic,
+                "action": action,  # added | removed (для отката обучения)
+            }
+        ).encode()
+        await self.js.publish(SUBJECT_FEEDBACK, payload)
+
     # --- consume ---
 
     async def consume_ingested(
@@ -118,18 +136,37 @@ class NatsBus:
         handler: Callable[[dict], Awaitable[None]],
         *,
         durable: str = "processor",
+        **kw,
+    ) -> None:
+        await self._consume(SUBJECT_INGESTED, handler, durable=durable, **kw)
+
+    async def consume_feedback(
+        self,
+        handler: Callable[[dict], Awaitable[None]],
+        *,
+        durable: str = "learner",
+        **kw,
+    ) -> None:
+        await self._consume(SUBJECT_FEEDBACK, handler, durable=durable, **kw)
+
+    async def _consume(
+        self,
+        subject: str,
+        handler: Callable[[dict], Awaitable[None]],
+        *,
+        durable: str,
         batch: int = 1,
         ack_wait: int = 120,
         max_deliver: int = 5,
         fetch_timeout: float = 5.0,
     ) -> None:
-        """Pull-consumer на `items.ingested`. handler(dict): успех → ack; исключение → nak+backoff.
+        """Pull-consumer: handler(dict) → успех=ack; исключение=nak+backoff.
 
         Несколько инстансов с одним `durable` делят нагрузку. После `max_deliver` доставок
         JetStream перестаёт передавать сообщение (dead-letter — Phase 2.5).
         """
         psub = await self.js.pull_subscribe(
-            SUBJECT_INGESTED,
+            subject,
             durable=durable,
             config=ConsumerConfig(
                 ack_wait=ack_wait,
@@ -137,7 +174,7 @@ class NatsBus:
                 ack_policy=AckPolicy.EXPLICIT,
             ),
         )
-        log.info("consumer_started", durable=durable, subject=SUBJECT_INGESTED)
+        log.info("consumer_started", durable=durable, subject=subject)
         while True:
             try:
                 msgs = await psub.fetch(batch=batch, timeout=fetch_timeout)

@@ -1,0 +1,295 @@
+"""Telegram-бот: персональный push + кнопки-фидбек 👍/👎/⭐/🔇 + команды.
+
+Push: подписан на JetStream items.processed, шлёт item'ы с personal_score>=порога (rate-limit,
+тихие часы, pushed_at). Кнопки → record_feedback + publish feedback.recorded (обучает learner).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import html
+import json
+import time
+from contextlib import suppress
+from datetime import datetime
+
+import structlog
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.filters import Command, CommandObject
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
+from nats.js.api import ConsumerConfig, DeliverPolicy
+
+from homyak.core.config import settings
+from homyak.core.events import SUBJECT_PROCESSED, NatsBus
+from homyak.core.scoring import freshness, weights_from_settings
+from homyak.storage.db import SessionFactory
+from homyak.storage.postgres import NewsRepo
+
+log = structlog.get_logger(__name__)
+
+CHAT_KEY = "tgbot:chat_id"
+THRESHOLD_KEY = "tgbot:threshold"
+PAUSED_KEY = "tgbot:paused_until"
+
+_repo = NewsRepo(SessionFactory)
+_bus: NatsBus | None = None
+_bot: Bot | None = None
+dp = Dispatcher()
+
+
+# --- форматирование ---
+
+
+def _esc(s: str | None) -> str:
+    return html.escape(s or "")
+
+
+def _fmt(item) -> str:
+    pct = int(round((item.personal_score or 0) * 100))
+    tags = ", ".join((item.tags or [])[:3])
+    head = f"🎯 <b>{pct}%</b>" + (f" · {_esc(tags)}" if tags else "")
+    body = f"<b>{_esc(item.title or '(без заголовка)')}</b>"
+    if item.summary:
+        body += f"\n{_esc(item.summary)}"
+    src = item.source_type + (f"/{item.author}" if item.author else "")
+    foot = f"🔗 {_esc(src)}"
+    if item.llm_reason:
+        foot += f"\n💡 <i>{_esc(item.llm_reason)}</i>"
+    return f"{head}\n\n{body}\n\n{foot}"
+
+
+def _kb(item_id: int, url: str | None) -> InlineKeyboardMarkup:
+    row1 = [
+        InlineKeyboardButton(text="👍", callback_data=f"fb:up:{item_id}"),
+        InlineKeyboardButton(text="👎", callback_data=f"fb:down:{item_id}"),
+        InlineKeyboardButton(text="⭐", callback_data=f"fb:save:{item_id}"),
+    ]
+    row2 = [InlineKeyboardButton(text="🔇 mute", callback_data=f"fb:mute:{item_id}")]
+    if url:
+        row2.append(InlineKeyboardButton(text="🔗 open", url=url))
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+
+
+def _in_quiet(hour: int, quiet: str) -> bool:
+    try:
+        a, b = (int(x) for x in quiet.split("-"))
+    except Exception:
+        return False
+    if a == b:
+        return False
+    return a <= hour < b if a < b else (hour >= a or hour < b)
+
+
+# --- команды ---
+
+
+@dp.message(Command("start"))
+async def cmd_start(m: Message) -> None:
+    await _repo.save_cursor(CHAT_KEY, str(m.chat.id))
+    await m.answer(
+        "Homyak на связи 🐹\nБуду слать персональные новости с кнопками 👍/👎/⭐/🔇 — так я учусь.\n\n"
+        "Команды: /digest [N] · /profile · /stats · /why &lt;id&gt; · "
+        "/threshold &lt;0..1&gt; · /pause [ч] · /mute &lt;тема&gt;"
+    )
+
+
+@dp.message(Command("digest"))
+async def cmd_digest(m: Message, command: CommandObject) -> None:
+    n = int(command.args) if command.args and command.args.strip().isdigit() else 10
+    items = await _repo.digest(min(n, 20))
+    if not items:
+        await m.answer("Пусто — нет новых персональных новостей.")
+        return
+    for it in items:
+        await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
+        await _repo.mark_pushed(it.id)
+
+
+@dp.message(Command("profile"))
+async def cmd_profile(m: Message) -> None:
+    prof = await _repo.get_active_profile()
+    if prof is None:
+        await m.answer("Профиль не задан. Настрой config/profile.yaml и `uv run homyak-profile-set`.")
+        return
+    v, desc, topics = prof
+    loves = [t["name"] for t in topics if t.get("polarity") in ("love", "like")]
+    mutes = [t["name"] for t in topics if t.get("polarity") == "mute"]
+    await m.answer(
+        f"<b>Профиль v{v}</b>\n{_esc(desc)}\n\n"
+        f"👍 {_esc(', '.join(loves)) or '—'}\n🔇 {_esc(', '.join(mutes)) or '—'}"
+    )
+
+
+@dp.message(Command("stats"))
+async def cmd_stats(m: Message) -> None:
+    counts = await _repo.feedback_counts()
+    up = counts.get("up", 0) + counts.get("save", 0)
+    down = counts.get("down", 0)
+    total = up + down
+    prec = f"{100 * up / total:.0f}%" if total else "—"
+    n_liked = await _repo.get_taste_n_liked()
+    await m.answer(
+        f"👍 {up}  👎 {down}  🔇 {counts.get('mute_topic', 0)}\n"
+        f"precision (доля 👍): {prec}\nвектор вкуса: {n_liked} лайков"
+    )
+
+
+@dp.message(Command("why"))
+async def cmd_why(m: Message, command: CommandObject) -> None:
+    if not command.args or not command.args.strip().isdigit():
+        await m.answer("Использование: /why &lt;id&gt;")
+        return
+    item = await _repo.get_by_id(int(command.args.strip()))
+    if item is None:
+        await m.answer("Нет такого item.")
+        return
+    tags = list(item.tags or [])
+    tag_affs = await _repo.get_tag_affinities(tags)
+    tag_aff = sum(tag_affs.values()) / len(tag_affs) if tag_affs else 0.0
+    src_aff = await _repo.get_source_affinity(item.source_type, item.author)
+    fr = freshness(item.published_at)
+    w = weights_from_settings()
+    llm = item.llm_relevance if item.llm_relevance is not None else 0.0
+    ps = "— (mute)" if item.personal_score is None else f"{item.personal_score:.3f}"
+    parts = (
+        f"llm {w.llm}×{llm:.2f} + taste(ramp) + "
+        f"tag {w.tag}×{tag_aff:.2f} + src {w.source}×{src_aff:.2f} + fresh {w.fresh}×{fr:.2f}"
+    )
+    reason = f"\n💡 {_esc(item.llm_reason)}" if item.llm_reason else ""
+    await m.answer(f"<b>{_esc(item.title or '')}</b>\npersonal_score = {ps}\n{parts}{reason}")
+
+
+@dp.message(Command("threshold"))
+async def cmd_threshold(m: Message, command: CommandObject) -> None:
+    if not command.args:
+        cur = await _repo.get_cursor(THRESHOLD_KEY)
+        await m.answer(f"Порог пуша: {cur or settings.push_threshold}")
+        return
+    try:
+        v = float(command.args.strip())
+    except ValueError:
+        await m.answer("Нужно число 0..1")
+        return
+    await _repo.save_cursor(THRESHOLD_KEY, str(v))
+    await m.answer(f"Порог пуша = {v}")
+
+
+@dp.message(Command("pause"))
+async def cmd_pause(m: Message, command: CommandObject) -> None:
+    hours = int(command.args) if command.args and command.args.strip().isdigit() else 8
+    await _repo.save_cursor(PAUSED_KEY, str(time.time() + hours * 3600))
+    await m.answer(f"⏸ Пауза пушей на {hours}ч.")
+
+
+@dp.message(Command("mute"))
+async def cmd_mute(m: Message, command: CommandObject) -> None:
+    if not command.args:
+        await m.answer("Использование: /mute &lt;тема&gt;")
+        return
+    topic = command.args.strip().lower()
+    v = await _repo.mute_topic(topic)
+    await m.answer(f"🔇 «{_esc(topic)}» замьючено (профиль v{v}).")
+
+
+# --- кнопки-фидбек ---
+
+
+@dp.callback_query(F.data.startswith("fb:"))
+async def on_feedback(cq: CallbackQuery) -> None:
+    try:
+        _, sig, sid = cq.data.split(":")
+        item_id = int(sid)
+    except (ValueError, AttributeError):
+        await cq.answer("bad")
+        return
+
+    label = {"up": "👍", "down": "👎", "save": "⭐", "mute": "🔇"}.get(sig, "?")
+    signal = "mute_topic" if sig == "mute" else sig
+    topic = None
+    if sig == "mute":
+        meta = await _repo.get_item_meta(item_id)
+        topic = meta[2][0] if meta and meta[2] else None
+
+    result = await _repo.record_feedback(item_id, signal, topic)
+    if _bus is not None:
+        await _bus.publish_feedback(item_id, signal, topic, action=result)
+    await cq.answer(f"{label} {'учтено' if result == 'added' else 'отменено'}")
+
+
+# --- push loop ---
+
+
+async def _maybe_push(item_id: int) -> None:
+    chat = await _repo.get_cursor(CHAT_KEY)
+    if not chat:
+        return
+    paused = await _repo.get_cursor(PAUSED_KEY)
+    if paused and time.time() < float(paused):
+        return
+    if _in_quiet(datetime.now().hour, settings.quiet_hours):
+        return
+    if await _repo.count_pushed_since(60) >= settings.max_push_per_hour:
+        return
+    item = await _repo.get_by_id(item_id)
+    if item is None or item.personal_score is None or item.pushed_at is not None:
+        return
+    thr = await _repo.get_cursor(THRESHOLD_KEY)
+    threshold = float(thr) if thr else settings.push_threshold
+    if item.personal_score < threshold:
+        return
+    await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))
+    await _repo.mark_pushed(item.id)
+    log.info("pushed", item=item.id, score=round(item.personal_score, 3))
+
+
+async def push_loop() -> None:
+    sub = await _bus.js.subscribe(
+        SUBJECT_PROCESSED, config=ConsumerConfig(deliver_policy=DeliverPolicy.NEW)
+    )
+    log.info("push_loop_started")
+    while True:
+        try:
+            msg = await sub.next_msg(timeout=30)
+        except Exception:
+            continue
+        with suppress(Exception):
+            await msg.ack()
+            data = json.loads(msg.data)
+            await _maybe_push(data["news_item_id"])
+
+
+async def main_async() -> None:
+    global _bus, _bot
+    if not settings.telegram_bot_token:
+        raise SystemExit("TELEGRAM_BOT_TOKEN не задан в .env")
+    _bot = Bot(
+        settings.telegram_bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    _bus = NatsBus(settings.nats_url)
+    await _bus.connect()
+    push_task = asyncio.create_task(push_loop())
+    log.info("tgbot_started")
+    try:
+        await dp.start_polling(_bot)
+    finally:
+        push_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await push_task
+        await _bus.close()
+        await _bot.session.close()
+
+
+def main() -> None:
+    asyncio.run(main_async())
+
+
+if __name__ == "__main__":
+    main()

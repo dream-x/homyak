@@ -24,6 +24,8 @@ dependencies = [
     "qdrant-client>=1.10",
     "sse-starlette>=2.0",
     "rich>=13.0",
+    # Phase 6.1+
+    "aiogram>=3.0",
 ]
 
 [project.scripts]
@@ -35,6 +37,8 @@ homyak-tg-relay = "homyak.pipeline.tg_relay:main"
 homyak-reembed = "homyak.cli.reembed:main"
 homyak-cli = "homyak.adapters.outputs.cli:main"
 homyak-profile-set = "homyak.cli.profile:main"
+homyak-tgbot = "homyak.adapters.outputs.tg_bot:main"
+homyak-learner = "homyak.pipeline.learner:main"
 
 [build-system]
 requires = ["hatchling"]

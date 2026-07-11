@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     push_threshold: float = Field(default=0.70, alias="PUSH_THRESHOLD")
     feedback_lr: float = Field(default=0.10, alias="FEEDBACK_LR")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
+    max_push_per_hour: int = Field(default=8, alias="MAX_PUSH_PER_HOUR")
+    quiet_hours: str = Field(default="0-8", alias="QUIET_HOURS")  # локальные часы, "start-end"
+
+    # Telegram-бот
+    telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_outbox_path: str = Field(
         default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
     )

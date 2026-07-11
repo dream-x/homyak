@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 
 import pytest_asyncio
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from homyak.core.models import Base

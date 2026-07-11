@@ -54,6 +54,17 @@ class QdrantStore:
             points=[models.PointStruct(id=1, vector=vector, payload={})],
         )
 
+    async def get_vector(self, news_item_id: int) -> list[float] | None:
+        try:
+            pts = await self._client.retrieve(
+                self.COLLECTION, ids=[news_item_id], with_vectors=True
+            )
+        except Exception:
+            return None
+        if not pts or pts[0].vector is None:
+            return None
+        return list(pts[0].vector)
+
     async def upsert_vector(
         self, news_item_id: int, vector: list[float], payload: dict
     ) -> None:

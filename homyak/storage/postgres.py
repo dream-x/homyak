@@ -5,12 +5,13 @@ from __future__ import annotations
 import base64
 
 import sqlalchemy as sa
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
 from homyak.core.models import (
+    Feedback,
     IngestState,
     NewsItem,
     Profile,
@@ -18,6 +19,7 @@ from homyak.core.models import (
     TagAffinity,
     TasteState,
 )
+from homyak.core.scoring import clip
 from homyak.core.urls import normalize_url
 
 _POLARITY_WEIGHT = {"love": 0.8, "like": 0.5, "meh": 0.0, "dislike": -0.5, "mute": -1.0}
@@ -247,6 +249,158 @@ class NewsRepo:
         async with self._sf() as s:
             n = await s.scalar(select(TasteState.n_liked).where(TasteState.id == 1))
         return int(n) if n is not None else 0
+
+    async def set_taste_state(self, n_liked: int) -> None:
+        stmt = pg_insert(TasteState).values(id=1, n_liked=n_liked, updated_at=func.now())
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["id"], set_={"n_liked": n_liked, "updated_at": func.now()}
+        )
+        async with self._sf() as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    # --- Phase 6.1: фидбек и обучение ---
+
+    async def record_feedback(
+        self, news_item_id: int, signal: str, topic: str | None = None
+    ) -> str:
+        """Toggle: первый клик добавляет фидбек ('added'), повторный снимает ('removed')."""
+        async with self._sf() as s:
+            ins = (
+                pg_insert(Feedback)
+                .values(news_item_id=news_item_id, signal=signal, topic=topic)
+                .on_conflict_do_nothing(index_elements=["news_item_id", "signal"])
+                .returning(Feedback.id)
+            )
+            row = (await s.execute(ins)).first()
+            if row is None:
+                await s.execute(
+                    delete(Feedback).where(
+                        Feedback.news_item_id == news_item_id, Feedback.signal == signal
+                    )
+                )
+                await s.commit()
+                return "removed"
+            await s.commit()
+            return "added"
+
+    async def bump_tag_affinity(self, tags: list[str], direction: int, lr: float) -> None:
+        if not tags:
+            return
+        async with self._sf() as s:
+            for tag in tags:
+                row = await s.get(TagAffinity, tag)
+                if row is None:
+                    s.add(
+                        TagAffinity(
+                            tag=tag,
+                            weight=clip(lr * direction),
+                            n_pos=1 if direction > 0 else 0,
+                            n_neg=1 if direction < 0 else 0,
+                        )
+                    )
+                else:
+                    row.weight = clip(row.weight + lr * (direction - row.weight))
+                    if direction > 0:
+                        row.n_pos += 1
+                    else:
+                        row.n_neg += 1
+            await s.commit()
+
+    async def bump_source_affinity(
+        self, source_type: str, author: str | None, direction: int, lr: float
+    ) -> None:
+        key = (source_type, author or "")
+        async with self._sf() as s:
+            row = await s.get(SourceAffinity, key)
+            if row is None:
+                s.add(
+                    SourceAffinity(
+                        source_type=source_type,
+                        author=author or "",
+                        weight=clip(lr * direction),
+                        n_pos=1 if direction > 0 else 0,
+                        n_neg=1 if direction < 0 else 0,
+                    )
+                )
+            else:
+                row.weight = clip(row.weight + lr * (direction - row.weight))
+                if direction > 0:
+                    row.n_pos += 1
+                else:
+                    row.n_neg += 1
+            await s.commit()
+
+    async def mute_topic(self, topic: str) -> int:
+        """Добавить тему в mute активного профиля → новая версия профиля."""
+        prof = await self.get_active_profile()
+        if prof is None:
+            return await self.set_profile(
+                f"Интересы (авто). Не интересно: {topic}.",
+                [{"name": topic, "polarity": "mute"}],
+            )
+        _version, desc, topics = prof
+        topics = [t for t in topics if t.get("name") != topic]
+        topics.append({"name": topic, "polarity": "mute"})
+        return await self.set_profile(desc, topics)
+
+    async def mark_pushed(self, news_item_id: int) -> None:
+        async with self._sf() as s:
+            await s.execute(
+                update(NewsItem).where(NewsItem.id == news_item_id).values(pushed_at=func.now())
+            )
+            await s.commit()
+
+    async def count_pushed_since(self, minutes: int) -> int:
+        cutoff = func.now() - sa.literal(int(minutes)) * sa.text("interval '1 minute'")
+        async with self._sf() as s:
+            return (
+                await s.scalar(
+                    select(func.count())
+                    .select_from(NewsItem)
+                    .where(NewsItem.pushed_at >= cutoff)
+                )
+                or 0
+            )
+
+    async def digest(self, limit: int = 10) -> list[NewsItem]:
+        """Топ непушенных персональных items (для /digest)."""
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    select(NewsItem)
+                    .where(
+                        NewsItem.personal_score.isnot(None),
+                        NewsItem.pushed_at.is_(None),
+                    )
+                    .order_by(NewsItem.personal_score.desc())
+                    .limit(limit)
+                )
+            ).scalars().all()
+        return list(rows)
+
+    async def feedback_counts(self) -> dict[str, int]:
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    select(Feedback.signal, func.count()).group_by(Feedback.signal)
+                )
+            ).all()
+        return {r[0]: int(r[1]) for r in rows}
+
+    async def get_item_meta(self, news_item_id: int):
+        """(source_type, author, tags) для обучения — по item'у."""
+        async with self._sf() as s:
+            row = (
+                await s.execute(
+                    select(NewsItem.source_type, NewsItem.author, NewsItem.tags).where(
+                        NewsItem.id == news_item_id
+                    )
+                )
+            ).first()
+        if row is None:
+            return None
+        return row[0], row[1], list(row[2] or [])
 
     async def feed(self, query: FeedQuery) -> Feed:
         conditions = [NewsItem.processed_at.isnot(None)]

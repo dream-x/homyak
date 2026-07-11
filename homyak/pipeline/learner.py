@@ -1,0 +1,103 @@
+"""Обучатель: consumer на feedback.recorded — двигает taste-вектор и веса тегов/источников.
+
+👍/⭐ → tag/source affinity вверх + item в центроид «вкуса»; 👎 → affinity вниз (центроид не трогаем,
+он = среднее лайков); 🔇 → мьют темы (новая версия профиля). action=removed откатывает (toggle).
+Идемпотентность реального фидбека — UNIQUE(news_item_id, signal) в PG.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import signal as signal_mod
+from contextlib import suppress
+
+import structlog
+
+from homyak.core.config import settings
+from homyak.core.events import NatsBus
+from homyak.core.scoring import centroid_add, centroid_remove
+from homyak.storage.db import SessionFactory
+from homyak.storage.postgres import NewsRepo
+from homyak.storage.qdrant import QdrantStore
+
+log = structlog.get_logger(__name__)
+
+_SIGN = {"up": 1, "save": 1, "down": -1}
+
+
+def make_handler(repo: NewsRepo, qdrant: QdrantStore):
+    async def handle(data: dict) -> None:
+        item_id = data["news_item_id"]
+        sig = data["signal"]
+        action = data.get("action", "added")
+        lr = settings.feedback_lr
+
+        if sig == "mute_topic":
+            if action == "added" and data.get("topic"):
+                version = await repo.mute_topic(data["topic"])
+                log.info("muted_topic", topic=data["topic"], profile_version=version)
+            return
+
+        base = _SIGN.get(sig)
+        if base is None:
+            return  # open/skip — Phase 6.5
+        direction = base if action == "added" else -base
+
+        meta = await repo.get_item_meta(item_id)
+        if meta is None:
+            return
+        source_type, author, tags = meta
+
+        await repo.bump_tag_affinity(tags, direction, lr)
+        await repo.bump_source_affinity(source_type, author, direction, lr)
+
+        # taste-центроид = среднее лайкнутых; трогаем только на up/save
+        if base > 0:
+            vec = await qdrant.get_vector(item_id)
+            if vec:
+                centroid = await qdrant.get_taste()
+                n = await repo.get_taste_n_liked()
+                if action == "added":
+                    new_c, new_n = centroid_add(centroid, n, vec)
+                else:
+                    new_c, new_n = centroid_remove(centroid, n, vec)
+                if new_c is not None:
+                    await qdrant.set_taste(new_c)
+                await repo.set_taste_state(new_n)
+
+        log.info("learned", item=item_id, signal=sig, action=action, direction=direction)
+
+    return handle
+
+
+async def main_async() -> None:
+    repo = NewsRepo(SessionFactory)
+    qdrant = QdrantStore(settings.qdrant_url)
+    await qdrant.ensure_taste_collection()
+    bus = NatsBus(settings.nats_url)
+    await bus.connect()
+
+    handler = make_handler(repo, qdrant)
+    task = asyncio.create_task(bus.consume_feedback(handler, durable="learner"))
+    log.info("learner_started")
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for s in (signal_mod.SIGINT, signal_mod.SIGTERM):
+        loop.add_signal_handler(s, stop.set)
+    await stop.wait()
+
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+    await bus.close()
+    await qdrant.close()
+    log.info("learner_stopped")
+
+
+def main() -> None:
+    asyncio.run(main_async())
+
+
+if __name__ == "__main__":
+    main()

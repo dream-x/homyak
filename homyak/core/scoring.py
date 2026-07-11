@@ -70,6 +70,28 @@ def cosine(a: Sequence[float] | None, b: Sequence[float] | None) -> float:
     return dot / (na * nb)
 
 
+def centroid_add(
+    centroid: Sequence[float] | None, n: int, v: Sequence[float]
+) -> tuple[list[float], int]:
+    """Инкрементально добавить вектор в центроид (running mean). Обратимо через centroid_remove."""
+    if not centroid or n <= 0:
+        return list(v), 1
+    return [(c * n + x) / (n + 1) for c, x in zip(centroid, v)], n + 1
+
+
+def centroid_remove(
+    centroid: Sequence[float] | None, n: int, v: Sequence[float]
+) -> tuple[list[float] | None, int]:
+    """Убрать вектор из центроида (точная инверсия centroid_add при известном n)."""
+    if not centroid or n <= 1:
+        return None, 0
+    return [(c * n - x) / (n - 1) for c, x in zip(centroid, v)], n - 1
+
+
+def clip(x: float, lo: float = -1.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, x))
+
+
 def personal_score(
     *,
     llm_relevance: float | None,
