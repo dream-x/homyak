@@ -33,6 +33,7 @@ homyak-sweeper = "homyak.pipeline.sweeper:main"
 homyak-api = "homyak.pipeline.serve:main"
 homyak-tg-relay = "homyak.pipeline.tg_relay:main"
 homyak-reembed = "homyak.cli.reembed:main"
+homyak-cli = "homyak.adapters.outputs.cli:main"
 
 [build-system]
 requires = ["hatchling"]

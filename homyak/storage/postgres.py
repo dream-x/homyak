@@ -53,6 +53,8 @@ def _dto(row: NewsItem) -> NewsItemDTO:
         published_at=row.published_at,
         category=row.category,
         tags=list(row.tags or []),
+        summary=row.summary,
+        score=row.score,
         cluster_id=row.cluster_id,
     )
 
@@ -120,6 +122,7 @@ class NewsRepo:
         *,
         cluster_id: int | None = None,
         tags: list[str] | None = None,
+        summary: str | None = None,
         category: str | None = None,
         score: float | None = None,
     ) -> None:
@@ -128,10 +131,12 @@ class NewsRepo:
             values["cluster_id"] = cluster_id
         if tags is not None:
             values["tags"] = tags
+        if summary is not None:
+            values["summary"] = summary
         if category is not None:
             values["category"] = category
         if score is not None:
-            values["raw_score"] = score
+            values["score"] = score
         async with self._sf() as s:
             await s.execute(update(NewsItem).where(NewsItem.id == id_).values(**values))
             await s.commit()
@@ -182,21 +187,22 @@ class NewsRepo:
         if query.min_score is not None:
             conditions.append(NewsItem.raw_score >= query.min_score)
 
+        by_score = query.sort == "score"
         sort_ts = _sort_ts()
-        if query.cursor:
+        if not by_score and query.cursor:  # keyset-пагинация только для recent
             c_ts, c_id = _decode_cursor(query.cursor)
             conditions.append(
                 or_(sort_ts < c_ts, sa.and_(sort_ts == c_ts, NewsItem.id < c_id))
             )
 
+        order = (
+            [NewsItem.score.desc().nullslast(), NewsItem.id.desc()]
+            if by_score
+            else [sort_ts.desc(), NewsItem.id.desc()]
+        )
         # берём окно пошире и коллапсим кластеры в Python (personal-scale — дёшево)
         window = query.limit * 3 if query.collapse_clusters else query.limit + 1
-        stmt = (
-            select(NewsItem)
-            .where(*conditions)
-            .order_by(sort_ts.desc(), NewsItem.id.desc())
-            .limit(window)
-        )
+        stmt = select(NewsItem).where(*conditions).order_by(*order).limit(window)
         async with self._sf() as s:
             rows = list((await s.execute(stmt)).scalars().all())
 
@@ -215,7 +221,9 @@ class NewsRepo:
 
         has_more = len(rows) > query.limit
         rows = rows[: query.limit]
-        next_cursor = _encode_cursor(rows[-1]) if has_more and rows else None
+        next_cursor = (
+            _encode_cursor(rows[-1]) if has_more and rows and not by_score else None
+        )
         return Feed(items=[_dto(r) for r in rows], next_cursor=next_cursor)
 
 

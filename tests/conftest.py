@@ -19,11 +19,11 @@ TEST_URL = os.getenv(
 @pytest_asyncio.fixture
 async def session_factory():
     engine = create_async_engine(TEST_URL)
+    # drop+create — схема всегда соответствует текущим моделям (create_all не добавляет
+    # новые колонки к существующим таблицам, поэтому нужен drop).
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text("TRUNCATE news_items, clusters, ingest_state RESTART IDENTITY CASCADE")
-        )
     factory = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
     await engine.dispose()

@@ -314,9 +314,10 @@ Analyzer'ы выполняются последовательно в `processor`
 - `adapters/sources/telegram_relay.py` + `pipeline/tg_relay.py` (Homyak-сторона готова;
   патч самого tscrapper'а — отложен, требует правки внешнего сервиса)
 
-### Phase 4 — LLM + бот + CLI
-- `llm_tagger.py`, `llm_summarizer.py`, `scorer.py`
-- `adapters/outputs/tg_bot.py`, `cli.py`
+### Phase 4 — LLM + бот + CLI  ◑ (анализаторы+CLI готовы; бот ждёт токен)
+`docs/phase-4-llm-bot-cli.md`. `llm_tagger`/`llm_summarizer`/`scorer` (qwen2.5:14b), `core/llm.py`,
+`core/scoring.py`, миграция 0004 (summary/score). `adapters/outputs/cli.py` готов;
+`tg_bot.py` — после токена от @BotFather.
 
 ### Phase 5 — Twitter + Web UI
 - `adapters/sources/twitter.py` (filtered stream)

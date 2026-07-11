@@ -34,6 +34,8 @@ def _item_json(it: NewsItemDTO) -> dict:
         "author": it.author,
         "category": it.category,
         "tags": it.tags or [],
+        "summary": it.summary,
+        "score": it.score,
         "cluster_id": it.cluster_id,
         "published_at": it.published_at.isoformat() if it.published_at else None,
     }
@@ -46,6 +48,7 @@ def _build_query(
     limit: int,
     cursor: str | None,
     collapse: bool,
+    sort: str = "recent",
 ) -> FeedQuery:
     return FeedQuery(
         category=category,
@@ -54,6 +57,7 @@ def _build_query(
         limit=min(max(limit, 1), 200),
         cursor=cursor,
         collapse_clusters=collapse,
+        sort=sort if sort in ("recent", "score") else "recent",
     )
 
 
@@ -75,8 +79,9 @@ async def feed(
     limit: int = 100,
     cursor: str | None = None,
     collapse: bool = True,
+    sort: str = "recent",
 ) -> dict:
-    q = _build_query(category, source_type, since, limit, cursor, collapse)
+    q = _build_query(category, source_type, since, limit, cursor, collapse, sort)
     result = await repo.feed(q)
     return {
         "items": [_item_json(i) for i in result.items],
@@ -100,8 +105,10 @@ async def item(item_id: int) -> dict:
         "author": row.author,
         "category": row.category,
         "tags": list(row.tags or []),
+        "summary": row.summary,
         "cluster_id": row.cluster_id,
         "raw_score": row.raw_score,
+        "score": row.score,
         "published_at": row.published_at.isoformat() if row.published_at else None,
         "processed_at": row.processed_at.isoformat() if row.processed_at else None,
     }

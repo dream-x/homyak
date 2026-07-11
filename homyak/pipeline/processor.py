@@ -45,6 +45,7 @@ def make_handler(repo: NewsRepo, bus: NatsBus, analyzers):
                 item_id,
                 cluster_id=ctx.cluster_id,
                 tags=ctx.tags,
+                summary=ctx.summary,
                 score=ctx.score,
             )
             await bus.publish_processed(item_id, ctx.cluster_id, ctx.item.category)

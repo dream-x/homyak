@@ -50,6 +50,8 @@ class NewsItem(Base):
         ARRAY(Text), nullable=False, default=list, server_default=sa_text("'{}'::text[]")
     )
     category: Mapped[str | None] = mapped_column(String(64))
+    summary: Mapped[str | None] = mapped_column(Text)
+    score: Mapped[float | None] = mapped_column(Float)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -90,6 +92,7 @@ class NewsItem(Base):
             "embedding_version",
             postgresql_where=sa_text("embedding_version IS NOT NULL"),
         ),
+        Index("idx_news_score", sa_text("score DESC NULLS LAST")),
     )
 
 

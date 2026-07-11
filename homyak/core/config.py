@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     embedding_version: int = Field(default=1, alias="EMBEDDING_VERSION")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
     similarity_threshold: float = Field(default=0.88, alias="SIMILARITY_THRESHOLD")
+
+    # Phase 4: LLM
+    llm_model: str = Field(default="qwen2.5:14b", alias="LLM_MODEL")
     telegram_outbox_path: str = Field(
         default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
     )

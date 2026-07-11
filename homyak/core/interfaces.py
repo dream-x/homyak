@@ -35,6 +35,8 @@ class NewsItemDTO:
     category: str | None = None
     # заполняется обработкой:
     tags: list[str] | None = None
+    summary: str | None = None
+    score: float | None = None
     cluster_id: int | None = None
 
 
@@ -92,6 +94,7 @@ class FeedQuery:
     min_score: float | None = None
     since: datetime | None = None
     collapse_clusters: bool = True
+    sort: str = "recent"  # "recent" | "score"
     limit: int = 100
     cursor: str | None = None
 
