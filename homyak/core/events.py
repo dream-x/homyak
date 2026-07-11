@@ -31,7 +31,8 @@ SUBJECT_INGESTED = "homyak.items.ingested"
 SUBJECT_PROCESSED = "homyak.items.processed"
 SUBJECT_OUTPUT = "homyak.items.output"
 SUBJECT_FEEDBACK = "homyak.feedback.recorded"
-_SUBJECTS = ["homyak.items.*", "homyak.feedback.*"]
+SUBJECT_TELEGRAM_RAW = "homyak.telegram.raw"  # сырые сообщения от tscrapper
+_SUBJECTS = ["homyak.items.*", "homyak.feedback.*", "homyak.telegram.*"]
 
 MAX_AGE_SECONDS = 14 * 24 * 3600  # 14 дней
 MAX_BYTES = 5 * 1024**3  # 5 GB
@@ -112,6 +113,9 @@ class NatsBus:
         ).encode()
         await self.js.publish(SUBJECT_PROCESSED, payload)
 
+    async def publish_telegram_raw(self, payload: dict) -> None:
+        await self.js.publish(SUBJECT_TELEGRAM_RAW, json.dumps(payload).encode())
+
     async def publish_feedback(
         self,
         news_item_id: int,
@@ -148,6 +152,15 @@ class NatsBus:
         **kw,
     ) -> None:
         await self._consume(SUBJECT_FEEDBACK, handler, durable=durable, **kw)
+
+    async def consume_telegram_raw(
+        self,
+        handler: Callable[[dict], Awaitable[None]],
+        *,
+        durable: str = "telegram-ingest",
+        **kw,
+    ) -> None:
+        await self._consume(SUBJECT_TELEGRAM_RAW, handler, durable=durable, **kw)
 
     async def _consume(
         self,
