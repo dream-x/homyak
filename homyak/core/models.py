@@ -10,6 +10,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Computed,
     DateTime,
     Float,
@@ -68,6 +69,13 @@ class NewsItem(Base):
     error: Mapped[str | None] = mapped_column(Text)
     retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Phase 6: персонализация
+    llm_relevance: Mapped[float | None] = mapped_column(Float)
+    llm_reason: Mapped[str | None] = mapped_column(Text)
+    personal_score: Mapped[float | None] = mapped_column(Float)
+    scored_profile_version: Mapped[int | None] = mapped_column(Integer)
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     search_tsv: Mapped[str | None] = mapped_column(
         TSVECTOR,
         Computed(
@@ -93,6 +101,12 @@ class NewsItem(Base):
             postgresql_where=sa_text("embedding_version IS NOT NULL"),
         ),
         Index("idx_news_score", sa_text("score DESC NULLS LAST")),
+        Index("idx_news_personal", sa_text("personal_score DESC NULLS LAST")),
+        Index(
+            "idx_news_pushable",
+            sa_text("personal_score DESC"),
+            postgresql_where=sa_text("pushed_at IS NULL AND processed_at IS NOT NULL"),
+        ),
     )
 
 
@@ -117,3 +131,78 @@ class IngestState(Base):
     cursor: Mapped[str | None] = mapped_column(Text)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
+
+
+# --- Phase 6: персонализация ---
+
+
+class Profile(Base):
+    __tablename__ = "profile"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    topics: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_profile_active", "active", unique=True, postgresql_where=sa_text("active")),
+    )
+
+
+class TagAffinity(Base):
+    __tablename__ = "tag_affinity"
+
+    tag: Mapped[str] = mapped_column(Text, primary_key=True)
+    weight: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    n_pos: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    n_neg: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SourceAffinity(Base):
+    __tablename__ = "source_affinity"
+
+    source_type: Mapped[str] = mapped_column(Text, primary_key=True)
+    author: Mapped[str] = mapped_column(Text, primary_key=True, server_default="")
+    weight: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    n_pos: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    n_neg: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
+    news_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("news_items.id", ondelete="CASCADE"), nullable=False
+    )
+    signal: Mapped[str] = mapped_column(Text, nullable=False)
+    topic: Mapped[str | None] = mapped_column(Text)
+    surface: Mapped[str] = mapped_column(Text, nullable=False, server_default="tgbot")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("news_item_id", "signal", name="uq_feedback_item_signal"),
+        Index("idx_feedback_created", sa_text("created_at DESC")),
+    )
+
+
+class TasteState(Base):
+    __tablename__ = "taste_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, server_default="1")
+    n_liked: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

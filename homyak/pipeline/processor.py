@@ -63,7 +63,8 @@ async def main_async() -> None:
     await bus.connect()
     qdrant = QdrantStore(settings.qdrant_url)
     await qdrant.ensure_collection()
-    analyzers = build_analyzers(qdrant)
+    await qdrant.ensure_taste_collection()
+    analyzers = build_analyzers(qdrant, repo)
     log.info("processor_starting", analyzers=[a.name for a in analyzers])
 
     handler = make_handler(repo, bus, analyzers)

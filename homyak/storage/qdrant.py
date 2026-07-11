@@ -12,6 +12,7 @@ VECTOR_SIZE = 1024
 
 class QdrantStore:
     COLLECTION = "news_items"
+    TASTE_COLLECTION = "taste"  # singleton point id=1 — «вектор вкуса» (центроид лайков)
 
     def __init__(self, url: str) -> None:
         self._client = AsyncQdrantClient(url=url)
@@ -25,6 +26,33 @@ class QdrantStore:
                 ),
             )
             log.info("qdrant_collection_created", collection=self.COLLECTION)
+
+    async def ensure_taste_collection(self) -> None:
+        if not await self._client.collection_exists(self.TASTE_COLLECTION):
+            await self._client.create_collection(
+                self.TASTE_COLLECTION,
+                vectors_config=models.VectorParams(
+                    size=VECTOR_SIZE, distance=models.Distance.COSINE
+                ),
+            )
+            log.info("qdrant_collection_created", collection=self.TASTE_COLLECTION)
+
+    async def get_taste(self) -> list[float] | None:
+        try:
+            pts = await self._client.retrieve(
+                self.TASTE_COLLECTION, ids=[1], with_vectors=True
+            )
+        except Exception:
+            return None
+        if not pts or pts[0].vector is None:
+            return None
+        return list(pts[0].vector)
+
+    async def set_taste(self, vector: list[float]) -> None:
+        await self._client.upsert(
+            self.TASTE_COLLECTION,
+            points=[models.PointStruct(id=1, vector=vector, payload={})],
+        )
 
     async def upsert_vector(
         self, news_item_id: int, vector: list[float], payload: dict

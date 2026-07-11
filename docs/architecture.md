@@ -326,7 +326,14 @@ Analyzer'ы выполняются последовательно в `processor`
 ### Phase 6 — Персонализация (флагманская фича)
 `docs/phase-6-personalization.md`. Гибридный ранкер под интересы: LLM-судья против профиля +
 обучение на 👍/👎 из Telegram-бота (taste vector + tag/source affinity). Заменяет наивный
-`scorer` на `personal_score`. Зависит от Phase 3 (эмбеддинги) и Phase 4 (LLM + бот); Phase 5 не нужна.
+`scorer` на `personal_score`. Зависит от Phase 3 (эмбеддинги) и Phase 4 (LLM); Phase 5 не нужна.
+
+- **6.0 offline-скоринг ✅** — миграция 0005 (profile/tag_affinity/source_affinity/feedback/taste_state +
+  колонки), `core/scoring.py::personal_score`, `llm_relevance` (stage 7, судья), `personalizer`
+  (stage 8, свёртка + hard-mute), `homyak-profile-set`. Лента `?sort=personal`. E2E: AI/Rust
+  ранжируются высоко, спорт низко, крипта отсекается mute. (В доке миграция названа 0004 — фактически 0005.)
+- **6.1-6.3 (осталось)** — бот-реакции 👍/👎 + `learner` (обучение taste/affinity), политика пуша,
+  команды бота, profile refinement. Требуют TG-бот (токен от @BotFather).
 
 ---
 

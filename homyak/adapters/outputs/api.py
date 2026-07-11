@@ -36,6 +36,8 @@ def _item_json(it: NewsItemDTO) -> dict:
         "tags": it.tags or [],
         "summary": it.summary,
         "score": it.score,
+        "personal_score": it.personal_score,
+        "llm_reason": it.llm_reason,
         "cluster_id": it.cluster_id,
         "published_at": it.published_at.isoformat() if it.published_at else None,
     }
@@ -57,7 +59,7 @@ def _build_query(
         limit=min(max(limit, 1), 200),
         cursor=cursor,
         collapse_clusters=collapse,
-        sort=sort if sort in ("recent", "score") else "recent",
+        sort=sort if sort in ("recent", "score", "personal") else "recent",
     )
 
 

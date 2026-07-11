@@ -10,8 +10,17 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
-from homyak.core.models import IngestState, NewsItem
+from homyak.core.models import (
+    IngestState,
+    NewsItem,
+    Profile,
+    SourceAffinity,
+    TagAffinity,
+    TasteState,
+)
 from homyak.core.urls import normalize_url
+
+_POLARITY_WEIGHT = {"love": 0.8, "like": 0.5, "meh": 0.0, "dislike": -0.5, "mute": -1.0}
 
 # поля, обновляемые при повторном приходе того же (source_type, source_id):
 _UPSERT_UPDATE = (
@@ -55,6 +64,8 @@ def _dto(row: NewsItem) -> NewsItemDTO:
         tags=list(row.tags or []),
         summary=row.summary,
         score=row.score,
+        personal_score=row.personal_score,
+        llm_reason=row.llm_reason,
         cluster_id=row.cluster_id,
     )
 
@@ -176,6 +187,67 @@ class NewsRepo:
         async with self._sf() as s:
             return list((await s.execute(stmt)).scalars().all())
 
+    # --- Phase 6: профиль и аффинити ---
+
+    async def get_active_profile(self) -> tuple[int, str, list] | None:
+        async with self._sf() as s:
+            row = (
+                await s.execute(
+                    select(Profile.version, Profile.description, Profile.topics).where(
+                        Profile.active
+                    )
+                )
+            ).first()
+        if row is None:
+            return None
+        return int(row[0]), row[1], list(row[2] or [])
+
+    async def set_profile(self, description: str, topics: list[dict]) -> int:
+        """Новая версия профиля (деактивирует прежнюю) + seed tag_affinity из тем (cold-start)."""
+        async with self._sf() as s:
+            cur = await s.scalar(select(func.max(Profile.version)))
+            version = (cur or 0) + 1
+            await s.execute(update(Profile).where(Profile.active).values(active=False))
+            s.add(Profile(version=version, description=description, topics=topics, active=True))
+            for t in topics:
+                name = t.get("name")
+                if not name:
+                    continue
+                weight = _POLARITY_WEIGHT.get(t.get("polarity", "like"), 0.0)
+                stmt = pg_insert(TagAffinity).values(tag=name, weight=weight)
+                stmt = stmt.on_conflict_do_update(index_elements=["tag"], set_={"weight": weight})
+                await s.execute(stmt)
+            await s.commit()
+        return version
+
+    async def get_tag_affinities(self, tags: list[str]) -> dict[str, float]:
+        if not tags:
+            return {}
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    select(TagAffinity.tag, TagAffinity.weight).where(
+                        TagAffinity.tag.in_(list(tags))
+                    )
+                )
+            ).all()
+        return {r[0]: float(r[1]) for r in rows}
+
+    async def get_source_affinity(self, source_type: str, author: str | None) -> float:
+        async with self._sf() as s:
+            w = await s.scalar(
+                select(SourceAffinity.weight).where(
+                    SourceAffinity.source_type == source_type,
+                    SourceAffinity.author == (author or ""),
+                )
+            )
+        return float(w) if w is not None else 0.0
+
+    async def get_taste_n_liked(self) -> int:
+        async with self._sf() as s:
+            n = await s.scalar(select(TasteState.n_liked).where(TasteState.id == 1))
+        return int(n) if n is not None else 0
+
     async def feed(self, query: FeedQuery) -> Feed:
         conditions = [NewsItem.processed_at.isnot(None)]
         if query.category:
@@ -188,18 +260,22 @@ class NewsRepo:
             conditions.append(NewsItem.raw_score >= query.min_score)
 
         by_score = query.sort == "score"
+        by_personal = query.sort == "personal"
+        if by_personal:
+            conditions.append(NewsItem.personal_score.isnot(None))  # muted/unscored — вон
         sort_ts = _sort_ts()
-        if not by_score and query.cursor:  # keyset-пагинация только для recent
+        if not by_score and not by_personal and query.cursor:  # keyset только для recent
             c_ts, c_id = _decode_cursor(query.cursor)
             conditions.append(
                 or_(sort_ts < c_ts, sa.and_(sort_ts == c_ts, NewsItem.id < c_id))
             )
 
-        order = (
-            [NewsItem.score.desc().nullslast(), NewsItem.id.desc()]
-            if by_score
-            else [sort_ts.desc(), NewsItem.id.desc()]
-        )
+        if by_personal:
+            order = [NewsItem.personal_score.desc().nullslast(), NewsItem.id.desc()]
+        elif by_score:
+            order = [NewsItem.score.desc().nullslast(), NewsItem.id.desc()]
+        else:
+            order = [sort_ts.desc(), NewsItem.id.desc()]
         # берём окно пошире и коллапсим кластеры в Python (personal-scale — дёшево)
         window = query.limit * 3 if query.collapse_clusters else query.limit + 1
         stmt = select(NewsItem).where(*conditions).order_by(*order).limit(window)
@@ -221,9 +297,8 @@ class NewsRepo:
 
         has_more = len(rows) > query.limit
         rows = rows[: query.limit]
-        next_cursor = (
-            _encode_cursor(rows[-1]) if has_more and rows and not by_score else None
-        )
+        keyset_ok = not by_score and not by_personal
+        next_cursor = _encode_cursor(rows[-1]) if has_more and rows and keyset_ok else None
         return Feed(items=[_dto(r) for r in rows], next_cursor=next_cursor)
 
 

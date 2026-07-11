@@ -37,6 +37,8 @@ class NewsItemDTO:
     tags: list[str] | None = None
     summary: str | None = None
     score: float | None = None
+    personal_score: float | None = None
+    llm_reason: str | None = None
     cluster_id: int | None = None
 
 

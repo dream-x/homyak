@@ -1,0 +1,20 @@
+# Стартовый профиль интересов. Отредактируй под себя и применяй: `uv run homyak-profile-set`.
+# polarity: love | like | meh | dislike | mute  (mute — жёсткий фильтр: тема не попадёт в ленту)
+
+description: >
+  AI-агенты и агентные фреймворки, LLM и inference/self-hosting, ML-research (arXiv cs.CL/LG),
+  Rust и системное программирование, dev-tools и инди-стартапы, прикладной security.
+  Не интересно: крипта, политика, спорт, обзоры потребительских гаджетов.
+
+topics:
+  - {name: ai-agents,   polarity: love}
+  - {name: llm,         polarity: love}
+  - {name: ml-research, polarity: love}
+  - {name: ai,          polarity: like}
+  - {name: rust,        polarity: like}
+  - {name: systems,     polarity: like}
+  - {name: devtools,    polarity: like}
+  - {name: startups,    polarity: like}
+  - {name: security,    polarity: like}
+  - {name: crypto,      polarity: mute}
+  - {name: politics,    polarity: mute}

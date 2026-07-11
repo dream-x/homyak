@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 FRESHNESS_TAU_HOURS = 48.0
@@ -31,3 +33,61 @@ def base_score(
     raw = raw_score or 0.0
     size = max(1, cluster_size)
     return freshness(published_at, now) * (1.0 + raw) * (1.0 + math.log1p(size - 1))
+
+
+# --- Phase 6: персональный (гибридный) скор ---
+
+
+@dataclass(frozen=True)
+class PersonalWeights:
+    llm: float = 0.50
+    taste: float = 0.20
+    tag: float = 0.15
+    source: float = 0.10
+    fresh: float = 0.05
+
+
+def weights_from_settings() -> PersonalWeights:
+    from homyak.core.config import settings
+
+    return PersonalWeights(
+        llm=settings.personalize_llm_weight,
+        taste=settings.personalize_taste_weight,
+        tag=settings.personalize_tag_weight,
+        source=settings.personalize_source_weight,
+        fresh=settings.personalize_fresh_weight,
+    )
+
+
+def cosine(a: Sequence[float] | None, b: Sequence[float] | None) -> float:
+    if not a or not b:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def personal_score(
+    *,
+    llm_relevance: float | None,
+    taste_cos: float | None,
+    tag_aff: float | None,
+    source_aff: float | None,
+    freshness_val: float | None,
+    n_liked: int,
+    weights: PersonalWeights,
+    taste_ramp: int = 20,
+) -> float:
+    """Гибридная свёртка. taste-компонента наращивается по мере накопления лайков (cold-start ramp)."""
+    ramp = min(1.0, n_liked / taste_ramp) if taste_ramp > 0 else 1.0
+    taste_w = weights.taste * ramp
+    return (
+        weights.llm * (llm_relevance or 0.0)
+        + taste_w * (taste_cos or 0.0)
+        + weights.tag * (tag_aff or 0.0)
+        + weights.source * (source_aff or 0.0)
+        + weights.fresh * (freshness_val or 0.0)
+    )

@@ -30,6 +30,17 @@ class Settings(BaseSettings):
 
     # Phase 4: LLM
     llm_model: str = Field(default="qwen2.5:14b", alias="LLM_MODEL")
+
+    # Phase 6: персонализация (веса свёртки personal_score)
+    personalize_llm_weight: float = Field(default=0.50, alias="PERSONALIZE_LLM_WEIGHT")
+    personalize_taste_weight: float = Field(default=0.20, alias="PERSONALIZE_TASTE_WEIGHT")
+    personalize_tag_weight: float = Field(default=0.15, alias="PERSONALIZE_TAG_WEIGHT")
+    personalize_source_weight: float = Field(default=0.10, alias="PERSONALIZE_SOURCE_WEIGHT")
+    personalize_fresh_weight: float = Field(default=0.05, alias="PERSONALIZE_FRESH_WEIGHT")
+    taste_ramp: int = Field(default=20, alias="TASTE_RAMP")
+    push_threshold: float = Field(default=0.70, alias="PUSH_THRESHOLD")
+    feedback_lr: float = Field(default=0.10, alias="FEEDBACK_LR")
+    taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     telegram_outbox_path: str = Field(
         default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
     )

@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 from homyak.adapters.analyzers.embedder import EmbedderAnalyzer
+from homyak.adapters.analyzers.llm_relevance import LlmRelevanceAnalyzer
 from homyak.adapters.analyzers.llm_summarizer import LlmSummarizerAnalyzer
 from homyak.adapters.analyzers.llm_tagger import LlmTaggerAnalyzer
+from homyak.adapters.analyzers.personalizer import PersonalizerAnalyzer
 from homyak.adapters.analyzers.scorer import ScorerAnalyzer
 from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
 from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
@@ -28,12 +30,14 @@ def build_poll_sources(cfg: SourcesConfig) -> list[PollSource]:
     return sources
 
 
-def build_analyzers(qdrant: QdrantStore | None = None, with_llm: bool = True) -> list[Analyzer]:
+def build_analyzers(
+    qdrant: QdrantStore | None = None, repo=None, with_llm: bool = True
+) -> list[Analyzer]:
     """Analyzer'ы, упорядоченные по stage.
 
-    Без qdrant — только url_dedup (Phase 2 / тесты без векторной инфры). С qdrant добавляются
-    embedder (2) + similarity_dedup (3), а при with_llm — llm_tagger (4), llm_summarizer (5),
-    scorer (6).
+    Без qdrant — только url_dedup (Phase 2 / тесты). С qdrant: embedder (2), similarity_dedup (3),
+    scorer (6). При with_llm: llm_tagger (4), llm_summarizer (5). При with_llm+repo (Phase 6):
+    llm_relevance (7, судья) + personalizer (8, свёртка personal_score).
     """
     analyzers: list[Analyzer] = [UrlDedupAnalyzer()]
     if qdrant is not None:
@@ -44,4 +48,7 @@ def build_analyzers(qdrant: QdrantStore | None = None, with_llm: bool = True) ->
             analyzers.append(LlmTaggerAnalyzer(llm))
             analyzers.append(LlmSummarizerAnalyzer(llm))
         analyzers.append(ScorerAnalyzer())
+        if with_llm and repo is not None:
+            analyzers.append(LlmRelevanceAnalyzer(repo))
+            analyzers.append(PersonalizerAnalyzer(repo, qdrant))
     return sorted(analyzers, key=lambda a: a.stage)
