@@ -54,7 +54,8 @@ class PersonalizerAnalyzer:
 
         tag_affs = await self._repo.get_tag_affinities(tags)
         tag_aff = sum(tag_affs.values()) / len(tag_affs) if tag_affs else 0.0
-        source_aff = await self._repo.get_source_affinity(item.source_type, item.author)
+        source_key = item.feed_name or item.author  # affinity на уровне фида/канала
+        source_aff = await self._repo.get_source_affinity(item.source_type, source_key)
 
         n_liked = await self._repo.get_taste_n_liked()
         taste_cos = 0.0

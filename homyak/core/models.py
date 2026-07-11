@@ -46,6 +46,7 @@ class NewsItem(Base):
         JSONB, nullable=False, default=list, server_default=sa_text("'[]'::jsonb")
     )
     author: Mapped[str | None] = mapped_column(String(255))
+    feed_name: Mapped[str | None] = mapped_column(String(64))
     raw_score: Mapped[float | None] = mapped_column(Float)
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default=sa_text("'{}'::text[]")
@@ -90,6 +91,7 @@ class NewsItem(Base):
         Index("idx_news_published", sa_text("published_at DESC")),
         Index("idx_news_cluster", "cluster_id"),
         Index("idx_news_fts", "search_tsv", postgresql_using="gin"),
+        Index("idx_news_feed", "feed_name", postgresql_where=sa_text("feed_name IS NOT NULL")),
         Index(
             "idx_news_url_normalized",
             "url_normalized",

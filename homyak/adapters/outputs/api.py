@@ -33,6 +33,7 @@ def _item_json(it: NewsItemDTO) -> dict:
         "media": it.media,
         "author": it.author,
         "category": it.category,
+        "feed": it.feed_name,
         "tags": it.tags or [],
         "summary": it.summary,
         "score": it.score,
@@ -51,10 +52,12 @@ def _build_query(
     cursor: str | None,
     collapse: bool,
     sort: str = "recent",
+    feed: str | None = None,
 ) -> FeedQuery:
     return FeedQuery(
         category=category,
         source_types=source_type,
+        feed_name=feed,
         since=since,
         limit=min(max(limit, 1), 200),
         cursor=cursor,
@@ -82,8 +85,9 @@ async def feed(
     cursor: str | None = None,
     collapse: bool = True,
     sort: str = "recent",
+    feed: str | None = None,
 ) -> dict:
-    q = _build_query(category, source_type, since, limit, cursor, collapse, sort)
+    q = _build_query(category, source_type, since, limit, cursor, collapse, sort, feed)
     result = await repo.feed(q)
     return {
         "items": [_item_json(i) for i in result.items],

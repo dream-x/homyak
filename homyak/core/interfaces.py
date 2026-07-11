@@ -30,6 +30,7 @@ class NewsItemDTO:
     text: str | None = None
     media: list[str] = field(default_factory=list)
     author: str | None = None
+    feed_name: str | None = None  # какой фид/канал принёс (hn, lobsters, @ai_newz…)
     raw_score: float | None = None
     published_at: datetime | None = None
     category: str | None = None
@@ -93,6 +94,7 @@ class Analyzer(Protocol):
 class FeedQuery:
     category: str | None = None
     source_types: list[str] | None = None
+    feed_name: str | None = None
     min_score: float | None = None
     since: datetime | None = None
     collapse_clusters: bool = True

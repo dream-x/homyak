@@ -84,6 +84,7 @@ class RSSSource:
                 text=(e.get("summary") or e.get("description")),
                 media=_media(e),
                 author=e.get("author") or self._cfg.name,
+                feed_name=self._cfg.name,
                 published_at=pub,
                 category=self._cfg.category,
             )

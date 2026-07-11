@@ -32,6 +32,7 @@ _UPSERT_UPDATE = (
     "text",
     "media",
     "author",
+    "feed_name",
     "raw_score",
     "category",
     "published_at",
@@ -60,6 +61,7 @@ def _dto(row: NewsItem) -> NewsItemDTO:
         text=row.text,
         media=list(row.media or []),
         author=row.author,
+        feed_name=row.feed_name,
         raw_score=row.raw_score,
         published_at=row.published_at,
         category=row.category,
@@ -90,6 +92,7 @@ class NewsRepo:
             "text": item.text,
             "media": item.media or [],
             "author": _trunc(item.author, 255),
+            "feed_name": _trunc(item.feed_name, 64),
             "raw_score": item.raw_score,
             "category": _trunc(item.category, 64),
             "published_at": item.published_at,
@@ -411,18 +414,36 @@ class NewsRepo:
         return liked, disliked
 
     async def get_item_meta(self, news_item_id: int):
-        """(source_type, author, tags) для обучения — по item'у."""
+        """(source_type, source_key, tags) для обучения. source_key = feed_name или author."""
         async with self._sf() as s:
             row = (
                 await s.execute(
-                    select(NewsItem.source_type, NewsItem.author, NewsItem.tags).where(
-                        NewsItem.id == news_item_id
-                    )
+                    select(
+                        NewsItem.source_type,
+                        NewsItem.author,
+                        NewsItem.feed_name,
+                        NewsItem.tags,
+                    ).where(NewsItem.id == news_item_id)
                 )
             ).first()
         if row is None:
             return None
-        return row[0], row[1], list(row[2] or [])
+        source_key = row[2] or row[1]  # feed_name предпочтительнее author
+        return row[0], source_key, list(row[3] or [])
+
+    async def feed_source_counts(self, limit: int = 30) -> list[tuple[str, int]]:
+        """(feed_name, count) обработанных items — для /sources."""
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    select(NewsItem.feed_name, func.count())
+                    .where(NewsItem.feed_name.isnot(None), NewsItem.processed_at.isnot(None))
+                    .group_by(NewsItem.feed_name)
+                    .order_by(func.count().desc())
+                    .limit(limit)
+                )
+            ).all()
+        return [(r[0], int(r[1])) for r in rows]
 
     async def feed(self, query: FeedQuery) -> Feed:
         conditions = [NewsItem.processed_at.isnot(None)]
@@ -430,6 +451,8 @@ class NewsRepo:
             conditions.append(NewsItem.category == query.category)
         if query.source_types:
             conditions.append(NewsItem.source_type.in_(query.source_types))
+        if query.feed_name:
+            conditions.append(NewsItem.feed_name == query.feed_name)
         if query.since:
             conditions.append(NewsItem.published_at >= query.since)
         if query.min_score is not None:

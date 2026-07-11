@@ -40,6 +40,7 @@ class TelegramOutboxLine(BaseModel):
             text=self.text or None,
             media=self.media,
             author=self.author,
+            feed_name=self.author,  # канал = фид
             category=self.category,
             published_at=self.published_at,
         )

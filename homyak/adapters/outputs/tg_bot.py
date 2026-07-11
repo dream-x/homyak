@@ -31,6 +31,7 @@ from nats.js.api import ConsumerConfig, DeliverPolicy
 
 from homyak.core.config import settings
 from homyak.core.events import SUBJECT_PROCESSED, NatsBus
+from homyak.core.interfaces import FeedQuery
 from homyak.core.scoring import freshness, weights_from_settings
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
@@ -67,6 +68,8 @@ BOT_COMMANDS = [
     BotCommand(command="profile", description="👤 Мой профиль интересов"),
     BotCommand(command="stats", description="📊 Статистика обучения"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
+    BotCommand(command="sources", description="📡 Источники в ленте"),
+    BotCommand(command="source", description="📡 Лента одного фида: /source hn"),
     BotCommand(command="mute", description="🔇 Замьютить тему: /mute <тема>"),
     BotCommand(command="threshold", description="🎚 Порог пуша: /threshold <0..1>"),
     BotCommand(command="pause", description="⏸ Пауза пушей: /pause [часы]"),
@@ -236,6 +239,33 @@ async def cmd_mute(m: Message, command: CommandObject) -> None:
     topic = command.args.strip().lower()
     v = await _repo.mute_topic(topic)
     await m.answer(f"🔇 «{_esc(topic)}» замьючено (профиль v{v}).")
+
+
+@dp.message(Command("sources"))
+async def cmd_sources(m: Message) -> None:
+    counts = await _repo.feed_source_counts(30)
+    if not counts:
+        await m.answer("Источников в ленте пока нет.")
+        return
+    lines = "\n".join(f"• <code>{_esc(name)}</code> — {n}" for name, n in counts)
+    await m.answer(
+        f"<b>Источники в ленте</b> (фид — items):\n{lines}\n\nФильтр: /source &lt;имя&gt;"
+    )
+
+
+@dp.message(Command("source"))
+async def cmd_source(m: Message, command: CommandObject) -> None:
+    if not command.args:
+        await m.answer("Использование: /source &lt;имя фида&gt; · список: /sources")
+        return
+    name = command.args.strip()
+    result = await _repo.feed(FeedQuery(sort="personal", feed_name=name, limit=8))
+    if not result.items:
+        await m.answer(f"Нет персональных новостей из «{_esc(name)}». Проверь имя: /sources")
+        return
+    await m.answer(f"📡 Топ из «{_esc(name)}»:")
+    for it in result.items:
+        await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
 
 
 # --- кнопки постоянной клавиатуры ---

@@ -69,6 +69,7 @@ class MinifluxSource:
                 title=entry.get("title"),
                 text=entry.get("content"),
                 author=entry.get("author") or feed.get("title"),
+                feed_name=feed.get("title") or "miniflux",
                 published_at=_parse_iso(entry.get("published_at")),
                 category=cat_title or None,
             )
