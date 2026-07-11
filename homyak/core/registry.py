@@ -46,7 +46,7 @@ def build_analyzers(
         if with_llm:
             llm = OllamaLLM()
             analyzers.append(LlmTaggerAnalyzer(llm))
-            analyzers.append(LlmSummarizerAnalyzer(llm))
+            analyzers.append(LlmSummarizerAnalyzer())  # своя модель (SUMMARY_MODEL, побольше)
         analyzers.append(ScorerAnalyzer())
         if with_llm and repo is not None:
             analyzers.append(LlmRelevanceAnalyzer(repo))

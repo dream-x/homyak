@@ -21,7 +21,9 @@ class OllamaLLM:
         self._model = model or settings.llm_model
         self._breaker = breaker or CircuitBreaker()
 
-    async def _chat(self, system: str, user: str, json_format: bool) -> str:
+    async def _chat(
+        self, system: str, user: str, json_format: bool, think: bool | None = None
+    ) -> str:
         payload: dict = {
             "model": self._model,
             "messages": [
@@ -33,7 +35,9 @@ class OllamaLLM:
         }
         if json_format:
             payload["format"] = "json"
-        async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=180) as client:
+        if think is not None:  # для thinking-моделей (qwen3): отключаем reasoning
+            payload["think"] = think
+        async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=300) as client:
             resp = await client.post("/api/chat", json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -43,5 +47,5 @@ class OllamaLLM:
         content = await self._breaker.call(self._chat, system, user, True)
         return json.loads(content)
 
-    async def chat_text(self, system: str, user: str) -> str:
-        return await self._breaker.call(self._chat, system, user, False)
+    async def chat_text(self, system: str, user: str, think: bool | None = None) -> str:
+        return await self._breaker.call(self._chat, system, user, False, think)
