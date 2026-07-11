@@ -39,8 +39,16 @@ event-driven (NATS JetStream) архитектура. Флагманская ф�
 - **Ollama** — нативно (0.31.2), модели `bge-m3` (1024-dim) и `qwen2.5:14b` скачаны.
 - Порядок запуска инфры для разработки — см. skill `homyak-run` / `scripts/verify-phase-*.sh`.
 
+## Состояние (2026-07-12)
+Реализованы Phase 1-4 + Phase 6.0/6.1/6.2. Пайплайн (8 стадий): url_dedup → embedder → similarity_dedup
+→ llm_tagger → llm_summarizer → scorer → llm_relevance (судья) → personalizer. Процессы:
+`homyak-ingest-poll` (RSS), `homyak-telegram-ingest` (TG из tscrapper через NATS `homyak.telegram.raw`),
+`homyak-processor`, `homyak-learner` (обучение на 👍/👎), `homyak-sweeper`, `homyak-tgbot`, `homyak-api`.
+CLI: `homyak-cli`, `homyak-profile-set`, `homyak-reembed`. Осталось Phase 6.3 (profile refinement).
+Токен бота — в `.env` (gitignored). Telegram-каналы задаются в config.yaml tscrapper'а.
+
 ## Порядок работ
-Идём по фазам снизу вверх: 1 (скелет) → 2 (feedthrough) → 3 (embeddings+TG+SSE) → 4 (LLM+бот+CLI) →
+Фазы снизу вверх: 1 (скелет) → 2 (feedthrough) → 3 (embeddings+TG+SSE) → 4 (LLM+бот+CLI) →
 6 (персонализация, флагман; зависит от 3 и 4, но не от 5). Phase 5 (Twitter+WebUI) — опционально позже.
 
 ## Git

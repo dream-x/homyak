@@ -311,8 +311,10 @@ Analyzer'ы выполняются последовательно в `processor`
 ### Phase 3 — embeddings + Telegram + SSE  ✅ (реализовано)
 - `storage/qdrant.py`, `adapters/analyzers/embedder.py` (bge-m3), `similarity_dedup.py`
 - `adapters/outputs/sse.py` (JetStream → SSE), `core/circuit.py`, `cli/reembed.py`
-- `adapters/sources/telegram_relay.py` + `pipeline/tg_relay.py` (Homyak-сторона готова;
-  патч самого tscrapper'а — отложен, требует правки внешнего сервиса)
+- **Telegram через NATS (2026-07-12):** tscrapper доработан — `_handle_message` публикует каждое
+  сообщение в NATS subject `homyak.telegram.raw` (best-effort). Homyak: `pipeline/telegram_ingest`
+  (`homyak-telegram-ingest`) консюмит → upsert → `items.ingested`. Файловый `telegram_relay`/`tg_relay`
+  остаётся как альтернатива, но основной путь — NATS.
 
 ### Phase 4 — LLM + бот + CLI  ◑ (анализаторы+CLI готовы; бот ждёт токен)
 `docs/phase-4-llm-bot-cli.md`. `llm_tagger`/`llm_summarizer`/`scorer` (qwen2.5:14b), `core/llm.py`,
