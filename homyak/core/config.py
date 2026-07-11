@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     personalize_source_weight: float = Field(default=0.10, alias="PERSONALIZE_SOURCE_WEIGHT")
     personalize_fresh_weight: float = Field(default=0.05, alias="PERSONALIZE_FRESH_WEIGHT")
     taste_ramp: int = Field(default=20, alias="TASTE_RAMP")
-    push_threshold: float = Field(default=0.70, alias="PUSH_THRESHOLD")
+    push_threshold: float = Field(default=0.55, alias="PUSH_THRESHOLD")  # cold-start: taste=0
     feedback_lr: float = Field(default=0.10, alias="FEEDBACK_LR")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     max_push_per_hour: int = Field(default=8, alias="MAX_PUSH_PER_HOUR")
