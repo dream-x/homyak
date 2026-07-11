@@ -19,10 +19,13 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
+    BotCommand,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
     Message,
+    ReplyKeyboardMarkup,
 )
 from nats.js.api import ConsumerConfig, DeliverPolicy
 
@@ -42,6 +45,34 @@ _repo = NewsRepo(SessionFactory)
 _bus: NatsBus | None = None
 _bot: Bot | None = None
 dp = Dispatcher()
+
+# Кнопки постоянной клавиатуры (текст = то, что присылается ботом)
+BTN_DIGEST = "📰 Дайджест"
+BTN_PROFILE = "👤 Профиль"
+BTN_STATS = "📊 Статистика"
+BTN_PAUSE = "⏸ Пауза 8ч"
+
+MAIN_KB = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=BTN_DIGEST), KeyboardButton(text=BTN_PROFILE)],
+        [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_PAUSE)],
+    ],
+    resize_keyboard=True,
+    is_persistent=True,
+)
+
+# Меню команд (кнопка «/» в клиенте Telegram)
+BOT_COMMANDS = [
+    BotCommand(command="digest", description="📰 Топ персональных новостей"),
+    BotCommand(command="profile", description="👤 Мой профиль интересов"),
+    BotCommand(command="stats", description="📊 Статистика обучения"),
+    BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
+    BotCommand(command="mute", description="🔇 Замьютить тему: /mute <тема>"),
+    BotCommand(command="threshold", description="🎚 Порог пуша: /threshold <0..1>"),
+    BotCommand(command="pause", description="⏸ Пауза пушей: /pause [часы]"),
+    BotCommand(command="menu", description="⌨️ Показать клавиатуру"),
+    BotCommand(command="start", description="🚀 Запустить/перезапустить"),
+]
 
 
 # --- форматирование ---
@@ -95,14 +126,17 @@ async def cmd_start(m: Message) -> None:
     await _repo.save_cursor(CHAT_KEY, str(m.chat.id))
     await m.answer(
         "Homyak на связи 🐹\nБуду слать персональные новости с кнопками 👍/👎/⭐/🔇 — так я учусь.\n\n"
-        "Команды: /digest [N] · /profile · /stats · /why &lt;id&gt; · "
-        "/threshold &lt;0..1&gt; · /pause [ч] · /mute &lt;тема&gt;"
+        "Жми кнопки внизу или через меню «/».",
+        reply_markup=MAIN_KB,
     )
 
 
-@dp.message(Command("digest"))
-async def cmd_digest(m: Message, command: CommandObject) -> None:
-    n = int(command.args) if command.args and command.args.strip().isdigit() else 10
+@dp.message(Command("menu"))
+async def cmd_menu(m: Message) -> None:
+    await m.answer("Клавиатура:", reply_markup=MAIN_KB)
+
+
+async def _send_digest(m: Message, n: int = 10) -> None:
     items = await _repo.digest(min(n, 20))
     if not items:
         await m.answer("Пусто — нет новых персональных новостей.")
@@ -110,6 +144,12 @@ async def cmd_digest(m: Message, command: CommandObject) -> None:
     for it in items:
         await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
         await _repo.mark_pushed(it.id)
+
+
+@dp.message(Command("digest"))
+async def cmd_digest(m: Message, command: CommandObject) -> None:
+    n = int(command.args) if command.args and command.args.strip().isdigit() else 10
+    await _send_digest(m, n)
 
 
 @dp.message(Command("profile"))
@@ -198,6 +238,30 @@ async def cmd_mute(m: Message, command: CommandObject) -> None:
     await m.answer(f"🔇 «{_esc(topic)}» замьючено (профиль v{v}).")
 
 
+# --- кнопки постоянной клавиатуры ---
+
+
+@dp.message(F.text == BTN_DIGEST)
+async def btn_digest(m: Message) -> None:
+    await _send_digest(m)
+
+
+@dp.message(F.text == BTN_PROFILE)
+async def btn_profile(m: Message) -> None:
+    await cmd_profile(m)
+
+
+@dp.message(F.text == BTN_STATS)
+async def btn_stats(m: Message) -> None:
+    await cmd_stats(m)
+
+
+@dp.message(F.text == BTN_PAUSE)
+async def btn_pause(m: Message) -> None:
+    await _repo.save_cursor(PAUSED_KEY, str(time.time() + 8 * 3600))
+    await m.answer("⏸ Пауза пушей на 8ч.")
+
+
 # --- кнопки-фидбек ---
 
 
@@ -273,6 +337,7 @@ async def main_async() -> None:
         settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+    await _bot.set_my_commands(BOT_COMMANDS)
     _bus = NatsBus(settings.nats_url)
     await _bus.connect()
     push_task = asyncio.create_task(push_loop())
