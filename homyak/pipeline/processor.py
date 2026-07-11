@@ -15,6 +15,7 @@ from homyak.core.models import NewsItem
 from homyak.core.registry import build_analyzers
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
+from homyak.storage.qdrant import QdrantStore
 
 log = structlog.get_logger(__name__)
 
@@ -59,7 +60,9 @@ async def main_async() -> None:
     repo = NewsRepo(SessionFactory)
     bus = NatsBus(settings.nats_url)
     await bus.connect()
-    analyzers = build_analyzers()
+    qdrant = QdrantStore(settings.qdrant_url)
+    await qdrant.ensure_collection()
+    analyzers = build_analyzers(qdrant)
     log.info("processor_starting", analyzers=[a.name for a in analyzers])
 
     handler = make_handler(repo, bus, analyzers)
@@ -75,6 +78,7 @@ async def main_async() -> None:
     with suppress(asyncio.CancelledError):
         await consume_task
     await bus.close()
+    await qdrant.close()
     log.info("processor_stopped")
 
 

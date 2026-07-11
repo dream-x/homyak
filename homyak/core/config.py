@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     nats_url: str = Field(default="nats://localhost:4222", alias="NATS_URL")
     sources_config_path: str = Field(default="config/sources.yaml", alias="SOURCES_CONFIG_PATH")
 
+    # Phase 3: эмбеддинги + similarity
+    qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
+    ollama_url: str = Field(default="http://localhost:11434", alias="OLLAMA_URL")
+    embedding_model: str = Field(default="bge-m3", alias="EMBEDDING_MODEL")
+    embedding_version: int = Field(default=1, alias="EMBEDDING_VERSION")
+    embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
+    similarity_threshold: float = Field(default=0.88, alias="SIMILARITY_THRESHOLD")
+    telegram_outbox_path: str = Field(
+        default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
+    )
+
 
 settings = Settings()
 

@@ -85,6 +85,11 @@ class NewsItem(Base):
             "url_normalized",
             postgresql_where=sa_text("url_normalized IS NOT NULL"),
         ),
+        Index(
+            "idx_news_embedding_version",
+            "embedding_version",
+            postgresql_where=sa_text("embedding_version IS NOT NULL"),
+        ),
     )
 
 

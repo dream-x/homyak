@@ -4,16 +4,22 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from sqlalchemy import text
 
-from homyak.adapters.outputs import json_feed, rss_out
+from homyak.adapters.outputs import json_feed, rss_out, sse
 from homyak.core.interfaces import FeedQuery, NewsItemDTO
 from homyak.storage.db import SessionFactory, engine
 from homyak.storage.postgres import NewsRepo
 
 app = FastAPI(title="Homyak", version="0.1.0")
 repo = NewsRepo(SessionFactory)
+
+
+@app.get("/feed/stream")
+async def feed_stream(request: Request, category: str | None = None):
+    """SSE-поток новых обработанных items (realtime из JetStream)."""
+    return await sse.stream_response(request, category)
 
 
 def _item_json(it: NewsItemDTO) -> dict:

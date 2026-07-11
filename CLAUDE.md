@@ -31,9 +31,13 @@ event-driven (NATS JetStream) архитектура. Флагманская ф�
 - Agent `homyak-reviewer` — архитектурный ревью диффа перед коммитом.
 
 ## Окружение (на текущей машине)
-- `uv` есть, `python3.13` есть, `psql` (client 14) есть. **Docker НЕ установлен** — для Postgres в Phase 1
-  используем локальный Postgres (см. skill `homyak-run`); для NATS/Qdrant/Ollama (Phase 2+) docker нужен —
-  предупреди пользователя, когда упрёмся.
+- `uv`, `python3.13`, `psql` (client 14) — есть.
+- **Docker нет, но есть Podman** (5.7.1, machine running; `podman compose` = Docker Compose v2). Qdrant поднят
+  через `podman compose up -d qdrant`.
+- **Postgres** — локальный `postgresql@14` через brew (роль/база `homyak` + `homyak_test`).
+- **NATS** — нативный `nats-server` (brew 2.14.3): `nats-server -js -sd <dir> -m 8222`.
+- **Ollama** — нативно (0.31.2), модели `bge-m3` (1024-dim) и `qwen2.5:14b` скачаны.
+- Порядок запуска инфры для разработки — см. skill `homyak-run` / `scripts/verify-phase-*.sh`.
 
 ## Порядок работ
 Идём по фазам снизу вверх: 1 (скелет) → 2 (feedthrough) → 3 (embeddings+TG+SSE) → 4 (LLM+бот+CLI) →

@@ -20,6 +20,10 @@ dependencies = [
     "apscheduler>=3.10",
     "pyyaml>=6.0",
     "feedgen>=1.0",
+    # Phase 3
+    "qdrant-client>=1.10",
+    "sse-starlette>=2.0",
+    "rich>=13.0",
 ]
 
 [project.scripts]
@@ -27,6 +31,8 @@ homyak-ingest-poll = "homyak.pipeline.ingest_poll:main"
 homyak-processor = "homyak.pipeline.processor:main"
 homyak-sweeper = "homyak.pipeline.sweeper:main"
 homyak-api = "homyak.pipeline.serve:main"
+homyak-tg-relay = "homyak.pipeline.tg_relay:main"
+homyak-reembed = "homyak.cli.reembed:main"
 
 [build-system]
 requires = ["hatchling"]

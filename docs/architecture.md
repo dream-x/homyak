@@ -308,10 +308,11 @@ Analyzer'ы выполняются последовательно в `processor`
 - `adapters/outputs/api.py` + `rss_out.py` + `json_feed.py`
 - FastAPI `/feed`, `/item/{id}`, `/feed.rss`, `/feed.json`, `/healthz`
 
-### Phase 3 — embeddings + Telegram + SSE
-- Патч tscrapper'а + `pipeline/tg_relay.py`
-- `storage/qdrant.py`, `adapters/analyzers/embedder.py`, `similarity_dedup.py`
-- `adapters/outputs/sse.py` (JetStream → SSE)
+### Phase 3 — embeddings + Telegram + SSE  ✅ (реализовано)
+- `storage/qdrant.py`, `adapters/analyzers/embedder.py` (bge-m3), `similarity_dedup.py`
+- `adapters/outputs/sse.py` (JetStream → SSE), `core/circuit.py`, `cli/reembed.py`
+- `adapters/sources/telegram_relay.py` + `pipeline/tg_relay.py` (Homyak-сторона готова;
+  патч самого tscrapper'а — отложен, требует правки внешнего сервиса)
 
 ### Phase 4 — LLM + бот + CLI
 - `llm_tagger.py`, `llm_summarizer.py`, `scorer.py`
