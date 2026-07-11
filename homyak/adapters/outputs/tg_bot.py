@@ -265,6 +265,11 @@ async def btn_pause(m: Message) -> None:
 # --- кнопки-фидбек ---
 
 
+@dp.callback_query(F.data == "noop")
+async def on_noop(cq: CallbackQuery) -> None:
+    await cq.answer("уже учтено")
+
+
 @dp.callback_query(F.data.startswith("fb:"))
 async def on_feedback(cq: CallbackQuery) -> None:
     try:
@@ -284,7 +289,77 @@ async def on_feedback(cq: CallbackQuery) -> None:
     result = await _repo.record_feedback(item_id, signal, topic)
     if _bus is not None:
         await _bus.publish_feedback(item_id, signal, topic, action=result)
-    await cq.answer(f"{label} {'учтено' if result == 'added' else 'отменено'}")
+    status = f"{label} учтено" if result == "added" else f"{label} отменено"
+    await cq.answer(status)
+
+    # схлопываем реакции, чтобы не нажать повторно: остаётся статус + ссылка
+    open_btn = None
+    if cq.message and cq.message.reply_markup:
+        for row in cq.message.reply_markup.inline_keyboard:
+            for b in row:
+                if b.url:
+                    open_btn = b
+    rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
+    if open_btn is not None:
+        rows.append([open_btn])
+    with suppress(Exception):
+        await cq.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+# --- profile refinement (предложения правок профиля) ---
+
+PENDING_KEY = "profile:pending"
+
+
+def _suggestion_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Применить", callback_data="pr:apply"),
+                InlineKeyboardButton(text="❌ Нет", callback_data="pr:reject"),
+            ]
+        ]
+    )
+
+
+async def handle_suggestion(data: dict) -> None:
+    chat = await _repo.get_cursor(CHAT_KEY)
+    if not chat:
+        return
+    desc = data.get("description", "")
+    topics = data.get("topics", []) or []
+    loves = [t["name"] for t in topics if t.get("polarity") in ("love", "like")]
+    mutes = [t["name"] for t in topics if t.get("polarity") == "mute"]
+    text = (
+        "💡 <b>Предлагаю уточнить профиль</b> (по твоим 👍/👎)\n\n"
+        f"{_esc(desc)}\n\n👍 {_esc(', '.join(loves)) or '—'}\n🔇 {_esc(', '.join(mutes)) or '—'}"
+    )
+    await _bot.send_message(int(chat), text, reply_markup=_suggestion_kb())
+
+
+@dp.callback_query(F.data.startswith("pr:"))
+async def on_profile_suggestion(cq: CallbackQuery) -> None:
+    action = cq.data.split(":", 1)[1]
+    pending = await _repo.get_cursor(PENDING_KEY)
+    if not pending:
+        await cq.answer("Предложение устарело")
+        with suppress(Exception):
+            await cq.message.edit_reply_markup(reply_markup=None)
+        return
+    if action == "apply":
+        data = json.loads(pending)
+        version = await _repo.set_profile(data["description"], data.get("topics", []))
+        await _repo.save_cursor(PENDING_KEY, "")
+        await cq.answer(f"Профиль обновлён (v{version})")
+        with suppress(Exception):
+            await cq.message.edit_text(
+                cq.message.html_text + f"\n\n✅ <b>Применено (v{version})</b>"
+            )
+    else:
+        await _repo.save_cursor(PENDING_KEY, "")
+        await cq.answer("Отклонено")
+        with suppress(Exception):
+            await cq.message.edit_text(cq.message.html_text + "\n\n❌ Отклонено")
 
 
 # --- push loop ---
@@ -341,13 +416,16 @@ async def main_async() -> None:
     _bus = NatsBus(settings.nats_url)
     await _bus.connect()
     push_task = asyncio.create_task(push_loop())
+    suggest_task = asyncio.create_task(_bus.consume_profile_suggestion(handle_suggestion))
     log.info("tgbot_started")
     try:
         await dp.start_polling(_bot)
     finally:
         push_task.cancel()
+        suggest_task.cancel()
         with suppress(asyncio.CancelledError):
             await push_task
+            await suggest_task
         await _bus.close()
         await _bot.session.close()
 

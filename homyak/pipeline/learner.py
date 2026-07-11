@@ -13,8 +13,11 @@ from contextlib import suppress
 
 import structlog
 
+import json
+
 from homyak.core.config import settings
 from homyak.core.events import NatsBus
+from homyak.core.llm import OllamaLLM
 from homyak.core.scoring import centroid_add, centroid_remove
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
@@ -24,8 +27,44 @@ log = structlog.get_logger(__name__)
 
 _SIGN = {"up": 1, "save": 1, "down": -1}
 
+_REFINE_SYSTEM = (
+    "Ты — куратор профиля интересов читателя новостей. По текущему профилю и его реакциям предложи "
+    "уточнённый профиль. Верни строго JSON "
+    '{"description": "<1 абзац на русском>", "topics": [{"name": "<тег>", "polarity": "love|like|mute"}]}. '
+    "Сохрани то, что работает; в love/like — что он явно лайкает; в mute — что явно дизлайкает."
+)
 
-def make_handler(repo: NewsRepo, qdrant: QdrantStore):
+
+async def maybe_refine(repo: NewsRepo, bus: NatsBus, llm: OllamaLLM) -> None:
+    prof = await repo.get_active_profile()
+    desc = prof[1] if prof else ""
+    liked, disliked = await repo.recent_liked_disliked(14)
+    if not liked and not disliked:
+        return
+
+    def fmt(items):
+        return "; ".join(f"{t} [{','.join(tags)}]" for t, tags in items if t) or "—"
+
+    user = (
+        f"Текущий профиль: «{desc}»\n\n"
+        f"Лайкал: {fmt(liked)}\n\nДизлайкал: {fmt(disliked)}\n\n"
+        "Предложи уточнённый профиль (description) и 6-12 тем с polarity."
+    )
+    try:
+        data = await llm.chat_json(_REFINE_SYSTEM, user)
+    except Exception as e:
+        log.warning("refine_failed", error=str(e))
+        return
+    if not isinstance(data, dict) or not data.get("description"):
+        return
+    topics = data.get("topics") if isinstance(data.get("topics"), list) else []
+    payload = {"description": str(data["description"]).strip(), "topics": topics}
+    await repo.save_cursor("profile:pending", json.dumps(payload, ensure_ascii=False))
+    await bus.publish_profile_suggestion(payload)
+    log.info("profile_suggestion_published", topics=len(topics))
+
+
+def make_handler(repo: NewsRepo, qdrant: QdrantStore, bus: NatsBus, llm: OllamaLLM):
     async def handle(data: dict) -> None:
         item_id = data["news_item_id"]
         sig = data["signal"]
@@ -67,6 +106,12 @@ def make_handler(repo: NewsRepo, qdrant: QdrantStore):
 
         log.info("learned", item=item_id, signal=sig, action=action, direction=direction)
 
+        # каждые N фидбеков — предложить уточнение профиля
+        if action == "added":
+            count = await repo.learnable_feedback_count()
+            if count > 0 and count % settings.profile_refine_every == 0:
+                await maybe_refine(repo, bus, llm)
+
     return handle
 
 
@@ -76,8 +121,9 @@ async def main_async() -> None:
     await qdrant.ensure_taste_collection()
     bus = NatsBus(settings.nats_url)
     await bus.connect()
+    llm = OllamaLLM()
 
-    handler = make_handler(repo, qdrant)
+    handler = make_handler(repo, qdrant, bus, llm)
     task = asyncio.create_task(bus.consume_feedback(handler, durable="learner"))
     log.info("learner_started")
 

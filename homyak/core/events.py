@@ -32,7 +32,13 @@ SUBJECT_PROCESSED = "homyak.items.processed"
 SUBJECT_OUTPUT = "homyak.items.output"
 SUBJECT_FEEDBACK = "homyak.feedback.recorded"
 SUBJECT_TELEGRAM_RAW = "homyak.telegram.raw"  # сырые сообщения от tscrapper
-_SUBJECTS = ["homyak.items.*", "homyak.feedback.*", "homyak.telegram.*"]
+SUBJECT_PROFILE_SUGGESTION = "homyak.profile.suggestion"  # предложение правки профиля
+_SUBJECTS = [
+    "homyak.items.*",
+    "homyak.feedback.*",
+    "homyak.telegram.*",
+    "homyak.profile.*",
+]
 
 MAX_AGE_SECONDS = 14 * 24 * 3600  # 14 дней
 MAX_BYTES = 5 * 1024**3  # 5 GB
@@ -116,6 +122,9 @@ class NatsBus:
     async def publish_telegram_raw(self, payload: dict) -> None:
         await self.js.publish(SUBJECT_TELEGRAM_RAW, json.dumps(payload).encode())
 
+    async def publish_profile_suggestion(self, payload: dict) -> None:
+        await self.js.publish(SUBJECT_PROFILE_SUGGESTION, json.dumps(payload).encode())
+
     async def publish_feedback(
         self,
         news_item_id: int,
@@ -161,6 +170,15 @@ class NatsBus:
         **kw,
     ) -> None:
         await self._consume(SUBJECT_TELEGRAM_RAW, handler, durable=durable, **kw)
+
+    async def consume_profile_suggestion(
+        self,
+        handler: Callable[[dict], Awaitable[None]],
+        *,
+        durable: str = "profile-suggest",
+        **kw,
+    ) -> None:
+        await self._consume(SUBJECT_PROFILE_SUGGESTION, handler, durable=durable, **kw)
 
     async def _consume(
         self,

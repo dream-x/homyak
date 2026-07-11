@@ -388,6 +388,28 @@ class NewsRepo:
             ).all()
         return {r[0]: int(r[1]) for r in rows}
 
+    async def learnable_feedback_count(self) -> int:
+        c = await self.feedback_counts()
+        return c.get("up", 0) + c.get("down", 0) + c.get("save", 0)
+
+    async def recent_liked_disliked(
+        self, limit: int = 14
+    ) -> tuple[list[tuple[str, list]], list[tuple[str, list]]]:
+        """Недавние (title, tags) лайкнутых/сохранённых и дизлайкнутых — для рефайнмента профиля."""
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    select(Feedback.signal, NewsItem.title, NewsItem.tags)
+                    .join(NewsItem, NewsItem.id == Feedback.news_item_id)
+                    .where(Feedback.signal.in_(["up", "down", "save"]))
+                    .order_by(Feedback.created_at.desc())
+                    .limit(limit)
+                )
+            ).all()
+        liked = [(r[1] or "", list(r[2] or [])) for r in rows if r[0] in ("up", "save")]
+        disliked = [(r[1] or "", list(r[2] or [])) for r in rows if r[0] == "down"]
+        return liked, disliked
+
     async def get_item_meta(self, news_item_id: int):
         """(source_type, author, tags) для обучения — по item'у."""
         async with self._sf() as s:

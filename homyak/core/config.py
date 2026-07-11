@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     push_threshold: float = Field(default=0.55, alias="PUSH_THRESHOLD")  # cold-start: taste=0
     feedback_lr: float = Field(default=0.10, alias="FEEDBACK_LR")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
+    profile_refine_every: int = Field(default=10, alias="PROFILE_REFINE_EVERY")
     max_push_per_hour: int = Field(default=8, alias="MAX_PUSH_PER_HOUR")
     quiet_hours: str = Field(default="0-8", alias="QUIET_HOURS")  # локальные часы, "start-end"
 
