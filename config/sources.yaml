@@ -34,3 +34,24 @@ rss:
   - {name: fiercepharma,   url: "https://www.fiercepharma.com/rss/xml",                category: medical,  interval_seconds: 3600, weight: 0.9}
   - {name: nature_medicine, url: "https://www.nature.com/nm.rss",                      category: medical,  interval_seconds: 7200, weight: 1.0}
   - {name: kff_health,     url: "https://kffhealthnews.org/feed/",                     category: medical,  interval_seconds: 3600, weight: 0.7}
+
+  # --- business (доп.) ---
+  - {name: economist_fin,  url: "https://www.economist.com/finance-and-economics/rss.xml", category: business, interval_seconds: 3600, weight: 1.0}
+  - {name: bi_markets,     url: "https://markets.businessinsider.com/rss/news",        category: business, interval_seconds: 1200, weight: 0.7}
+  - {name: fortune,        url: "https://fortune.com/feed/",                           category: business, interval_seconds: 1800, weight: 0.7}
+  - {name: nyt_business,   url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", category: business, interval_seconds: 1200, weight: 0.8}
+  - {name: nyt_economy,    url: "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",  category: business, interval_seconds: 1800, weight: 0.8}
+  - {name: seekingalpha,   url: "https://seekingalpha.com/feed.xml",                   category: business, interval_seconds: 1800, weight: 0.7}
+  - {name: zerohedge,      url: "https://feeds.feedburner.com/zerohedge/feed",         category: business, interval_seconds: 1800, weight: 0.6}
+  - {name: wolfstreet,     url: "https://wolfstreet.com/feed/",                        category: business, interval_seconds: 3600, weight: 0.7}
+
+  # --- medical (доп.) ---
+  - {name: lancet,         url: "https://www.thelancet.com/rssfeed/lancet_current.xml", category: medical, interval_seconds: 7200, weight: 1.0}
+  - {name: who_news,       url: "https://www.who.int/rss-feeds/news-english.xml",      category: medical,  interval_seconds: 7200, weight: 0.8}
+  - {name: nature_biotech, url: "https://www.nature.com/nbt.rss",                      category: medical,  interval_seconds: 7200, weight: 0.9}
+  - {name: guardian_health, url: "https://www.theguardian.com/society/health/rss",    category: medical,  interval_seconds: 1800, weight: 0.7}
+
+  # --- it (доп.) ---
+  - {name: theregister,    url: "https://www.theregister.com/headlines.atom",          category: tech,     interval_seconds: 1200, weight: 0.8}
+  - {name: simonwillison,  url: "https://simonwillison.net/atom/everything/",          category: ai,       interval_seconds: 3600, weight: 0.9}
+  - {name: phoronix,       url: "https://www.phoronix.com/rss.php",                    category: tech,     interval_seconds: 1800, weight: 0.7}
