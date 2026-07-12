@@ -1,20 +1,33 @@
-# Стартовый профиль интересов. Отредактируй под себя и применяй: `uv run homyak-profile-set`.
-# polarity: love | like | meh | dislike | mute  (mute — жёсткий фильтр: тема не попадёт в ленту)
+# Профиль интересов. polarity: love | like | meh | dislike | mute (mute — жёсткий фильтр).
+# Языки — равноправно (Rust НЕ приоритетнее остальных).
 
 description: >
-  AI-агенты и агентные фреймворки, LLM и inference/self-hosting, ML-research (arXiv cs.CL/LG),
-  Rust и системное программирование, dev-tools и инди-стартапы, прикладной security.
-  Не интересно: крипта, политика, спорт, обзоры потребительских гаджетов.
+  Программирование в широком смысле и инженерная практика: Python, Go, Java, Rust, C++ —
+  без фаворитов, интересен любой из них. Системное и backend-программирование, распределённые
+  системы, базы данных, Kubernetes/DevOps, сети, производительность, dev-tools и инфраструктура.
+  AI/LLM: агенты, inference, локальный self-hosting, ML-research. Прикладной security.
+  Заходят разборы архитектуры, инженерные посты, новые инструменты и релизы.
+  НЕ интересно: крипта, политика, спорт, обзоры потребительских гаджетов, AI-хайп без сути.
 
 topics:
-  - {name: ai-agents,   polarity: love}
-  - {name: llm,         polarity: love}
-  - {name: ml-research, polarity: love}
-  - {name: ai,          polarity: like}
-  - {name: rust,        polarity: like}
-  - {name: systems,     polarity: like}
-  - {name: devtools,    polarity: like}
-  - {name: startups,    polarity: like}
-  - {name: security,    polarity: like}
-  - {name: crypto,      polarity: mute}
-  - {name: politics,    polarity: mute}
+  - {name: python,       polarity: love}
+  - {name: golang,       polarity: love}
+  - {name: java,         polarity: like}
+  - {name: rust,         polarity: like}
+  - {name: cpp,          polarity: like}
+  - {name: systems,      polarity: love}
+  - {name: backend,      polarity: love}
+  - {name: distributed-systems, polarity: like}
+  - {name: databases,    polarity: like}
+  - {name: kubernetes,   polarity: like}
+  - {name: devops,       polarity: like}
+  - {name: devtools,     polarity: love}
+  - {name: performance,  polarity: like}
+  - {name: security,     polarity: like}
+  - {name: ai,           polarity: like}
+  - {name: llm,          polarity: love}
+  - {name: ai-agents,    polarity: love}
+  - {name: ml-research,  polarity: like}
+  - {name: crypto,       polarity: mute}
+  - {name: politics,     polarity: mute}
+  - {name: sports,       polarity: mute}

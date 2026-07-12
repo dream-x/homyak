@@ -12,8 +12,20 @@ import structlog
 
 from homyak.core.config import RSSFeedConfig
 from homyak.core.interfaces import NewsItemDTO
+from homyak.core.textutils import strip_html
 
 log = structlog.get_logger(__name__)
+
+
+def _entry_text(e) -> str | None:
+    content = ""
+    if getattr(e, "content", None):
+        try:
+            content = e.content[0].get("value", "")
+        except Exception:
+            content = ""
+    raw = content or e.get("summary") or e.get("description") or ""
+    return strip_html(raw)
 
 _UA = "homyak/0.1 (+https://github.com/homyak)"
 
@@ -81,7 +93,7 @@ class RSSSource:
                 source_id=_source_id(e),
                 url=e.get("link"),
                 title=e.get("title"),
-                text=(e.get("summary") or e.get("description")),
+                text=_entry_text(e),
                 media=_media(e),
                 author=e.get("author") or self._cfg.name,
                 feed_name=self._cfg.name,

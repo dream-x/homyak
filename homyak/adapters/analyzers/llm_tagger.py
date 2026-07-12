@@ -11,22 +11,37 @@ log = structlog.get_logger(__name__)
 
 # словарь-затравка; свободные теги тоже разрешены
 VOCAB = [
+    # AI / ML
     "ai",
     "ai-agents",
     "llm",
     "ml-research",
-    "rust",
+    # языки и программирование
     "python",
+    "golang",
+    "java",
+    "rust",
+    "javascript",
+    "cpp",
+    # системщина / инфра / backend
     "systems",
+    "backend",
+    "distributed-systems",
+    "databases",
+    "kubernetes",
+    "devops",
+    "networking",
+    "performance",
     "security",
-    "web",
     "devtools",
-    "startups",
+    "web",
+    # прочее
     "hardware",
     "science",
+    "startups",
+    "business",
     "crypto",
     "politics",
-    "business",
 ]
 
 _SYSTEM = (

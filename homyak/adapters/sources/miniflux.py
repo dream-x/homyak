@@ -14,6 +14,7 @@ import structlog
 
 from homyak.core.config import MinifluxConfig
 from homyak.core.interfaces import NewsItemDTO
+from homyak.core.textutils import strip_html
 
 log = structlog.get_logger(__name__)
 
@@ -67,7 +68,7 @@ class MinifluxSource:
                 source_id=str(entry["id"]),
                 url=entry.get("url"),
                 title=entry.get("title"),
-                text=entry.get("content"),
+                text=strip_html(entry.get("content")),
                 author=entry.get("author") or feed.get("title"),
                 feed_name=feed.get("title") or "miniflux",
                 published_at=_parse_iso(entry.get("published_at")),
