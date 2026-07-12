@@ -13,11 +13,12 @@ from homyak.core.llm import OllamaLLM
 log = structlog.get_logger(__name__)
 
 _SYSTEM = (
-    "Ты — редактор персональной новостной ленты. Сделай сжатое, но информативное саммари новости "
-    "в 2-3 предложениях НА ЯЗЫКЕ ОРИГИНАЛА. Передай суть: что произошло, ключевые факты и цифры, "
-    "почему это важно. Строго по тексту — без домыслов, без вводных слов, без кавычек, без ссылок "
-    "и хэштегов. Не начинай со слов «В статье», «Автор», «Новость о», «Этот пост». "
-    "Верни только текст саммари."
+    "Summarize the article for quick scanning, ENTIRELY in the article's original language "
+    "(Russian article -> Russian summary, English -> English). "
+    "First, 1-2 lively sentences: what it is about and why it's worth the reader's time, "
+    "as if telling a colleague. Then, on new lines, 2-3 short takeaways, each starting with '• ', "
+    "stating concretely what the reader will learn or take away. "
+    "Strictly from the text, no speculation. No preamble, no quotes, no meta-commentary, no hashtags."
 )
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
