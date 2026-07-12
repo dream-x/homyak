@@ -105,10 +105,28 @@ def _kb(item_id: int, url: str | None) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="👎", callback_data=f"fb:down:{item_id}"),
         InlineKeyboardButton(text="⭐", callback_data=f"fb:save:{item_id}"),
     ]
-    row2 = [InlineKeyboardButton(text="🔇 mute", callback_data=f"fb:mute:{item_id}")]
+    row2 = [
+        InlineKeyboardButton(text="🔇", callback_data=f"fb:mute:{item_id}"),
+        InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}"),
+    ]
     if url:
-        row2.append(InlineKeyboardButton(text="🔗 open", url=url))
+        row2.append(InlineKeyboardButton(text="🔗", url=url))
     return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+
+
+def _chunks(s: str, n: int = 4000):
+    """Бьёт длинный текст на куски <= n, по возможности по переносу строки/пробелу."""
+    while s:
+        if len(s) <= n:
+            yield s
+            return
+        cut = s.rfind("\n", 0, n)
+        if cut < n // 2:
+            cut = s.rfind(" ", 0, n)
+        if cut < n // 2:
+            cut = n
+        yield s[:cut]
+        s = s[cut:].lstrip()
 
 
 def _in_quiet(hour: int, quiet: str) -> bool:
@@ -300,6 +318,23 @@ async def on_noop(cq: CallbackQuery) -> None:
     await cq.answer("уже учтено")
 
 
+@dp.callback_query(F.data.startswith("txt:"))
+async def on_text(cq: CallbackQuery) -> None:
+    try:
+        item_id = int(cq.data.split(":")[1])
+    except (ValueError, IndexError):
+        await cq.answer("bad")
+        return
+    item = await _repo.get_by_id(item_id)
+    if item is None or not item.text:
+        await cq.answer("Полного текста нет — только заголовок (жми 🔗)", show_alert=True)
+        return
+    await cq.answer()
+    full = f"📄 <b>{_esc(item.title or '')}</b>\n\n{_esc(item.text)}"
+    for chunk in _chunks(full, 4000):
+        await cq.message.answer(chunk)
+
+
 @dp.callback_query(F.data.startswith("fb:"))
 async def on_feedback(cq: CallbackQuery) -> None:
     try:
@@ -330,8 +365,10 @@ async def on_feedback(cq: CallbackQuery) -> None:
                 if b.url:
                     open_btn = b
     rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
+    tail = [InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}")]
     if open_btn is not None:
-        rows.append([open_btn])
+        tail.append(open_btn)
+    rows.append(tail)
     with suppress(Exception):
         await cq.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
