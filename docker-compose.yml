@@ -1,3 +1,19 @@
+# Полный стек Homyak под Podman (podman compose) / Docker Compose.
+# Ollama НЕ контейнеризуется — работает на хосте (Metal); контейнеры смотрят на host.containers.internal.
+# Инфра: postgres, qdrant, nats. App: migrate + ingest-poll, telegram-ingest, processor, learner,
+# sweeper, tgbot, api (один образ, разные команды).
+
+x-app: &app
+  build: .
+  env_file:
+    - .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://homyak:homyak@postgres:5432/homyak
+    NATS_URL: nats://nats:4222
+    QDRANT_URL: http://qdrant:6333
+    OLLAMA_URL: http://host.containers.internal:11434
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -13,7 +29,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U homyak"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 15
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -32,16 +48,58 @@ services:
     volumes:
       - nats_data:/data
 
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   # На Mac Ollama использует Metal; блок deploy.resources (nvidia) не нужен.
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ingest-poll:
+    <<: *app
+    command: ["homyak-ingest-poll"]
+    depends_on: &after_migrate
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+      qdrant:
+        condition: service_started
+
+  telegram-ingest:
+    <<: *app
+    command: ["homyak-telegram-ingest"]
+    depends_on: *after_migrate
+
+  processor:
+    <<: *app
+    command: ["homyak-processor"]
+    depends_on: *after_migrate
+
+  learner:
+    <<: *app
+    command: ["homyak-learner"]
+    depends_on: *after_migrate
+
+  sweeper:
+    <<: *app
+    command: ["homyak-sweeper"]
+    depends_on: *after_migrate
+
+  tgbot:
+    <<: *app
+    command: ["homyak-tgbot"]
+    depends_on: *after_migrate
+
+  api:
+    <<: *app
+    command: ["homyak-api"]
+    ports:
+      - "8000:8000"
+    depends_on: *after_migrate
 
 volumes:
   pgdata:
   qdrant_storage:
   nats_data:
-  # ollama_data:
