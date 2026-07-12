@@ -30,14 +30,19 @@ event-driven (NATS JetStream) архитектура. Флагманская ф�
 - Skill `homyak-run` — поднять инфру, запустить процессы, прогнать acceptance (+ fallback без docker).
 - Agent `homyak-reviewer` — архитектурный ревью диффа перед коммитом.
 
-## Окружение (на текущей машине)
-- `uv`, `python3.13`, `psql` (client 14) — есть.
-- **Docker нет, но есть Podman** (5.7.1, machine running; `podman compose` = Docker Compose v2). Qdrant поднят
-  через `podman compose up -d qdrant`.
-- **Postgres** — локальный `postgresql@14` через brew (роль/база `homyak` + `homyak_test`).
-- **NATS** — нативный `nats-server` (brew 2.14.3): `nats-server -js -sd <dir> -m 8222`.
-- **Ollama** — нативно (0.31.2), модели `bge-m3` (1024-dim) и `qwen2.5:14b` скачаны.
-- Порядок запуска инфры для разработки — см. skill `homyak-run` / `scripts/verify-phase-*.sh`.
+## Окружение и запуск (Podman)
+Весь стек — в **Podman** (`podman compose`, machine running). Одна команда:
+```
+podman compose up -d      # postgres, qdrant, nats + migrate + 7 app-сервисов
+podman compose ps         # статус ; podman logs homyak-<service>-1 — логи
+podman compose down       # стоп (volumes сохраняются)
+```
+- **Ollama — на хосте** (нативно, Metal): контейнеры смотрят на `host.containers.internal:11434`.
+  Модели `bge-m3` (эмбеддинги), `qwen2.5:14b` (судья/теги), `qwen3:32b` (саммари).
+- Postgres/Qdrant/NATS — контейнеры (volumes `homyak_pgdata`/`homyak_qdrant_storage`/`homyak_nats_data`).
+  Postgres на host:5432 (пароль homyak), `homyak` + `homyak_test`. Образ — один на все сервисы (Dockerfile).
+- **tscrapper** — на хосте (свой Telegram-session), публикует в NATS `homyak.telegram.raw` (порт 4222 проброшен).
+- Тесты: `uv run pytest` с хоста против контейнерного postgres (нужна БД `homyak_test`).
 
 ## Состояние (2026-07-12)
 Реализованы Phase 1-4 + Phase 6.0/6.1/6.2. Пайплайн (8 стадий): url_dedup → embedder → similarity_dedup
