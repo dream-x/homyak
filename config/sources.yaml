@@ -18,3 +18,19 @@ rss:
   - {name: techcrunch,     url: "https://techcrunch.com/feed/",                  category: tech,        interval_seconds: 900,  weight: 0.7}
   - {name: the_verge,      url: "https://www.theverge.com/rss/index.xml",        category: tech,        interval_seconds: 900,  weight: 0.7}
   - {name: ars,            url: "https://feeds.arstechnica.com/arstechnica/index", category: tech,      interval_seconds: 1800, weight: 0.8}
+
+  # --- business / рынки / экономика (вертикаль определяет теггер) ---
+  - {name: wsj_markets,    url: "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",       category: business, interval_seconds: 900,  weight: 0.9}
+  - {name: wsj_business,   url: "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",      category: business, interval_seconds: 1200, weight: 0.9}
+  - {name: marketwatch,    url: "http://feeds.marketwatch.com/marketwatch/topstories/", category: business, interval_seconds: 900,  weight: 0.8}
+  - {name: guardian_biz,   url: "https://www.theguardian.com/business/rss",            category: business, interval_seconds: 1200, weight: 0.7}
+  - {name: investing_com,  url: "https://www.investing.com/rss/news.rss",              category: business, interval_seconds: 1200, weight: 0.7}
+
+  # --- medical / здравоохранение / биотех / фарма ---
+  - {name: statnews,       url: "https://www.statnews.com/feed/",                      category: medical,  interval_seconds: 1800, weight: 0.9}
+  - {name: sciencedaily_health, url: "https://www.sciencedaily.com/rss/health_medicine.xml", category: medical, interval_seconds: 3600, weight: 0.8}
+  - {name: medpage,        url: "https://www.medpagetoday.com/rss/headlines.xml",      category: medical,  interval_seconds: 1800, weight: 0.8}
+  - {name: fiercebiotech,  url: "https://www.fiercebiotech.com/rss/xml",               category: medical,  interval_seconds: 3600, weight: 0.9}
+  - {name: fiercepharma,   url: "https://www.fiercepharma.com/rss/xml",                category: medical,  interval_seconds: 3600, weight: 0.9}
+  - {name: nature_medicine, url: "https://www.nature.com/nm.rss",                      category: medical,  interval_seconds: 7200, weight: 1.0}
+  - {name: kff_health,     url: "https://kffhealthnews.org/feed/",                     category: medical,  interval_seconds: 3600, weight: 0.7}

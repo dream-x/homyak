@@ -12,6 +12,8 @@ x-app: &app
     NATS_URL: nats://nats:4222
     QDRANT_URL: http://qdrant:6333
     OLLAMA_URL: http://host.containers.internal:11434
+  volumes:
+    - ./config:/app/config:ro  # источники/профили — живьём, без пересборки
   restart: unless-stopped
 
 services:
