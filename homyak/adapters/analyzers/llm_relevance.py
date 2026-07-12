@@ -30,9 +30,12 @@ class LlmRelevanceAnalyzer:
         self._llm = llm or OllamaLLM()
 
     async def analyze(self, ctx: AnalyzerContext) -> None:
-        profile = await self._repo.get_active_profile()
+        vertical = ctx.vertical or ctx.item.vertical
+        if not vertical:
+            return  # статья вне вертикалей (other) — судью пропускаем
+        profile = await self._repo.get_active_profile(vertical)
         if profile is None:
-            return  # нет профиля — судью пропускаем
+            return  # нет профиля для вертикали
         version, description, topics = profile
         item = ctx.item
 

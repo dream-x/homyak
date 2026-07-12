@@ -1,0 +1,19 @@
+vertical: business
+description: >
+  Рынки и экономика для трейдера и предпринимателя: макро, ставки ЦБ, инфляция, фондовый рынок,
+  сырьё и валюты, настроение рынка (risk-on/risk-off), крупные сделки M&A, отчётности компаний,
+  венчур и стартап-экономика, регуляции, геоэкономика — «куда катится мир» и что двигает деньги.
+  Не интересно: спорт, светская хроника, сугубо технические IT-детали без бизнес-эффекта.
+
+topics:
+  - {name: markets,     polarity: love}
+  - {name: macro,       polarity: love}
+  - {name: economy,     polarity: love}
+  - {name: finance,     polarity: love}
+  - {name: stocks,      polarity: like}
+  - {name: crypto,      polarity: like}
+  - {name: startups,    polarity: like}
+  - {name: venture,     polarity: like}
+  - {name: earnings,    polarity: like}
+  - {name: geopolitics, polarity: like}
+  - {name: sports,      polarity: mute}

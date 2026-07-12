@@ -1,0 +1,20 @@
+vertical: medical
+description: >
+  Медицина и здравоохранение для специалиста: клинические исследования, новые препараты и терапии,
+  биотех и фарма, медтех и устройства, ИИ в медицине, эпидемиология и общественное здоровье,
+  геномика, нейронауки, онкология, регуляции (FDA/EMA), прорывы в диагностике и лечении.
+  Что реально происходит в мире медицины и куда движется отрасль.
+  Не интересно: реклама БАДов, поп-биохакинг без доказательной базы, спорт.
+
+topics:
+  - {name: clinical-research, polarity: love}
+  - {name: pharma,            polarity: love}
+  - {name: biotech,           polarity: love}
+  - {name: medtech,           polarity: like}
+  - {name: ai-in-medicine,    polarity: like}
+  - {name: genomics,          polarity: like}
+  - {name: public-health,     polarity: like}
+  - {name: neuroscience,      polarity: like}
+  - {name: oncology,          polarity: like}
+  - {name: regulation,        polarity: like}
+  - {name: sports,            polarity: mute}

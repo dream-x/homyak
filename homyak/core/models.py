@@ -47,6 +47,7 @@ class NewsItem(Base):
     )
     author: Mapped[str | None] = mapped_column(String(255))
     feed_name: Mapped[str | None] = mapped_column(String(64))
+    vertical: Mapped[str | None] = mapped_column(String(16))  # business/it/medical/None
     raw_score: Mapped[float | None] = mapped_column(Float)
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default=sa_text("'{}'::text[]")
@@ -92,6 +93,7 @@ class NewsItem(Base):
         Index("idx_news_cluster", "cluster_id"),
         Index("idx_news_fts", "search_tsv", postgresql_using="gin"),
         Index("idx_news_feed", "feed_name", postgresql_where=sa_text("feed_name IS NOT NULL")),
+        Index("idx_news_vertical", "vertical", postgresql_where=sa_text("vertical IS NOT NULL")),
         Index(
             "idx_news_url_normalized",
             "url_normalized",
@@ -142,6 +144,7 @@ class Profile(Base):
     __tablename__ = "profile"
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
+    vertical: Mapped[str] = mapped_column(String(16), nullable=False, server_default="it")
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     topics: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
@@ -151,13 +154,19 @@ class Profile(Base):
     )
 
     __table_args__ = (
-        Index("idx_profile_active", "active", unique=True, postgresql_where=sa_text("active")),
+        Index(
+            "idx_profile_active_vertical",
+            "vertical",
+            unique=True,
+            postgresql_where=sa_text("active"),
+        ),
     )
 
 
 class TagAffinity(Base):
     __tablename__ = "tag_affinity"
 
+    vertical: Mapped[str] = mapped_column(String(16), primary_key=True, server_default="it")
     tag: Mapped[str] = mapped_column(Text, primary_key=True)
     weight: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
     n_pos: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -170,6 +179,7 @@ class TagAffinity(Base):
 class SourceAffinity(Base):
     __tablename__ = "source_affinity"
 
+    vertical: Mapped[str] = mapped_column(String(16), primary_key=True, server_default="it")
     source_type: Mapped[str] = mapped_column(Text, primary_key=True)
     author: Mapped[str] = mapped_column(Text, primary_key=True, server_default="")
     weight: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
@@ -203,7 +213,7 @@ class Feedback(Base):
 class TasteState(Base):
     __tablename__ = "taste_state"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, server_default="1")
+    vertical: Mapped[str] = mapped_column(String(16), primary_key=True)
     n_liked: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

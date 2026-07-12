@@ -41,10 +41,15 @@ class PersonalizerAnalyzer:
 
     async def analyze(self, ctx: AnalyzerContext) -> None:
         item = ctx.item
+        vertical = ctx.vertical or item.vertical
+        if not vertical:  # вне вертикалей → не в персональной ленте
+            ctx.personal_score = None
+            item.personal_score = None
+            return
         tags = ctx.tags or list(item.tags or [])
 
-        # hard-mute: если тег в замьюченных темах профиля — вон из персональной ленты
-        profile = await self._repo.get_active_profile()
+        # hard-mute: если тег в замьюченных темах профиля вертикали — вон из ленты
+        profile = await self._repo.get_active_profile(vertical)
         if profile is not None:
             muted = {t["name"] for t in profile[2] if t.get("polarity") == "mute"}
             if muted and any(t in muted for t in tags):
@@ -52,15 +57,15 @@ class PersonalizerAnalyzer:
                 item.personal_score = None
                 return
 
-        tag_affs = await self._repo.get_tag_affinities(tags)
+        tag_affs = await self._repo.get_tag_affinities(vertical, tags)
         tag_aff = sum(tag_affs.values()) / len(tag_affs) if tag_affs else 0.0
         source_key = item.feed_name or item.author  # affinity на уровне фида/канала
-        source_aff = await self._repo.get_source_affinity(item.source_type, source_key)
+        source_aff = await self._repo.get_source_affinity(vertical, item.source_type, source_key)
 
-        n_liked = await self._repo.get_taste_n_liked()
+        n_liked = await self._repo.get_taste_n_liked(vertical)
         taste_cos = 0.0
         if n_liked > 0 and ctx.embedding:
-            taste = await self._q.get_taste()
+            taste = await self._q.get_taste(vertical)
             taste_cos = cosine(ctx.embedding, taste)
 
         llm_rel = ctx.llm_relevance if ctx.llm_relevance is not None else item.llm_relevance

@@ -37,10 +37,16 @@ class QdrantStore:
             )
             log.info("qdrant_collection_created", collection=self.TASTE_COLLECTION)
 
-    async def get_taste(self) -> list[float] | None:
+    # у каждой вертикали свой вектор вкуса (своя точка в коллекции taste)
+    _TASTE_ID = {"business": 1, "it": 2, "medical": 3}
+
+    async def get_taste(self, vertical: str) -> list[float] | None:
+        pid = self._TASTE_ID.get(vertical)
+        if pid is None:
+            return None
         try:
             pts = await self._client.retrieve(
-                self.TASTE_COLLECTION, ids=[1], with_vectors=True
+                self.TASTE_COLLECTION, ids=[pid], with_vectors=True
             )
         except Exception:
             return None
@@ -48,10 +54,13 @@ class QdrantStore:
             return None
         return list(pts[0].vector)
 
-    async def set_taste(self, vector: list[float]) -> None:
+    async def set_taste(self, vertical: str, vector: list[float]) -> None:
+        pid = self._TASTE_ID.get(vertical)
+        if pid is None:
+            return
         await self._client.upsert(
             self.TASTE_COLLECTION,
-            points=[models.PointStruct(id=1, vector=vector, payload={})],
+            points=[models.PointStruct(id=pid, vector=vector, payload={"vertical": vertical})],
         )
 
     async def get_vector(self, news_item_id: int) -> list[float] | None:

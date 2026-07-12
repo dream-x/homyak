@@ -35,10 +35,10 @@ _REFINE_SYSTEM = (
 )
 
 
-async def maybe_refine(repo: NewsRepo, bus: NatsBus, llm: OllamaLLM) -> None:
-    prof = await repo.get_active_profile()
+async def maybe_refine(repo: NewsRepo, bus: NatsBus, llm: OllamaLLM, vertical: str) -> None:
+    prof = await repo.get_active_profile(vertical)
     desc = prof[1] if prof else ""
-    liked, disliked = await repo.recent_liked_disliked(14)
+    liked, disliked = await repo.recent_liked_disliked(vertical, 14)
     if not liked and not disliked:
         return
 
@@ -46,22 +46,22 @@ async def maybe_refine(repo: NewsRepo, bus: NatsBus, llm: OllamaLLM) -> None:
         return "; ".join(f"{t} [{','.join(tags)}]" for t, tags in items if t) or "—"
 
     user = (
-        f"Текущий профиль: «{desc}»\n\n"
+        f"Вертикаль: {vertical}\nТекущий профиль: «{desc}»\n\n"
         f"Лайкал: {fmt(liked)}\n\nДизлайкал: {fmt(disliked)}\n\n"
-        "Предложи уточнённый профиль (description) и 6-12 тем с polarity."
+        "Предложи уточнённый профиль (description) и 6-12 тем с polarity в рамках этой вертикали."
     )
     try:
         data = await llm.chat_json(_REFINE_SYSTEM, user)
     except Exception as e:
-        log.warning("refine_failed", error=str(e))
+        log.warning("refine_failed", vertical=vertical, error=str(e))
         return
     if not isinstance(data, dict) or not data.get("description"):
         return
     topics = data.get("topics") if isinstance(data.get("topics"), list) else []
-    payload = {"description": str(data["description"]).strip(), "topics": topics}
-    await repo.save_cursor("profile:pending", json.dumps(payload, ensure_ascii=False))
+    payload = {"vertical": vertical, "description": str(data["description"]).strip(), "topics": topics}
+    await repo.save_cursor(f"profile:pending:{vertical}", json.dumps(payload, ensure_ascii=False))
     await bus.publish_profile_suggestion(payload)
-    log.info("profile_suggestion_published", topics=len(topics))
+    log.info("profile_suggestion_published", vertical=vertical, topics=len(topics))
 
 
 def make_handler(repo: NewsRepo, qdrant: QdrantStore, bus: NatsBus, llm: OllamaLLM):
@@ -71,10 +71,17 @@ def make_handler(repo: NewsRepo, qdrant: QdrantStore, bus: NatsBus, llm: OllamaL
         action = data.get("action", "added")
         lr = settings.feedback_lr
 
+        meta = await repo.get_item_meta(item_id)
+        if meta is None:
+            return
+        source_type, source_key, tags, vertical = meta
+        if not vertical:  # статья вне вертикалей — обучать нечего
+            return
+
         if sig == "mute_topic":
             if action == "added" and data.get("topic"):
-                version = await repo.mute_topic(data["topic"])
-                log.info("muted_topic", topic=data["topic"], profile_version=version)
+                version = await repo.mute_topic(vertical, data["topic"])
+                log.info("muted_topic", vertical=vertical, topic=data["topic"], profile_version=version)
             return
 
         base = _SIGN.get(sig)
@@ -82,35 +89,30 @@ def make_handler(repo: NewsRepo, qdrant: QdrantStore, bus: NatsBus, llm: OllamaL
             return  # open/skip — Phase 6.5
         direction = base if action == "added" else -base
 
-        meta = await repo.get_item_meta(item_id)
-        if meta is None:
-            return
-        source_type, author, tags = meta
+        await repo.bump_tag_affinity(vertical, tags, direction, lr)
+        await repo.bump_source_affinity(vertical, source_type, source_key, direction, lr)
 
-        await repo.bump_tag_affinity(tags, direction, lr)
-        await repo.bump_source_affinity(source_type, author, direction, lr)
-
-        # taste-центроид = среднее лайкнутых; трогаем только на up/save
+        # taste-центроид вертикали = среднее лайкнутых; трогаем только на up/save
         if base > 0:
             vec = await qdrant.get_vector(item_id)
             if vec:
-                centroid = await qdrant.get_taste()
-                n = await repo.get_taste_n_liked()
+                centroid = await qdrant.get_taste(vertical)
+                n = await repo.get_taste_n_liked(vertical)
                 if action == "added":
                     new_c, new_n = centroid_add(centroid, n, vec)
                 else:
                     new_c, new_n = centroid_remove(centroid, n, vec)
                 if new_c is not None:
-                    await qdrant.set_taste(new_c)
-                await repo.set_taste_state(new_n)
+                    await qdrant.set_taste(vertical, new_c)
+                await repo.set_taste_state(vertical, new_n)
 
-        log.info("learned", item=item_id, signal=sig, action=action, direction=direction)
+        log.info("learned", item=item_id, vertical=vertical, signal=sig, action=action)
 
-        # каждые N фидбеков — предложить уточнение профиля
+        # каждые N фидбеков в вертикали — предложить уточнение её профиля
         if action == "added":
-            count = await repo.learnable_feedback_count()
+            count = await repo.learnable_feedback_count(vertical)
             if count > 0 and count % settings.profile_refine_every == 0:
-                await maybe_refine(repo, bus, llm)
+                await maybe_refine(repo, bus, llm, vertical)
 
     return handle
 

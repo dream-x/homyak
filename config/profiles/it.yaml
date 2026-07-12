@@ -1,0 +1,30 @@
+vertical: it
+description: >
+  Программирование в широком смысле и инженерная практика: Python, Go, Java, Rust, C++ —
+  без фаворитов. Системное и backend-программирование, распределённые системы, базы данных,
+  Kubernetes/DevOps, сети, производительность, dev-tools и инфраструктура. AI/LLM: агенты,
+  inference, локальный self-hosting, ML-research. Прикладной security. Заходят разборы
+  архитектуры, инженерные посты, новые инструменты и релизы.
+  Не интересно: крипта как спекуляция, политика, спорт, обзоры гаджетов, AI-хайп без сути.
+
+topics:
+  - {name: python,       polarity: love}
+  - {name: golang,       polarity: love}
+  - {name: java,         polarity: like}
+  - {name: rust,         polarity: like}
+  - {name: cpp,          polarity: like}
+  - {name: systems,      polarity: love}
+  - {name: backend,      polarity: love}
+  - {name: distributed-systems, polarity: like}
+  - {name: databases,    polarity: like}
+  - {name: kubernetes,   polarity: like}
+  - {name: devops,       polarity: like}
+  - {name: devtools,     polarity: love}
+  - {name: performance,  polarity: like}
+  - {name: security,     polarity: like}
+  - {name: ai,           polarity: like}
+  - {name: llm,          polarity: love}
+  - {name: ai-agents,    polarity: love}
+  - {name: ml-research,  polarity: like}
+  - {name: politics,     polarity: mute}
+  - {name: sports,       polarity: mute}

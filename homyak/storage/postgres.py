@@ -194,12 +194,12 @@ class NewsRepo:
 
     # --- Phase 6: профиль и аффинити ---
 
-    async def get_active_profile(self) -> tuple[int, str, list] | None:
+    async def get_active_profile(self, vertical: str) -> tuple[int, str, list] | None:
         async with self._sf() as s:
             row = (
                 await s.execute(
                     select(Profile.version, Profile.description, Profile.topics).where(
-                        Profile.active
+                        Profile.active, Profile.vertical == vertical
                     )
                 )
             ).first()
@@ -207,56 +207,79 @@ class NewsRepo:
             return None
         return int(row[0]), row[1], list(row[2] or [])
 
-    async def set_profile(self, description: str, topics: list[dict]) -> int:
-        """Новая версия профиля (деактивирует прежнюю) + seed tag_affinity из тем (cold-start)."""
+    async def set_profile(self, vertical: str, description: str, topics: list[dict]) -> int:
+        """Новая версия профиля вертикали (+ seed tag_affinity этой вертикали из тем)."""
         async with self._sf() as s:
-            cur = await s.scalar(select(func.max(Profile.version)))
+            cur = await s.scalar(
+                select(func.max(Profile.version)).where(Profile.vertical == vertical)
+            )
             version = (cur or 0) + 1
-            await s.execute(update(Profile).where(Profile.active).values(active=False))
-            s.add(Profile(version=version, description=description, topics=topics, active=True))
+            await s.execute(
+                update(Profile)
+                .where(Profile.active, Profile.vertical == vertical)
+                .values(active=False)
+            )
+            s.add(
+                Profile(
+                    vertical=vertical,
+                    version=version,
+                    description=description,
+                    topics=topics,
+                    active=True,
+                )
+            )
             for t in topics:
                 name = t.get("name")
                 if not name:
                     continue
                 weight = _POLARITY_WEIGHT.get(t.get("polarity", "like"), 0.0)
-                stmt = pg_insert(TagAffinity).values(tag=name, weight=weight)
-                stmt = stmt.on_conflict_do_update(index_elements=["tag"], set_={"weight": weight})
+                stmt = pg_insert(TagAffinity).values(vertical=vertical, tag=name, weight=weight)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["vertical", "tag"], set_={"weight": weight}
+                )
                 await s.execute(stmt)
             await s.commit()
         return version
 
-    async def get_tag_affinities(self, tags: list[str]) -> dict[str, float]:
+    async def get_tag_affinities(self, vertical: str, tags: list[str]) -> dict[str, float]:
         if not tags:
             return {}
         async with self._sf() as s:
             rows = (
                 await s.execute(
                     select(TagAffinity.tag, TagAffinity.weight).where(
-                        TagAffinity.tag.in_(list(tags))
+                        TagAffinity.vertical == vertical, TagAffinity.tag.in_(list(tags))
                     )
                 )
             ).all()
         return {r[0]: float(r[1]) for r in rows}
 
-    async def get_source_affinity(self, source_type: str, author: str | None) -> float:
+    async def get_source_affinity(
+        self, vertical: str, source_type: str, author: str | None
+    ) -> float:
         async with self._sf() as s:
             w = await s.scalar(
                 select(SourceAffinity.weight).where(
+                    SourceAffinity.vertical == vertical,
                     SourceAffinity.source_type == source_type,
                     SourceAffinity.author == (author or ""),
                 )
             )
         return float(w) if w is not None else 0.0
 
-    async def get_taste_n_liked(self) -> int:
+    async def get_taste_n_liked(self, vertical: str) -> int:
         async with self._sf() as s:
-            n = await s.scalar(select(TasteState.n_liked).where(TasteState.id == 1))
+            n = await s.scalar(
+                select(TasteState.n_liked).where(TasteState.vertical == vertical)
+            )
         return int(n) if n is not None else 0
 
-    async def set_taste_state(self, n_liked: int) -> None:
-        stmt = pg_insert(TasteState).values(id=1, n_liked=n_liked, updated_at=func.now())
+    async def set_taste_state(self, vertical: str, n_liked: int) -> None:
+        stmt = pg_insert(TasteState).values(
+            vertical=vertical, n_liked=n_liked, updated_at=func.now()
+        )
         stmt = stmt.on_conflict_do_update(
-            index_elements=["id"], set_={"n_liked": n_liked, "updated_at": func.now()}
+            index_elements=["vertical"], set_={"n_liked": n_liked, "updated_at": func.now()}
         )
         async with self._sf() as s:
             await s.execute(stmt)
@@ -287,15 +310,18 @@ class NewsRepo:
             await s.commit()
             return "added"
 
-    async def bump_tag_affinity(self, tags: list[str], direction: int, lr: float) -> None:
+    async def bump_tag_affinity(
+        self, vertical: str, tags: list[str], direction: int, lr: float
+    ) -> None:
         if not tags:
             return
         async with self._sf() as s:
             for tag in tags:
-                row = await s.get(TagAffinity, tag)
+                row = await s.get(TagAffinity, (vertical, tag))
                 if row is None:
                     s.add(
                         TagAffinity(
+                            vertical=vertical,
                             tag=tag,
                             weight=clip(lr * direction),
                             n_pos=1 if direction > 0 else 0,
@@ -311,14 +337,15 @@ class NewsRepo:
             await s.commit()
 
     async def bump_source_affinity(
-        self, source_type: str, author: str | None, direction: int, lr: float
+        self, vertical: str, source_type: str, author: str | None, direction: int, lr: float
     ) -> None:
-        key = (source_type, author or "")
+        key = (vertical, source_type, author or "")
         async with self._sf() as s:
             row = await s.get(SourceAffinity, key)
             if row is None:
                 s.add(
                     SourceAffinity(
+                        vertical=vertical,
                         source_type=source_type,
                         author=author or "",
                         weight=clip(lr * direction),
@@ -334,18 +361,19 @@ class NewsRepo:
                     row.n_neg += 1
             await s.commit()
 
-    async def mute_topic(self, topic: str) -> int:
-        """Добавить тему в mute активного профиля → новая версия профиля."""
-        prof = await self.get_active_profile()
+    async def mute_topic(self, vertical: str, topic: str) -> int:
+        """Добавить тему в mute активного профиля вертикали → новая версия профиля."""
+        prof = await self.get_active_profile(vertical)
         if prof is None:
             return await self.set_profile(
+                vertical,
                 f"Интересы (авто). Не интересно: {topic}.",
                 [{"name": topic, "polarity": "mute"}],
             )
         _version, desc, topics = prof
         topics = [t for t in topics if t.get("name") != topic]
         topics.append({"name": topic, "polarity": "mute"})
-        return await self.set_profile(desc, topics)
+        return await self.set_profile(vertical, desc, topics)
 
     async def set_item_text(self, news_item_id: int, text: str) -> None:
         async with self._sf() as s:
@@ -398,20 +426,32 @@ class NewsRepo:
             ).all()
         return {r[0]: int(r[1]) for r in rows}
 
-    async def learnable_feedback_count(self) -> int:
-        c = await self.feedback_counts()
-        return c.get("up", 0) + c.get("down", 0) + c.get("save", 0)
+    async def learnable_feedback_count(self, vertical: str) -> int:
+        async with self._sf() as s:
+            n = await s.scalar(
+                select(func.count())
+                .select_from(Feedback)
+                .join(NewsItem, NewsItem.id == Feedback.news_item_id)
+                .where(
+                    NewsItem.vertical == vertical,
+                    Feedback.signal.in_(["up", "down", "save"]),
+                )
+            )
+        return int(n or 0)
 
     async def recent_liked_disliked(
-        self, limit: int = 14
+        self, vertical: str, limit: int = 14
     ) -> tuple[list[tuple[str, list]], list[tuple[str, list]]]:
-        """Недавние (title, tags) лайкнутых/сохранённых и дизлайкнутых — для рефайнмента профиля."""
+        """Недавние (title, tags) лайкнутых/дизлайкнутых В ВЕРТИКАЛИ — для рефайнмента профиля."""
         async with self._sf() as s:
             rows = (
                 await s.execute(
                     select(Feedback.signal, NewsItem.title, NewsItem.tags)
                     .join(NewsItem, NewsItem.id == Feedback.news_item_id)
-                    .where(Feedback.signal.in_(["up", "down", "save"]))
+                    .where(
+                        NewsItem.vertical == vertical,
+                        Feedback.signal.in_(["up", "down", "save"]),
+                    )
                     .order_by(Feedback.created_at.desc())
                     .limit(limit)
                 )
@@ -421,7 +461,7 @@ class NewsRepo:
         return liked, disliked
 
     async def get_item_meta(self, news_item_id: int):
-        """(source_type, source_key, tags) для обучения. source_key = feed_name или author."""
+        """(source_type, source_key, tags, vertical). source_key = feed_name или author."""
         async with self._sf() as s:
             row = (
                 await s.execute(
@@ -430,13 +470,14 @@ class NewsRepo:
                         NewsItem.author,
                         NewsItem.feed_name,
                         NewsItem.tags,
+                        NewsItem.vertical,
                     ).where(NewsItem.id == news_item_id)
                 )
             ).first()
         if row is None:
             return None
         source_key = row[2] or row[1]  # feed_name предпочтительнее author
-        return row[0], source_key, list(row[3] or [])
+        return row[0], source_key, list(row[3] or []), row[4]
 
     async def feed_source_counts(self, limit: int = 30) -> list[tuple[str, int]]:
         """(feed_name, count) обработанных items — для /sources."""
@@ -460,6 +501,8 @@ class NewsRepo:
             conditions.append(NewsItem.source_type.in_(query.source_types))
         if query.feed_name:
             conditions.append(NewsItem.feed_name == query.feed_name)
+        if query.vertical:
+            conditions.append(NewsItem.vertical == query.vertical)
         if query.since:
             conditions.append(NewsItem.published_at >= query.since)
         if query.min_score is not None:

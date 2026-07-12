@@ -36,6 +36,7 @@ from homyak.core.events import SUBJECT_PROCESSED, NatsBus
 from homyak.core.interfaces import FeedQuery
 from homyak.core.scoring import freshness, weights_from_settings
 from homyak.core.textutils import strip_html
+from homyak.core.verticals import LABELS, VERTICALS
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
 
@@ -50,16 +51,18 @@ _bus: NatsBus | None = None
 _bot: Bot | None = None
 dp = Dispatcher()
 
-# Кнопки постоянной клавиатуры (текст = то, что присылается ботом)
-BTN_DIGEST = "📰 Дайджест"
-BTN_PROFILE = "👤 Профиль"
+# Кнопки постоянной клавиатуры — 3 вертикали + сервис
+BTN_BIZ = "💼 Business"
+BTN_IT = "💻 IT"
+BTN_MED = "🩺 Medical"
+BTN_PROFILE = "👤 Профили"
 BTN_STATS = "📊 Статистика"
-BTN_PAUSE = "⏸ Пауза 8ч"
+_BTN_VERTICAL = {BTN_BIZ: "business", BTN_IT: "it", BTN_MED: "medical"}
 
 MAIN_KB = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text=BTN_DIGEST), KeyboardButton(text=BTN_PROFILE)],
-        [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_PAUSE)],
+        [KeyboardButton(text=BTN_BIZ), KeyboardButton(text=BTN_IT), KeyboardButton(text=BTN_MED)],
+        [KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
     ],
     resize_keyboard=True,
     is_persistent=True,
@@ -67,16 +70,17 @@ MAIN_KB = ReplyKeyboardMarkup(
 
 # Меню команд (кнопка «/» в клиенте Telegram)
 BOT_COMMANDS = [
-    BotCommand(command="digest", description="📰 Топ персональных новостей"),
-    BotCommand(command="profile", description="👤 Мой профиль интересов"),
+    BotCommand(command="business", description="💼 Лента: бизнес/рынки"),
+    BotCommand(command="it", description="💻 Лента: технологии/IT"),
+    BotCommand(command="medical", description="🩺 Лента: медицина"),
+    BotCommand(command="digest", description="📰 Топ по всем вертикалям"),
+    BotCommand(command="profile", description="👤 Мои профили (3 вертикали)"),
     BotCommand(command="stats", description="📊 Статистика обучения"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
     BotCommand(command="sources", description="📡 Источники в ленте"),
-    BotCommand(command="source", description="📡 Лента одного фида: /source hn"),
     BotCommand(command="mute", description="🔇 Замьютить тему: /mute <тема>"),
     BotCommand(command="threshold", description="🎚 Порог пуша: /threshold <0..1>"),
     BotCommand(command="pause", description="⏸ Пауза пушей: /pause [часы]"),
-    BotCommand(command="menu", description="⌨️ Показать клавиатуру"),
     BotCommand(command="start", description="🚀 Запустить/перезапустить"),
 ]
 
@@ -91,7 +95,8 @@ def _esc(s: str | None) -> str:
 def _fmt(item) -> str:
     pct = int(round((item.personal_score or 0) * 100))
     tags = ", ".join((item.tags or [])[:3])
-    head = f"🎯 <b>{pct}%</b>" + (f" · {_esc(tags)}" if tags else "")
+    vlabel = LABELS.get(item.vertical, "")
+    head = f"{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>" + (f" · {_esc(tags)}" if tags else "")
     body = f"<b>{_esc(item.title or '(без заголовка)')}</b>"
     if item.summary:
         body += f"\n{_esc(item.summary)}"
@@ -149,8 +154,8 @@ def _in_quiet(hour: int, quiet: str) -> bool:
 async def cmd_start(m: Message) -> None:
     await _repo.save_cursor(CHAT_KEY, str(m.chat.id))
     await m.answer(
-        "Homyak на связи 🐹\nБуду слать персональные новости с кнопками 👍/👎/⭐/🔇 — так я учусь.\n\n"
-        "Жми кнопки внизу или через меню «/».",
+        "Homyak на связи 🐹\nТри тематические ленты — 💼 Business, 💻 IT, 🩺 Medical — каждая учится "
+        "отдельно на твоих 👍/👎.\n\nЖми кнопки внизу или команды /business /it /medical.",
         reply_markup=MAIN_KB,
     )
 
@@ -176,19 +181,47 @@ async def cmd_digest(m: Message, command: CommandObject) -> None:
     await _send_digest(m, n)
 
 
+async def _send_vertical(m: Message, vertical: str, n: int = 8) -> None:
+    result = await _repo.feed(FeedQuery(sort="personal", vertical=vertical, limit=n))
+    if not result.items:
+        await m.answer(f"{LABELS[vertical]}: пока пусто — копится.")
+        return
+    await m.answer(f"{LABELS[vertical]} — топ под твой профиль:")
+    for it in result.items:
+        await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
+        await _repo.mark_pushed(it.id)
+
+
+@dp.message(Command("business"))
+async def cmd_business(m: Message) -> None:
+    await _send_vertical(m, "business")
+
+
+@dp.message(Command("it"))
+async def cmd_it(m: Message) -> None:
+    await _send_vertical(m, "it")
+
+
+@dp.message(Command("medical"))
+async def cmd_medical(m: Message) -> None:
+    await _send_vertical(m, "medical")
+
+
 @dp.message(Command("profile"))
 async def cmd_profile(m: Message) -> None:
-    prof = await _repo.get_active_profile()
-    if prof is None:
-        await m.answer("Профиль не задан. Настрой config/profile.yaml и `uv run homyak-profile-set`.")
-        return
-    v, desc, topics = prof
-    loves = [t["name"] for t in topics if t.get("polarity") in ("love", "like")]
-    mutes = [t["name"] for t in topics if t.get("polarity") == "mute"]
-    await m.answer(
-        f"<b>Профиль v{v}</b>\n{_esc(desc)}\n\n"
-        f"👍 {_esc(', '.join(loves)) or '—'}\n🔇 {_esc(', '.join(mutes)) or '—'}"
-    )
+    blocks = []
+    for v in VERTICALS:
+        prof = await _repo.get_active_profile(v)
+        if prof is None:
+            blocks.append(f"<b>{LABELS[v]}</b>: профиль не задан")
+            continue
+        ver, desc, topics = prof
+        mutes = [t["name"] for t in topics if t.get("polarity") == "mute"]
+        blocks.append(
+            f"<b>{LABELS[v]} v{ver}</b>\n{_esc(desc[:220])}"
+            + (f"\n🔇 {_esc(', '.join(mutes))}" if mutes else "")
+        )
+    await m.answer("\n\n".join(blocks))
 
 
 @dp.message(Command("stats"))
@@ -198,10 +231,12 @@ async def cmd_stats(m: Message) -> None:
     down = counts.get("down", 0)
     total = up + down
     prec = f"{100 * up / total:.0f}%" if total else "—"
-    n_liked = await _repo.get_taste_n_liked()
+    tastes = ", ".join(
+        f"{LABELS[v]} {await _repo.get_taste_n_liked(v)}" for v in VERTICALS
+    )
     await m.answer(
         f"👍 {up}  👎 {down}  🔇 {counts.get('mute_topic', 0)}\n"
-        f"precision (доля 👍): {prec}\nвектор вкуса: {n_liked} лайков"
+        f"precision (доля 👍): {prec}\nвектор вкуса (лайков): {tastes}"
     )
 
 
@@ -214,10 +249,11 @@ async def cmd_why(m: Message, command: CommandObject) -> None:
     if item is None:
         await m.answer("Нет такого item.")
         return
+    vertical = item.vertical or "it"
     tags = list(item.tags or [])
-    tag_affs = await _repo.get_tag_affinities(tags)
+    tag_affs = await _repo.get_tag_affinities(vertical, tags)
     tag_aff = sum(tag_affs.values()) / len(tag_affs) if tag_affs else 0.0
-    src_aff = await _repo.get_source_affinity(item.source_type, item.author)
+    src_aff = await _repo.get_source_affinity(vertical, item.source_type, item.feed_name or item.author)
     fr = freshness(item.published_at)
     w = weights_from_settings()
     llm = item.llm_relevance if item.llm_relevance is not None else 0.0
@@ -258,8 +294,9 @@ async def cmd_mute(m: Message, command: CommandObject) -> None:
         await m.answer("Использование: /mute &lt;тема&gt;")
         return
     topic = command.args.strip().lower()
-    v = await _repo.mute_topic(topic)
-    await m.answer(f"🔇 «{_esc(topic)}» замьючено (профиль v{v}).")
+    for v in VERTICALS:
+        await _repo.mute_topic(v, topic)
+    await m.answer(f"🔇 «{_esc(topic)}» замьючено во всех вертикалях.")
 
 
 @dp.message(Command("sources"))
@@ -292,9 +329,9 @@ async def cmd_source(m: Message, command: CommandObject) -> None:
 # --- кнопки постоянной клавиатуры ---
 
 
-@dp.message(F.text == BTN_DIGEST)
-async def btn_digest(m: Message) -> None:
-    await _send_digest(m)
+@dp.message(F.text.in_(list(_BTN_VERTICAL)))
+async def btn_vertical(m: Message) -> None:
+    await _send_vertical(m, _BTN_VERTICAL[m.text])
 
 
 @dp.message(F.text == BTN_PROFILE)
@@ -305,12 +342,6 @@ async def btn_profile(m: Message) -> None:
 @dp.message(F.text == BTN_STATS)
 async def btn_stats(m: Message) -> None:
     await cmd_stats(m)
-
-
-@dp.message(F.text == BTN_PAUSE)
-async def btn_pause(m: Message) -> None:
-    await _repo.save_cursor(PAUSED_KEY, str(time.time() + 8 * 3600))
-    await m.answer("⏸ Пауза пушей на 8ч.")
 
 
 # --- кнопки-фидбек ---
@@ -408,15 +439,12 @@ async def on_feedback(cq: CallbackQuery) -> None:
 
 # --- profile refinement (предложения правок профиля) ---
 
-PENDING_KEY = "profile:pending"
-
-
-def _suggestion_kb() -> InlineKeyboardMarkup:
+def _suggestion_kb(vertical: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Применить", callback_data="pr:apply"),
-                InlineKeyboardButton(text="❌ Нет", callback_data="pr:reject"),
+                InlineKeyboardButton(text="✅ Применить", callback_data=f"pr:apply:{vertical}"),
+                InlineKeyboardButton(text="❌ Нет", callback_data=f"pr:reject:{vertical}"),
             ]
         ]
     )
@@ -426,21 +454,25 @@ async def handle_suggestion(data: dict) -> None:
     chat = await _repo.get_cursor(CHAT_KEY)
     if not chat:
         return
+    vertical = data.get("vertical", "it")
     desc = data.get("description", "")
     topics = data.get("topics", []) or []
     loves = [t["name"] for t in topics if t.get("polarity") in ("love", "like")]
     mutes = [t["name"] for t in topics if t.get("polarity") == "mute"]
     text = (
-        "💡 <b>Предлагаю уточнить профиль</b> (по твоим 👍/👎)\n\n"
+        f"💡 <b>Уточнить профиль {LABELS.get(vertical, vertical)}</b> (по твоим 👍/👎)\n\n"
         f"{_esc(desc)}\n\n👍 {_esc(', '.join(loves)) or '—'}\n🔇 {_esc(', '.join(mutes)) or '—'}"
     )
-    await _bot.send_message(int(chat), text, reply_markup=_suggestion_kb())
+    await _bot.send_message(int(chat), text, reply_markup=_suggestion_kb(vertical))
 
 
 @dp.callback_query(F.data.startswith("pr:"))
 async def on_profile_suggestion(cq: CallbackQuery) -> None:
-    action = cq.data.split(":", 1)[1]
-    pending = await _repo.get_cursor(PENDING_KEY)
+    parts = cq.data.split(":")
+    action = parts[1]
+    vertical = parts[2] if len(parts) > 2 else "it"
+    key = f"profile:pending:{vertical}"
+    pending = await _repo.get_cursor(key)
     if not pending:
         await cq.answer("Предложение устарело")
         with suppress(Exception):
@@ -448,15 +480,13 @@ async def on_profile_suggestion(cq: CallbackQuery) -> None:
         return
     if action == "apply":
         data = json.loads(pending)
-        version = await _repo.set_profile(data["description"], data.get("topics", []))
-        await _repo.save_cursor(PENDING_KEY, "")
-        await cq.answer(f"Профиль обновлён (v{version})")
+        version = await _repo.set_profile(vertical, data["description"], data.get("topics", []))
+        await _repo.save_cursor(key, "")
+        await cq.answer(f"{LABELS.get(vertical, vertical)} обновлён (v{version})")
         with suppress(Exception):
-            await cq.message.edit_text(
-                cq.message.html_text + f"\n\n✅ <b>Применено (v{version})</b>"
-            )
+            await cq.message.edit_text(cq.message.html_text + f"\n\n✅ <b>Применено (v{version})</b>")
     else:
-        await _repo.save_cursor(PENDING_KEY, "")
+        await _repo.save_cursor(key, "")
         await cq.answer("Отклонено")
         with suppress(Exception):
             await cq.message.edit_text(cq.message.html_text + "\n\n❌ Отклонено")

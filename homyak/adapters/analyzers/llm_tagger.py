@@ -6,6 +6,7 @@ import structlog
 
 from homyak.core.interfaces import AnalyzerContext
 from homyak.core.llm import OllamaLLM
+from homyak.core.verticals import norm_vertical
 
 log = structlog.get_logger(__name__)
 
@@ -45,8 +46,14 @@ VOCAB = [
 ]
 
 _SYSTEM = (
-    "Ты классифицируешь новости по темам. Верни строго JSON вида {\"tags\": [\"...\"]} — "
-    "до 5 тегов, короткие, в нижнем регистре. Предпочитай теги из словаря, но можешь добавить свои."
+    "Ты классифицируешь новости. Верни строго JSON вида "
+    '{"tags": ["..."], "vertical": "..."}.\n'
+    "tags — до 5 коротких тегов в нижнем регистре (предпочитай словарь, можно свои).\n"
+    "vertical — ОДНА тематическая вертикаль:\n"
+    "• \"business\" — рынки, финансы, экономика, макро, инвестиции, настроение рынка, бизнес компаний;\n"
+    "• \"it\" — технологии, разработка, AI/ML, инфраструктура, кибербезопасность, наука о данных;\n"
+    "• \"medical\" — медицина, здравоохранение, биотех, фарма, здоровье, клинические исследования;\n"
+    "• \"other\" — если не подходит ни одна из трёх."
 )
 
 
@@ -69,6 +76,11 @@ class LlmTaggerAnalyzer:
         except Exception as e:  # best-effort: теги опциональны, не роняем item
             log.warning("llm_tagger_failed", item=ctx.item_id, error=str(e))
             return
-        tags = data.get("tags") if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            return
+        tags = data.get("tags")
         if isinstance(tags, list):
             ctx.tags = [t.lower().strip() for t in tags if isinstance(t, str) and t.strip()][:5]
+        vertical = norm_vertical(data.get("vertical"))
+        ctx.vertical = vertical
+        ctx.item.vertical = vertical  # персистится processor'ом
