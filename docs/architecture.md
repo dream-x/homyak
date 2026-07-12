@@ -292,6 +292,26 @@ Analyzer'ы выполняются последовательно в `processor`
 
 ---
 
+## Тематические вертикали (business / it / medical)
+
+Лента разделена на **3 независимые вертикали** — у каждой свой профиль интересов, своё обучение,
+свой вектор вкуса и своя лента. Лайк в IT не влияет на medical.
+
+- **Классификация:** `llm_tagger` возвращает `vertical` (business/it/medical/other) в JSON. `other`
+  не попадает ни в одну вертикаль (`personal_score = NULL`).
+- **Per-vertical состояние** (миграция 0007): `news_items.vertical`; таблицы `profile`, `tag_affinity`,
+  `source_affinity`, `taste_state` ключуются по вертикали (один активный профиль на вертикаль);
+  вектор вкуса — своя точка в Qdrant-коллекции `taste` на каждую вертикаль.
+- **Скоринг:** `llm_relevance` судит статью против профиля ЕЁ вертикали; `personalizer` считает
+  `personal_score` из аффинити/вкуса этой вертикали. `learner` обучает вертикаль, к которой относится item.
+- **Профили:** `config/profiles/{business,it,medical}.yaml` → `homyak-profile-set`. Правки профилей и
+  рефайнмент — per-vertical.
+- **Выходы:** бот — команды/кнопки `/business /it /medical`, метка вертикали в посте; лента `?vertical=`.
+- **Источники** тематические (WSJ/Economist… → business; STAT/Lancet… → medical; HN/arxiv… → it), но
+  вертикаль определяет теггер по содержимому, не источник.
+
+---
+
 ## Конфигурация
 
 `config/sources.yaml` — декларация источников (включенные RSS, интервалы, веса).
