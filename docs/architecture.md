@@ -2,7 +2,9 @@
 
 ## Назначение
 
-Персональный агрегатор новостей, объединяющий разнородные источники (Telegram через tscrapper, Miniflux RSS, Twitter с кастомными оценками, популярные новостные сайты по RSS) в единую дедуплицированную ленту с локальной LLM-обработкой (bge-m3 + Qwen 2.5-14B через Ollama). Несколько выходов: Web UI, Telegram-бот, CLI/TUI, RSS/JSON feed наружу.
+Персональный агрегатор новостей, объединяющий разнородные источники (Telegram-каналы через tscrapper→NATS, Miniflux RSS, новостные сайты по RSS) в единую дедуплицированную **персональную** ленту с локальной LLM-обработкой. Главный выход — **Telegram-бот** с ранжированием под интересы, реакциями 👍/👎 (обучение), саммари и читалкой полного текста (Telegraph). Плюс CLI, REST/RSS/JSON feed, SSE.
+
+> Статус: реализованы Phase 1-4 + вся персонализация (Phase 6.0-6.3). Весь стек контейнеризован под **Podman**. Подробности фич — в `docs/phase-*.md`.
 
 Ключевое архитектурное требование — **плагинная система адаптеров** трёх типов: **sources**, **analyzers**, **outputs**. Ядро ничего не знает о конкретных источниках/анализаторах/выходах.
 
@@ -12,11 +14,14 @@
 
 - Python 3.13, **uv** (package + project manager, lock через `uv.lock`)
 - FastAPI, SQLAlchemy 2.x (async), Alembic, asyncpg, pydantic-settings
-- Postgres 17 (метаданные + FTS), Qdrant (векторы, 1024-dim под bge-m3)
+- Postgres 17 (метаданные + FTS), Qdrant (векторы, 1024-dim под bge-m3, коллекции `news_items` + `taste`)
 - **NATS 2.10 + JetStream** (event bus)
-- Ollama (bge-m3 embeddings + Qwen 2.5-14B generation)
-- Telethon (Telegram), feedparser (RSS), `miniflux` Python SDK
-- structlog, prometheus-client
+- **Ollama** (на хосте, Metal): `bge-m3` (эмбеддинги), `qwen2.5:14b` (судья/теги), `gpt-oss:120b-cloud`+`gemma4` (саммари)
+- feedparser + trafilatura (скачивание/извлечение полного текста статьи), httpx; aiogram (бот); Telethon в tscrapper
+- structlog
+- **Деплой:** `Dockerfile` + `docker-compose.yml` (podman compose) — postgres/qdrant/nats + migrate +
+  app-сервисы (ingest-poll, telegram-ingest, processor, learner, sweeper, tgbot, api). Ollama — на хосте
+  (`host.containers.internal:11434`). `podman compose up -d` поднимает всё.
 
 ---
 
@@ -68,15 +73,14 @@
 - Storage: `file` (JetStream FileStorage), retention `limits`, max_age 14d, max_bytes 5GB
 - Replicas: 1 (personal-scale, single node)
 
-**Subjects (3 штуки, один stream):**
-- `homyak.items.ingested` — пушится source-адаптерами сразу после `upsert_item()`. Payload: `{news_item_id, source_type}`.
-- `homyak.items.processed` — пушится processor'ом после прохождения всех analyzer-stages. Payload: `{news_item_id, cluster_id, category}`.
-- `homyak.items.output` — опционально для сигнализации outputs (сейчас SSE/TG-bot достаточно processed).
+**Subjects (актуальные):**
+- `homyak.items.ingested` — от source-адаптеров/консюмеров после `upsert_item()`. Payload: `{news_item_id, source_type}`.
+- `homyak.items.processed` — от processor'а после всех analyzer-stages. Payload: `{news_item_id, cluster_id, category}`.
+- `homyak.telegram.raw` — сырые сообщения от **tscrapper** (доработан: публикует в NATS). Консюмер `telegram-ingest` делает upsert → `items.ingested`.
+- `homyak.feedback.recorded` — реакции 👍/👎/⭐/🔇 из бота. Консюмер `learner` двигает вкус/веса.
+- `homyak.profile.suggestion` — предложение правки профиля (от learner раз в N фидбеков) → бот показывает карточку.
 
-**Durable consumers (consumer groups):**
-- `processor` (on `items.ingested`) — pull consumer, `AckExplicit`, `MaxDeliver=5`, `AckWait=2m`. Несколько воркеров через одно consumer name делят нагрузку.
-- `sse-broadcaster` (on `items.processed`) — push consumer, in-process, fan-out SSE-клиентам.
-- `tgbot-push` (on `items.processed`) — push consumer, дергает TG Bot API для подписчиков.
+**Durable consumers:** `processor` (on `items.ingested`, pull, ack/nak+backoff, max_deliver=5), `learner` (on `feedback.recorded`), `telegram-ingest` (on `telegram.raw`), `profile-suggest` (бот, on `profile.suggestion`); TG-бот push и SSE — ephemeral consumers на `items.processed` (deliver=new).
 
 **Почему JetStream, а не Kafka/Redis Streams:**
 - Один 15MB бинарь, поднимается в docker-compose одной строкой.
@@ -267,14 +271,17 @@ REST API `/v1/entries?after_entry_id=<cursor>&limit=100&order=id&direction=asc`.
 
 ## Processing pipeline stages
 
-Analyzer'ы выполняются последовательно в `processor`'е (один consumer на `items.ingested`):
+Analyzer'ы выполняются последовательно в `processor`'е (мутируют общий `AnalyzerContext`), **актуальная цепочка из 9 стадий**:
 
-1. `url_dedup` — нормализует URL (утм, фрагмент), ищет cluster по нормализованному URL, joins / creates.
-2. `embedder` — bge-m3 через Ollama `/api/embeddings`, **батч 32**, upsert точки в Qdrant, проставляет `embedding_model/version`.
-3. `similarity_dedup` — Qdrant search top-5 с threshold 0.88 (эмпирически настраивается), merge clusters при попадании.
-4. `llm_tagger` — Qwen 2.5-14B, top-5 тегов из фиксированного словаря + свободные.
-5. `llm_summarizer` — 2-3 предложения на языке item'а.
-6. `scorer` — `freshness * source_weight * cluster_size * (1 + raw_score)`.
+0. `article_fetch` — **скачивает полный текст статьи по URL** (trafilatura), если RSS дал огрызок (HN → пусто → полная статья). Отдельный компонент `core/article.py`.
+1. `url_dedup` — нормализует URL, ищет/создаёт cluster по нормализованному URL.
+2. `embedder` — bge-m3 через Ollama `/api/embed`, upsert в Qdrant, проставляет `embedding_model/version`.
+3. `similarity_dedup` — Qdrant search top-5, threshold 0.88, merge clusters (advisory-lock).
+4. `llm_tagger` — теги из словаря (языки/системщина/AI) + свободные, `qwen2.5:14b`, JSON.
+5. `llm_summarizer` — «микс»-саммари (живой гист + «что вынесешь») голосом инженера, на языке оригинала. **`gpt-oss:120b-cloud` → fallback `gemma4`**.
+6. `scorer` — базовый `freshness · (1+raw) · (1+ln(cluster_size))` (в Phase 6 заменён personal_score'ом).
+7. `llm_relevance` — **LLM-судья**: релевантность профилю интересов (0..1) + reason, кэш по `scored_profile_version`.
+8. `personalizer` — гибридная свёртка `personal_score` (llm + taste + tag/source affinity + fresh) − hard-mute.
 
 После успеха: `processed_at = now()`, publish `items.processed`.
 
