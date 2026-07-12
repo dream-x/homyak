@@ -50,6 +50,18 @@ services:
     volumes:
       - nats_data:/data
 
+  # RSS-мост для Twitter/X: аккаунты доступны как RSS на http://rsshub:1200/twitter/user/<handle>
+  # Нужен TWITTER_AUTH_TOKEN (auth_token cookie из твоего X-аккаунта) в .env.
+  rsshub:
+    image: diygod/rsshub:latest
+    ports:
+      - "1200:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      TWITTER_AUTH_TOKEN: ${TWITTER_AUTH_TOKEN:-}
+    restart: unless-stopped
+
   migrate:
     <<: *app
     command: ["alembic", "upgrade", "head"]

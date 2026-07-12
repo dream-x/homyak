@@ -55,3 +55,15 @@ rss:
   - {name: theregister,    url: "https://www.theregister.com/headlines.atom",          category: tech,     interval_seconds: 1200, weight: 0.8}
   - {name: simonwillison,  url: "https://simonwillison.net/atom/everything/",          category: ai,       interval_seconds: 3600, weight: 0.9}
   - {name: phoronix,       url: "https://www.phoronix.com/rss.php",                    category: tech,     interval_seconds: 1800, weight: 0.7}
+
+  # --- twitter/X через RSSHub (нужен TWITTER_AUTH_TOKEN в .env). Вертикаль определит теггер. ---
+  # IT/AI
+  - {name: tw_karpathy,    url: "http://rsshub:1200/twitter/user/karpathy",            category: ai,       interval_seconds: 1800, weight: 1.0}
+  - {name: tw_simonw,      url: "http://rsshub:1200/twitter/user/simonw",              category: ai,       interval_seconds: 1800, weight: 0.9}
+  - {name: tw_sama,        url: "http://rsshub:1200/twitter/user/sama",                category: ai,       interval_seconds: 1800, weight: 0.8}
+  # business
+  - {name: tw_unusualwhales, url: "http://rsshub:1200/twitter/user/unusual_whales",    category: business, interval_seconds: 900,  weight: 0.8}
+  - {name: tw_deltaone,    url: "http://rsshub:1200/twitter/user/DeItaone",            category: business, interval_seconds: 900,  weight: 0.8}
+  # medical
+  - {name: tw_erictopol,   url: "http://rsshub:1200/twitter/user/EricTopol",           category: medical,  interval_seconds: 3600, weight: 0.9}
+  - {name: tw_statnews,    url: "http://rsshub:1200/twitter/user/statnews",            category: medical,  interval_seconds: 3600, weight: 0.8}
