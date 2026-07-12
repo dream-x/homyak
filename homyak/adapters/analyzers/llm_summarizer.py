@@ -35,7 +35,9 @@ class LlmSummarizerAnalyzer:
     stage = 5
 
     def __init__(self, llm: OllamaLLM | None = None) -> None:
-        self._llm = llm or OllamaLLM(model=settings.summary_model)
+        self._llm = llm or OllamaLLM(
+            model=settings.summary_model, fallback=settings.summary_fallback_model
+        )
 
     async def analyze(self, ctx: AnalyzerContext) -> None:
         item = ctx.item

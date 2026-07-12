@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from homyak.adapters.analyzers.article_fetch import ArticleFetchAnalyzer
 from homyak.adapters.analyzers.embedder import EmbedderAnalyzer
 from homyak.adapters.analyzers.llm_relevance import LlmRelevanceAnalyzer
 from homyak.adapters.analyzers.llm_summarizer import LlmSummarizerAnalyzer
@@ -39,7 +40,7 @@ def build_analyzers(
     scorer (6). При with_llm: llm_tagger (4), llm_summarizer (5). При with_llm+repo (Phase 6):
     llm_relevance (7, судья) + personalizer (8, свёртка personal_score).
     """
-    analyzers: list[Analyzer] = [UrlDedupAnalyzer()]
+    analyzers: list[Analyzer] = [ArticleFetchAnalyzer(), UrlDedupAnalyzer()]
     if qdrant is not None:
         analyzers.append(EmbedderAnalyzer(qdrant))
         analyzers.append(SimilarityDedupAnalyzer(qdrant))

@@ -17,15 +17,26 @@ log = structlog.get_logger(__name__)
 
 
 class OllamaLLM:
-    def __init__(self, model: str | None = None, breaker: CircuitBreaker | None = None) -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        fallback: str | None = None,
+        breaker: CircuitBreaker | None = None,
+    ) -> None:
         self._model = model or settings.llm_model
+        self._fallback = fallback  # запасная модель при сбое основной
         self._breaker = breaker or CircuitBreaker()
 
     async def _chat(
-        self, system: str, user: str, json_format: bool, think: bool | None = None
+        self,
+        system: str,
+        user: str,
+        json_format: bool,
+        think: bool | None = None,
+        model: str | None = None,
     ) -> str:
         payload: dict = {
-            "model": self._model,
+            "model": model or self._model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -44,8 +55,19 @@ class OllamaLLM:
         return data["message"]["content"]
 
     async def chat_json(self, system: str, user: str) -> dict:
-        content = await self._breaker.call(self._chat, system, user, True)
+        content = await self._with_fallback(system, user, True, None)
         return json.loads(content)
 
     async def chat_text(self, system: str, user: str, think: bool | None = None) -> str:
-        return await self._breaker.call(self._chat, system, user, False, think)
+        return await self._with_fallback(system, user, False, think)
+
+    async def _with_fallback(
+        self, system: str, user: str, json_format: bool, think: bool | None
+    ) -> str:
+        try:
+            return await self._breaker.call(self._chat, system, user, json_format, think)
+        except Exception as e:
+            if not self._fallback:
+                raise
+            log.warning("llm_fallback", primary=self._model, fallback=self._fallback, error=str(e))
+            return await self._chat(system, user, json_format, think, model=self._fallback)

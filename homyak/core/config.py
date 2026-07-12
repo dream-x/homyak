@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     # Phase 4: LLM
     llm_model: str = Field(default="qwen2.5:14b", alias="LLM_MODEL")
     summary_model: str = Field(default="gpt-oss:120b-cloud", alias="SUMMARY_MODEL")
+    summary_fallback_model: str = Field(default="gemma4:latest", alias="SUMMARY_FALLBACK_MODEL")
 
     # Phase 6: персонализация (веса свёртки personal_score)
     personalize_llm_weight: float = Field(default=0.50, alias="PERSONALIZE_LLM_WEIGHT")
