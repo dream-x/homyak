@@ -2,10 +2,12 @@
 
 # 🐹 Homyak
 
-**Персональный агрегатор новостей с ИИ-ранжированием под твои интересы**
+**A personal news aggregator with AI ranking tuned to your interests**
 
-Собирает разнородные источники в единую дедуплицированную ленту, оценивает каждую новость
-LLM-судьёй против твоего профиля и учится на твоих 👍/👎 — прямо в Telegram.
+Pulls heterogeneous sources into one deduplicated feed, scores every story with an LLM judge
+against your profile, and learns from your 👍/👎 — right inside Telegram.
+
+**English** · [Русский](README.ru.md)
 
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
 ![Postgres](https://img.shields.io/badge/Postgres-17-4169E1?logo=postgresql&logoColor=white)
@@ -19,187 +21,194 @@ LLM-судьёй против твоего профиля и учится на �
 
 ---
 
-## ✨ Что это
+## ✨ What it is
 
-Homyak превращает шум из десятков RSS-фидов и Telegram-каналов в **персональную ленту**, где наверху —
-то, что интересно именно тебе. Три независимые тематические вертикали, локальные LLM, обучение в реальном
-времени и читалка полного текста статьи прямо в Telegram.
+Homyak turns the noise of dozens of RSS feeds and Telegram channels into a **personal feed** where what
+matters to *you* floats to the top. Three independent topic verticals, local LLMs, real-time learning, and
+a full-text article reader right in Telegram.
 
-Два архитектурных кита:
-- 🔌 **Плагинная система адаптеров** — `sources` / `analyzers` / `outputs`. Ядро не знает о конкретике.
-- ⚡ **Event-driven на NATS JetStream** — near-realtime, без polling'а БД и без Kafka.
+Two architectural pillars:
+- 🔌 **Plugin adapter system** — `sources` / `analyzers` / `outputs`. The core knows nothing about specifics.
+- ⚡ **Event-driven on NATS JetStream** — near-realtime, no DB polling, no Kafka.
 
 ---
 
-## 🎯 Ключевые фичи
+## 🎯 Key features
 
 | | |
 |---|---|
-| 🧠 **Гибридный персональный ранкер** | `personal_score = LLM-судья + вектор вкуса + аффинити тегов/источников + свежесть − hard-mute` |
-| 💼💻🩺 **3 независимые вертикали** | business / it / medical — у каждой свой профиль, обучение и лента |
-| 👍👎 **Обучение на фидбеке** | реакции в боте двигают веса и вектор вкуса; каждая вертикаль учится отдельно |
-| 📰 **Полный текст статьи** | фетчер (trafilatura) качает статью по URL, даже если RSS дал огрызок |
-| 📄 **Читалка в Telegram** | кнопка → статья открывается нативным Instant View (Telegraph) |
-| ✍️ **Инженерные саммари** | «о чём + что вынесешь», голосом senior-инженера, на языке оригинала |
-| 🔀 **Semantic-дедуп** | одна новость из RSS и Telegram склеивается в один кластер по эмбеддингам |
-| 🤖 **Авто-правки профиля** | раз в N реакций бот предлагает уточнить профиль (с подтверждением) |
-| 🐳 **Одна команда** | весь стек в Podman: `podman compose up -d` |
+| 🧠 **Hybrid personal ranker** | `personal_score = LLM judge + taste vector + tag/source affinity + freshness − hard-mute` |
+| 💼💻🩺 **3 independent verticals** | business / it / medical — each with its own profile, learning and feed |
+| 👍👎 **Learning from feedback** | reactions in the bot shift weights and the taste vector; each vertical learns separately |
+| 📰 **Full article text** | fetcher (trafilatura) downloads the article by URL even when RSS gives a stub |
+| 📄 **In-Telegram reader** | button → the article opens in a native Instant View (Telegraph) |
+| ✍️ **Engineer-grade summaries** | “what it is + what you'll take away”, senior-engineer voice, in the original language |
+| 🔀 **Semantic dedup** | the same story from RSS and Telegram merges into one cluster by embeddings |
+| 🤖 **Auto profile refinement** | every N reactions the bot proposes a profile tweak (with confirmation) |
+| 🐳 **One command** | the whole stack in Podman: `podman compose up -d` |
 
 ---
 
-## 🏗 Архитектура
+## 🏗 Architecture
 
 ```mermaid
 flowchart LR
-    subgraph SRC["📥 Источники"]
-      RSS["RSS · 37 фидов"]
+    subgraph SRC["📥 Sources"]
+      RSS["RSS · 37 feeds"]
       TG["Telegram · tscrapper"]
       MF["Miniflux"]
     end
-    SRC -->|"NATS<br/>items.ingested"| PROC["⚙️ processor<br/>9 стадий"]
+    SRC -->|"NATS<br/>items.ingested"| PROC["⚙️ processor<br/>9 stages"]
     PROC -->|"personal_score"| PG[("🗄 Postgres")]
     PROC -->|"embeddings"| QD[("🧭 Qdrant")]
-    PROC -->|"items.processed"| BOT["🤖 Telegram-бот"]
+    PROC -->|"items.processed"| BOT["🤖 Telegram bot"]
     BOT -->|"👍/👎 · feedback"| LRN["🎓 learner"]
-    LRN -->|"вкус + веса"| PG
-    OLL["🧠 Ollama (хост)<br/>bge-m3 · qwen2.5 · gpt-oss/gemma4"] -.-> PROC
+    LRN -->|"taste + weights"| PG
+    OLL["🧠 Ollama (host)<br/>bge-m3 · qwen2.5 · gpt-oss/gemma4"] -.-> PROC
     PG --> OUT["REST · RSS · JSON · SSE · CLI"]
 ```
 
-Внутренняя шина — **NATS JetStream** (subjects: `items.*`, `feedback.recorded`, `telegram.raw`,
-`profile.suggestion`). Ollama работает на хосте (Metal), контейнеры смотрят на `host.containers.internal`.
+The internal bus is **NATS JetStream** (subjects: `items.*`, `feedback.recorded`, `telegram.raw`,
+`profile.suggestion`). Ollama runs on the host (Metal); containers reach it via `host.containers.internal`.
 
 ---
 
-## 🧠 Конвейер обработки (9 стадий)
+## 🧠 Processing pipeline (9 stages)
 
 ```mermaid
 flowchart LR
-    A["0 · article_fetch<br/>полный текст"] --> B["1 · url_dedup"]
+    A["0 · article_fetch<br/>full text"] --> B["1 · url_dedup"]
     B --> C["2 · embedder<br/>bge-m3"] --> D["3 · similarity_dedup"]
-    D --> E["4 · llm_tagger<br/>теги + вертикаль"] --> F["5 · llm_summarizer<br/>gpt-oss/gemma4"]
-    F --> G["6 · scorer"] --> H["7 · llm_relevance<br/>судья vs профиль"]
+    D --> E["4 · llm_tagger<br/>tags + vertical"] --> F["5 · llm_summarizer<br/>gpt-oss/gemma4"]
+    F --> G["6 · scorer"] --> H["7 · llm_relevance<br/>judge vs profile"]
     H --> I["8 · personalizer<br/>personal_score"]
 ```
 
-Analyzer'ы мутируют общий `AnalyzerContext`; дорогой `llm_relevance` кэшируется по версии профиля,
-лёгкие компоненты пересчитываются на лету. При сбое — `nak` + exponential backoff, circuit breaker на Ollama.
+Analyzers mutate a shared `AnalyzerContext`; the expensive `llm_relevance` is cached by profile version,
+lightweight components are recomputed on read. On failure — `nak` + exponential backoff, circuit breaker on Ollama.
 
 ---
 
-## 📊 Три вертикали
+## 📊 Three verticals
 
-Лента разделена на **3 независимые темы** — лайк в IT не влияет на medical.
+The feed is split into **3 independent topics** — a like in IT doesn't affect medical.
 
-| Вертикаль | Для кого | Источники |
+| Vertical | Audience | Sources |
 |---|---|---|
-| 💼 **Business** | трейдерам/бизнесменам — рынки, макро, «куда катится мир» | WSJ, Economist, MarketWatch, NYT, SeekingAlpha… |
-| 💻 **IT** | инженерам — языки, системы, AI/ML, инфра | HN, arXiv, HuggingFace, lobsters, The Register… |
-| 🩺 **Medical** | медикам — клиника, фарма, биотех | STAT, Lancet, Nature Medicine, Fierce, WHO… |
+| 💼 **Business** | traders/founders — markets, macro, “where the world is heading” | WSJ, Economist, MarketWatch, NYT, SeekingAlpha… |
+| 💻 **IT** | engineers — languages, systems, AI/ML, infra | HN, arXiv, HuggingFace, lobsters, The Register… |
+| 🩺 **Medical** | clinicians — clinical, pharma, biotech | STAT, Lancet, Nature Medicine, Fierce, WHO… |
 
-Вертикаль определяет **LLM-теггер по содержимому** (не по источнику). У каждой — свой профиль
-(`config/profiles/*.yaml`), свой вектор вкуса и своё обучение.
-
----
-
-## 🔄 Как учится
-
-```
-пуш новости под профиль  →  👍/👎/⭐/🔇 в боте  →  learner:
-   👍 → тег/источник ↑, эмбеддинг в «вектор вкуса»
-   👎 → тег/источник ↓
-   🔇 → тема в mute (жёсткий фильтр)
-раз в N реакций → LLM предлагает уточнить профиль (✅/❌)
-```
-
-`tag_affinity` и `source_affinity` — EMA в `[-1..1]`; вектор вкуса — инкрементальный центроид лайков
-(обратимый по toggle). Cold-start: профиль словами работает с первого дня, вес вкуса нарастает по мере лайков.
+The vertical is decided by the **LLM tagger from content** (not by source). Each has its own profile
+(`config/profiles/*.yaml`), its own taste vector and its own learning.
 
 ---
 
-## 🧰 Стек
+## 🔄 How it learns
 
-| Слой | Технологии |
+```
+push story matching profile  →  👍/👎/⭐/🔇 in the bot  →  learner:
+   👍 → tag/source ↑, embedding into the "taste vector"
+   👎 → tag/source ↓
+   🔇 → topic muted (hard filter)
+every N reactions → LLM proposes a profile refinement (✅/❌)
+```
+
+`tag_affinity` and `source_affinity` are EMA in `[-1..1]`; the taste vector is an incremental centroid of
+likes (reversible on toggle). Cold-start: the text profile works from day one, taste weight ramps up with likes.
+
+---
+
+## 🧰 Stack
+
+| Layer | Tech |
 |---|---|
-| Язык / пакеты | Python 3.13, **uv** |
+| Language / packaging | Python 3.13, **uv** |
 | Web / ORM | FastAPI, SQLAlchemy 2.x (async), Alembic, asyncpg |
-| Хранилища | Postgres 17 (метаданные + FTS), Qdrant (векторы 1024-dim) |
-| Шина | NATS 2.10 + JetStream |
-| LLM (Ollama, хост) | `bge-m3` (эмбеддинги), `qwen2.5:14b` (судья/теги), `gpt-oss:120b-cloud` → `gemma4` (саммари) |
-| Извлечение | feedparser, trafilatura, httpx |
-| Бот | aiogram 3.x + Telegraph |
-| Деплой | Dockerfile + Podman compose |
+| Storage | Postgres 17 (metadata + FTS), Qdrant (1024-dim vectors) |
+| Bus | NATS 2.10 + JetStream |
+| LLM (Ollama, host) | `bge-m3` (embeddings), `qwen2.5:14b` (judge/tags), `gpt-oss:120b-cloud` → `gemma4` (summaries) |
+| Extraction | feedparser, trafilatura, httpx |
+| Bot | aiogram 3.x + Telegraph |
+| Deploy | Dockerfile + Podman compose |
 
 ---
 
-## 🚀 Быстрый старт
+## 🚀 Quick start
 
-**Требуется:** Podman (`podman compose`), Ollama на хосте с моделями.
+**Requires:** Podman (`podman compose`), Ollama on the host with models.
 
 ```bash
-# 1. модели Ollama (на хосте — Metal-ускорение)
+# 1. Ollama models (on the host — Metal acceleration)
 ollama pull bge-m3
 ollama pull qwen2.5:14b
-ollama pull gemma4          # fallback для саммари
+ollama pull gemma4          # summary fallback
 
-# 2. секреты
+# 2. secrets
 cp .env.example .env
-#   впиши TELEGRAM_BOT_TOKEN (от @BotFather)
+#   set TELEGRAM_BOT_TOKEN (from @BotFather)
 
-# 3. весь стек одной командой
-podman compose up -d        # postgres, qdrant, nats + 7 app-сервисов
+# 3. the whole stack in one command
+podman compose up -d        # postgres, qdrant, nats + 7 app services
 
-# 4. профили вертикалей
+# 4. vertical profiles
 podman compose run --rm api homyak-profile-set
 
-# 5. в Telegram → боту /start → /business /it /medical
+# 5. in Telegram → /start → /business /it /medical
 ```
 
-`config/` примонтирован как volume — правки источников/профилей подхватываются без пересборки.
+`config/` is mounted as a volume — source/profile edits are picked up without rebuilding.
 
 ---
 
-## 🤖 Бот
+## 🤖 Bot
 
-| Команда | Действие |
+| Command | Action |
 |---|---|
-| `/business` `/it` `/medical` | лента вертикали (топ под профиль) |
-| `/digest [N]` | топ по всем вертикалям |
-| `/profile` | мои 3 профиля |
-| `/stats` | статистика обучения (👍/👎, вкус) |
-| `/why <id>` | разбор скоринга статьи |
-| `/sources` · `/source <фид>` | источники / лента одного фида |
-| `/mute <тема>` · `/threshold` · `/pause` | мьют / порог пуша / пауза |
+| `/business` `/it` `/medical` | vertical feed (top matches for your profile) |
+| `/digest [N]` | top across all verticals |
+| `/profile` | my 3 profiles |
+| `/stats` | learning stats (👍/👎, taste) |
+| `/why <id>` | score breakdown for a story |
+| `/sources` · `/source <feed>` | sources / one feed's stream |
+| `/mute <topic>` · `/threshold` · `/pause` | mute / push threshold / pause |
 
-Под каждым постом: **👍 👎 ⭐ 🔇 · 📄 текст · 🔗** — реакции обучают ранкер, 📄 открывает читалку.
-
----
-
-## ⚙️ Конфигурация
-
-- **Источники** — `config/sources.yaml` (RSS: url, интервал, вес; Miniflux). Telegram — через tscrapper→NATS.
-- **Профили** — `config/profiles/{business,it,medical}.yaml` (описание + темы с polarity: love/like/mute).
-- **Секреты** — только `.env` (в git не попадают): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, веса скоринга, пороги.
+Under each post: **👍 👎 ⭐ 🔇 · 📄 text · 🔗** — reactions train the ranker, 📄 opens the reader.
 
 ---
 
-## 🔧 Процессы (сервисы)
+## ⚙️ Configuration
 
-| Сервис | Роль |
+- **Sources** — `config/sources.yaml` (RSS: url, interval, weight; Miniflux).
+- **Profiles** — `config/profiles/{business,it,medical}.yaml` (description + topics with polarity: love/like/mute).
+- **Secrets** — `.env` only (never committed): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, scoring weights, thresholds.
+
+### 📡 Telegram via tscrapper
+
+Telegram channels come from **[tscrapper](https://github.com/maks/tscrapper)** — a *separate service*
+(Telethon, its own Telegram session) that monitors ~50 channels. It was extended to publish every message to
+NATS (`homyak.telegram.raw`, best-effort, without breaking its forwarding); Homyak's `telegram-ingest`
+consumes it → the normal pipeline. tscrapper runs on the host and reaches the containerized NATS on `:4222`.
+
+---
+
+## 🔧 Services
+
+| Service | Role |
 |---|---|
-| `ingest-poll` | опрос RSS/Miniflux по расписанию |
-| `telegram-ingest` | приём Telegram-сообщений из NATS (tscrapper) |
-| `processor` | 9-стадийный конвейер обработки |
-| `learner` | обучение на фидбеке + авто-правки профиля |
-| `sweeper` | переопубликация зависших items |
-| `tgbot` | Telegram-бот (пуш, реакции, команды) |
+| `ingest-poll` | poll RSS/Miniflux on a schedule |
+| `telegram-ingest` | consume Telegram messages from NATS (tscrapper) |
+| `processor` | the 9-stage processing pipeline |
+| `learner` | learning from feedback + auto profile refinement |
+| `sweeper` | re-publish stuck items |
+| `tgbot` | Telegram bot (push, reactions, commands) |
 | `api` | FastAPI: `/feed`, `/feed.rss`, `/feed.json`, `/feed/stream` (SSE), `/healthz` |
 
-CLI: `homyak-cli` (лента в терминале), `homyak-profile-set`, `homyak-reembed`.
+CLI: `homyak-cli` (feed in the terminal), `homyak-profile-set`, `homyak-reembed`.
 
 ---
 
-## 📁 Структура
+## 📁 Layout
 
 ```
 homyak/
@@ -212,23 +221,23 @@ homyak/
     outputs/   api · tg_bot · cli · rss_out · json_feed · sse
   pipeline/    ingest_poll · telegram_ingest · processor · learner · sweeper · serve
   cli/         reembed · profile
-alembic/       миграции 0001–0007
+alembic/       migrations 0001–0007
 config/        sources.yaml · profiles/*.yaml
 docs/          architecture.md · phase-*.md
 ```
 
 ---
 
-## 📚 Документация
+## 📚 Documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — архитектура, схема БД, конвейер, вертикали, failure modes
-- [`docs/phase-1-skeleton.md`](docs/phase-1-skeleton.md) … [`docs/phase-6-personalization.md`](docs/phase-6-personalization.md) — планы фаз
-- [`CLAUDE.md`](CLAUDE.md) — конвенции и запуск для разработки
+- [`docs/architecture.md`](docs/architecture.md) — architecture, DB schema, pipeline, verticals, failure modes
+- [`docs/phase-1-skeleton.md`](docs/phase-1-skeleton.md) … [`docs/phase-6-personalization.md`](docs/phase-6-personalization.md) — phase plans
+- [`CLAUDE.md`](CLAUDE.md) — conventions and dev run
 
 ---
 
 <div align="center">
 
-Персональный pet-project · собран с локальными LLM · 🐹
+Personal pet project · built with local LLMs · 🐹
 
 </div>
