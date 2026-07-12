@@ -347,6 +347,13 @@ class NewsRepo:
         topics.append({"name": topic, "polarity": "mute"})
         return await self.set_profile(desc, topics)
 
+    async def set_item_text(self, news_item_id: int, text: str) -> None:
+        async with self._sf() as s:
+            await s.execute(
+                update(NewsItem).where(NewsItem.id == news_item_id).values(text=text)
+            )
+            await s.commit()
+
     async def mark_pushed(self, news_item_id: int) -> None:
         async with self._sf() as s:
             await s.execute(

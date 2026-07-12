@@ -29,10 +29,13 @@ from aiogram.types import (
 )
 from nats.js.api import ConsumerConfig, DeliverPolicy
 
+from homyak.core import telegraph
+from homyak.core.article import fetch_article
 from homyak.core.config import settings
 from homyak.core.events import SUBJECT_PROCESSED, NatsBus
 from homyak.core.interfaces import FeedQuery
 from homyak.core.scoring import freshness, weights_from_settings
+from homyak.core.textutils import strip_html
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
 
@@ -326,13 +329,43 @@ async def on_text(cq: CallbackQuery) -> None:
         await cq.answer("bad")
         return
     item = await _repo.get_by_id(item_id)
-    if item is None or not item.text:
-        await cq.answer("Полного текста нет — только заголовок (жми 🔗)", show_alert=True)
+    if item is None:
+        await cq.answer("нет такой статьи")
         return
-    await cq.answer()
-    full = f"📄 <b>{_esc(item.title or '')}</b>\n\n{_esc(item.text)}"
-    for chunk in _chunks(full, 4000):
-        await cq.message.answer(chunk)
+
+    text = strip_html(item.text) or ""  # защитно чистим HTML/junk («Comments»)
+    # текста нет/огрызок → качаем статью по требованию
+    if len(text) < 400 and item.url and item.source_type != "telegram":
+        await cq.answer("Скачиваю статью…")
+        fetched = await fetch_article(item.url)
+        if fetched and len(fetched) > len(text):
+            text = fetched
+            await _repo.set_item_text(item_id, fetched)
+    else:
+        await cq.answer("Открываю…")
+
+    if not text:
+        await cq.message.answer("Полного текста нет — жми 🔗 (ссылка на оригинал).")
+        return
+
+    # Telegraph-читалка (Instant View прямо в Telegram)
+    token = await _repo.get_cursor("telegraph:token")
+    if not token:
+        token = await telegraph.create_account()
+        if token:
+            await _repo.save_cursor("telegraph:token", token)
+    page = (
+        await telegraph.create_page(token, item.title, text, item.author, item.url)
+        if token
+        else None
+    )
+    if page:
+        await cq.message.answer(
+            f"📄 <a href=\"{page}\">{_esc(item.title or 'Статья')}</a> — читалка"
+        )
+    else:  # fallback — текстом частями
+        for chunk in _chunks(f"📄 <b>{_esc(item.title or '')}</b>\n\n{_esc(text)}", 4000):
+            await cq.message.answer(chunk)
 
 
 @dp.callback_query(F.data.startswith("fb:"))
