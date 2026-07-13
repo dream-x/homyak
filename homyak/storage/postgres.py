@@ -502,6 +502,8 @@ class NewsRepo:
             conditions.append(NewsItem.source_type.in_(query.source_types))
         if query.feed_name:
             conditions.append(NewsItem.feed_name == query.feed_name)
+        if query.feed_prefix:
+            conditions.append(NewsItem.feed_name.like(query.feed_prefix + "%"))
         if query.vertical:
             conditions.append(NewsItem.vertical == query.vertical)
         if query.since:

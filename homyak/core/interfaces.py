@@ -97,6 +97,7 @@ class FeedQuery:
     category: str | None = None
     source_types: list[str] | None = None
     feed_name: str | None = None
+    feed_prefix: str | None = None  # префикс feed_name, напр. 'tw_' — все твиттер-аккаунты
     vertical: str | None = None
     min_score: float | None = None
     since: datetime | None = None

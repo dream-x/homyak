@@ -63,6 +63,7 @@ dp = Dispatcher()
 BTN_BIZ = "💼 Business"
 BTN_IT = "💻 IT"
 BTN_MED = "🩺 Medical"
+BTN_TWITTER = "🐦 Twitter"
 BTN_DIGEST = "📰 Дайджест"
 BTN_PUSH = "🔔 Пуши"
 BTN_SOURCES = "📡 Источники"
@@ -70,12 +71,12 @@ BTN_PROFILE = "👤 Профили"
 BTN_STATS = "📊 Статистика"
 _BTN_VERTICAL = {BTN_BIZ: "business", BTN_IT: "it", BTN_MED: "medical"}
 
-# Ряд 1 — переключение вертикали (лента + пуши следуют за ней); ряд 2/3 — сервис.
+# Ряд 1 — переключение вертикали (лента + пуши следуют за ней); ряд 2/3 — сервис/срезы.
 MAIN_KB = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=BTN_BIZ), KeyboardButton(text=BTN_IT), KeyboardButton(text=BTN_MED)],
-        [KeyboardButton(text=BTN_DIGEST), KeyboardButton(text=BTN_PUSH), KeyboardButton(text=BTN_SOURCES)],
-        [KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
+        [KeyboardButton(text=BTN_TWITTER), KeyboardButton(text=BTN_DIGEST), KeyboardButton(text=BTN_PUSH)],
+        [KeyboardButton(text=BTN_SOURCES), KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
     ],
     resize_keyboard=True,
     is_persistent=True,
@@ -87,6 +88,7 @@ BOT_COMMANDS = [
     BotCommand(command="it", description="💻 Лента: технологии/IT"),
     BotCommand(command="medical", description="🩺 Лента: медицина"),
     BotCommand(command="digest", description="📰 Топ по всем вертикалям"),
+    BotCommand(command="twitter", description="🐦 Только твиттер (все аккаунты)"),
     BotCommand(command="profile", description="👤 Мои профили (3 вертикали)"),
     BotCommand(command="stats", description="📊 Статистика обучения"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
@@ -115,8 +117,12 @@ def _fmt(item) -> str:
     body = f"<b>{_esc(item.title or '(без заголовка)')}</b>"
     if item.summary:
         body += f"\n{_esc(item.summary)}"
-    src = item.source_type + (f"/{item.author}" if item.author else "")
-    foot = f"🔗 {_esc(src)}"
+    feed = getattr(item, "feed_name", None) or ""
+    if feed.startswith("tw_"):  # твиттер через RSSHub — помечаем 🐦 и хэндлом
+        foot = f"🐦 <b>@{_esc(feed[3:])}</b>"
+    else:
+        src = item.source_type + (f"/{item.author}" if item.author else "")
+        foot = f"🔗 {_esc(src)}"
     if item.llm_reason:
         foot += f"\n💡 <i>{_esc(item.llm_reason)}</i>"
     return f"{head}\n\n{body}\n\n{foot}"
@@ -208,6 +214,23 @@ async def _send_vertical(m: Message, vertical: str, n: int = 8) -> None:
     for it in result.items:
         await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
         await _repo.mark_pushed(it.id)
+
+
+async def _send_twitter(m: Message, n: int = 10) -> None:
+    # Срез по всем твиттер-аккаунтам (feed_name tw_*), без привязки к вертикали.
+    result = await _repo.feed(FeedQuery(sort="personal", feed_prefix="tw_", limit=n))
+    if not result.items:
+        await m.answer("🐦 Twitter: пока пусто — твиты копятся/скорятся.")
+        return
+    await m.answer("🐦 Twitter — топ по всем аккаунтам под твой профиль:")
+    for it in result.items:
+        await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
+        await _repo.mark_pushed(it.id)
+
+
+@dp.message(Command("twitter"))
+async def cmd_twitter(m: Message) -> None:
+    await _send_twitter(m, 10)
 
 
 @dp.message(Command("business"))
@@ -360,6 +383,11 @@ async def btn_profile(m: Message) -> None:
 @dp.message(F.text == BTN_STATS)
 async def btn_stats(m: Message) -> None:
     await cmd_stats(m)
+
+
+@dp.message(F.text == BTN_TWITTER)
+async def btn_twitter(m: Message) -> None:
+    await _send_twitter(m, 10)
 
 
 @dp.message(F.text == BTN_DIGEST)
