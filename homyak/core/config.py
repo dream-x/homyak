@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     nats_url: str = Field(default="nats://localhost:4222", alias="NATS_URL")
     sources_config_path: str = Field(default="config/sources.yaml", alias="SOURCES_CONFIG_PATH")
 
+    # Поллинг: не долбим источники (особенно RSSHub на одном twitter-токене).
+    poll_concurrency: int = Field(default=3, alias="POLL_CONCURRENCY")  # макс. одновременных фетчей
+    poll_stagger_seconds: float = Field(default=7.0, alias="POLL_STAGGER_SECONDS")  # разнос старта между источниками
+    poll_jitter_seconds: int = Field(default=120, alias="POLL_JITTER_SECONDS")  # случайный сдвиг каждого прогона
+
     # Phase 3: эмбеддинги + similarity
     qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
     ollama_url: str = Field(default="http://localhost:11434", alias="OLLAMA_URL")
