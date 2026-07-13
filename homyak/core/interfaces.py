@@ -36,6 +36,7 @@ class NewsItemDTO:
     category: str | None = None
     # заполняется обработкой:
     tags: list[str] | None = None
+    vertical: str | None = None  # business/it/medical — нужен для метки в ленте
     summary: str | None = None
     score: float | None = None
     personal_score: float | None = None

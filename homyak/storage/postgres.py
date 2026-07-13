@@ -66,6 +66,7 @@ def _dto(row: NewsItem) -> NewsItemDTO:
         published_at=row.published_at,
         category=row.category,
         tags=list(row.tags or []),
+        vertical=row.vertical,
         summary=row.summary,
         score=row.score,
         personal_score=row.personal_score,

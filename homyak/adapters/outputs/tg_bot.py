@@ -249,9 +249,9 @@ async def cmd_stats(m: Message) -> None:
     down = counts.get("down", 0)
     total = up + down
     prec = f"{100 * up / total:.0f}%" if total else "—"
-    tastes = ", ".join(
-        f"{LABELS[v]} {await _repo.get_taste_n_liked(v)}" for v in VERTICALS
-    )
+    # await нельзя внутри генератора для str.join (получится async-генератор) — собираем циклом
+    taste_parts = [f"{LABELS[v]} {await _repo.get_taste_n_liked(v)}" for v in VERTICALS]
+    tastes = ", ".join(taste_parts)
     await m.answer(
         f"👍 {up}  👎 {down}  🔇 {counts.get('mute_topic', 0)}\n"
         f"precision (доля 👍): {prec}\nвектор вкуса (лайков): {tastes}"
