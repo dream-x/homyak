@@ -12,7 +12,7 @@ import structlog
 
 from homyak.core.config import RSSFeedConfig
 from homyak.core.interfaces import NewsItemDTO
-from homyak.core.textutils import strip_html
+from homyak.core.textutils import clean_title, strip_html
 
 log = structlog.get_logger(__name__)
 
@@ -92,7 +92,7 @@ class RSSSource:
                 source_type="rss",
                 source_id=_source_id(e),
                 url=e.get("link"),
-                title=e.get("title"),
+                title=clean_title(e.get("title")),
                 text=_entry_text(e),
                 media=_media(e),
                 author=e.get("author") or self._cfg.name,

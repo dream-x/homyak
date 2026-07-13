@@ -44,8 +44,10 @@ class LlmSummarizerAnalyzer:
         text = (item.text or "").strip()
         if not (item.title or text):
             return
-        # слишком короткий текст (типичный TG-пост) саммарить смысла мало — берём как есть
-        if len(text) < 200 and item.title:
+        # Твиты и короткие посты не суммаризируем: гонять большую модель ради пары строк
+        # расточительно (и забивает processor) — сам текст и есть контент.
+        feed = item.feed_name or ""
+        if feed.startswith("tw_") or (len(text) < 280 and item.title):
             ctx.summary = text or None
             return
         user = f"Заголовок: {item.title or '—'}\n\nТекст:\n{text[:4000]}"

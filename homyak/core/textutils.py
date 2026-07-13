@@ -35,3 +35,17 @@ def strip_html(raw: str | None) -> str | None:
     if not text or text.lower() in _JUNK:
         return None
     return text
+
+
+def clean_title(raw: str | None) -> str | None:
+    """Заголовок → плоский текст: срезает теги, распаковывает entity, схлопывает пробелы.
+
+    В отличие от strip_html НЕ зануляет junk-слова — заголовок оставляем как есть,
+    если после очистки он непустой (некоторые RSS кладут <a>…</a> прямо в <title>).
+    """
+    if not raw:
+        return None
+    text = _TAG.sub(" ", raw)
+    text = _html.unescape(text)
+    text = _WS.sub(" ", text).strip()
+    return text or None
