@@ -1,4 +1,7 @@
-from homyak.core.interfaces import NewsItemDTO
+from datetime import datetime, timezone
+
+from homyak.core.interfaces import FeedQuery, NewsItemDTO
+from homyak.core.models import NewsItem
 from homyak.storage.postgres import NewsRepo
 
 
@@ -20,6 +23,24 @@ async def test_upsert_idempotent_and_normalizes_url(session_factory):
     row = await repo.get_by_id(id1)
     assert row.title == "T2"  # содержимое обновилось
     assert row.url_normalized == "https://a.com/p"  # tracking-параметр вырезан
+
+
+async def test_feed_dto_carries_vertical(session_factory):
+    # регресс: _dto должен пробрасывать vertical, иначе рендер ленты падает в _fmt
+    repo = NewsRepo(session_factory)
+    id_, _ = await repo.upsert_item(
+        NewsItemDTO(source_type="rss", source_id="v1", url="https://e.com/v1", title="V")
+    )
+    async with session_factory() as s:
+        item = await s.get(NewsItem, id_)
+        item.vertical = "it"
+        item.personal_score = 0.9
+        item.processed_at = datetime.now(timezone.utc)
+        await s.commit()
+
+    feed = await repo.feed(FeedQuery(sort="personal", vertical="it", limit=5))
+    assert feed.items
+    assert feed.items[0].vertical == "it"
 
 
 async def test_cursor_roundtrip(session_factory):
