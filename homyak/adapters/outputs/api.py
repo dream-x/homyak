@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 
-from homyak.adapters.outputs import json_feed, rss_out, sse
+from homyak.adapters.outputs import dashboard, json_feed, rss_out, sse
 from homyak.core.interfaces import FeedQuery, NewsItemDTO
 from homyak.storage.db import SessionFactory, engine
 from homyak.storage.postgres import NewsRepo
@@ -20,6 +21,24 @@ repo = NewsRepo(SessionFactory)
 async def feed_stream(request: Request, category: str | None = None):
     """SSE-поток новых обработанных items (realtime из JetStream)."""
     return await sse.stream_response(request, category)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page() -> str:
+    """Realtime-дашборд пайплайна (self-contained HTML)."""
+    return dashboard.PAGE
+
+
+@app.get("/dashboard/stream")
+async def dashboard_stream(request: Request):
+    """SSE-поток событий пайплайна для дашборда (ingested + processed)."""
+    return await dashboard.stream_events(request)
+
+
+@app.get("/dashboard/stats")
+async def dashboard_stats() -> dict:
+    """Снапшот агрегатов для карточек/панелей дашборда."""
+    return await dashboard.stats_snapshot()
 
 
 def _item_json(it: NewsItemDTO) -> dict:
