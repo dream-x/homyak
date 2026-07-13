@@ -45,6 +45,14 @@ log = structlog.get_logger(__name__)
 CHAT_KEY = "tgbot:chat_id"
 THRESHOLD_KEY = "tgbot:threshold"
 PAUSED_KEY = "tgbot:paused_until"
+PUSH_VERTICALS_KEY = "tgbot:push_verticals"  # csv разрешённых вертикалей для пуша; пусто = все
+
+# алиасы для /pushonly (ru/en/сокращения) → каноническая вертикаль
+_V_ALIAS = {
+    "business": "business", "biz": "business", "бизнес": "business", "б": "business",
+    "it": "it", "ит": "it", "tech": "it", "айти": "it",
+    "medical": "medical", "med": "medical", "мед": "medical", "медикал": "medical",
+}
 
 _repo = NewsRepo(SessionFactory)
 _bus: NatsBus | None = None
@@ -55,13 +63,18 @@ dp = Dispatcher()
 BTN_BIZ = "💼 Business"
 BTN_IT = "💻 IT"
 BTN_MED = "🩺 Medical"
+BTN_DIGEST = "📰 Дайджест"
+BTN_PUSH = "🔔 Пуши"
+BTN_SOURCES = "📡 Источники"
 BTN_PROFILE = "👤 Профили"
 BTN_STATS = "📊 Статистика"
 _BTN_VERTICAL = {BTN_BIZ: "business", BTN_IT: "it", BTN_MED: "medical"}
 
+# Ряд 1 — переключение вертикали (лента + пуши следуют за ней); ряд 2/3 — сервис.
 MAIN_KB = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=BTN_BIZ), KeyboardButton(text=BTN_IT), KeyboardButton(text=BTN_MED)],
+        [KeyboardButton(text=BTN_DIGEST), KeyboardButton(text=BTN_PUSH), KeyboardButton(text=BTN_SOURCES)],
         [KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
     ],
     resize_keyboard=True,
@@ -79,6 +92,8 @@ BOT_COMMANDS = [
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
     BotCommand(command="sources", description="📡 Источники в ленте"),
     BotCommand(command="mute", description="🔇 Замьютить тему: /mute <тема>"),
+    BotCommand(command="pushonly", description="🔔 Пуши только: /pushonly it [business ...]"),
+    BotCommand(command="pushall", description="🌐 Пуши по всем вертикалям"),
     BotCommand(command="threshold", description="🎚 Порог пуша: /threshold <0..1>"),
     BotCommand(command="pause", description="⏸ Пауза пушей: /pause [часы]"),
     BotCommand(command="start", description="🚀 Запустить/перезапустить"),
@@ -182,11 +197,14 @@ async def cmd_digest(m: Message, command: CommandObject) -> None:
 
 
 async def _send_vertical(m: Message, vertical: str, n: int = 8) -> None:
+    # Переключение вертикали: активная лента = пуши. Жмёшь 💻 IT → и лента IT, и пуши IT.
+    await _repo.save_cursor(PUSH_VERTICALS_KEY, vertical)
+    lbl = LABELS[vertical]
     result = await _repo.feed(FeedQuery(sort="personal", vertical=vertical, limit=n))
     if not result.items:
-        await m.answer(f"{LABELS[vertical]}: пока пусто — копится.")
+        await m.answer(f"{lbl}: пока пусто — копится. 🔔 Пуши переключены на {lbl}.")
         return
-    await m.answer(f"{LABELS[vertical]} — топ под твой профиль:")
+    await m.answer(f"{lbl} — топ под твой профиль. 🔔 Пуши теперь только {lbl} (🔔 → сменить):")
     for it in result.items:
         await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
         await _repo.mark_pushed(it.id)
@@ -342,6 +360,112 @@ async def btn_profile(m: Message) -> None:
 @dp.message(F.text == BTN_STATS)
 async def btn_stats(m: Message) -> None:
     await cmd_stats(m)
+
+
+@dp.message(F.text == BTN_DIGEST)
+async def btn_digest(m: Message) -> None:
+    await _send_digest(m, 10)
+
+
+@dp.message(F.text == BTN_SOURCES)
+async def btn_sources(m: Message) -> None:
+    await cmd_sources(m)
+
+
+# --- управление пушами: кнопка 🔔 Пуши + инлайн (скоуп/порог/пауза) ---
+
+
+def _push_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💼 Business", callback_data="push:only:business"),
+                InlineKeyboardButton(text="💻 IT", callback_data="push:only:it"),
+                InlineKeyboardButton(text="🩺 Medical", callback_data="push:only:medical"),
+            ],
+            [InlineKeyboardButton(text="🌐 Все вертикали", callback_data="push:all")],
+            [
+                InlineKeyboardButton(text="🎚 Порог ➖", callback_data="push:thr:down"),
+                InlineKeyboardButton(text="➕", callback_data="push:thr:up"),
+                InlineKeyboardButton(text="↺", callback_data="push:thr:reset"),
+            ],
+            [
+                InlineKeyboardButton(text="⏸ Пауза 8ч", callback_data="push:pause"),
+                InlineKeyboardButton(text="▶️ Снять паузу", callback_data="push:resume"),
+            ],
+        ]
+    )
+
+
+async def _push_scope_text() -> str:
+    cur = await _repo.get_cursor(PUSH_VERTICALS_KEY)
+    scope = ", ".join(LABELS.get(v, v) for v in cur.split(",")) if cur else "все вертикали 🌐"
+    thr = await _repo.get_cursor(THRESHOLD_KEY)
+    threshold = thr or settings.push_threshold
+    pnote = ""
+    paused = await _repo.get_cursor(PAUSED_KEY)
+    if paused and time.time() < float(paused):
+        pnote = f"\n⏸ Пауза ещё ~{int((float(paused) - time.time()) / 60)} мин."
+    return f"🔔 <b>Пуши</b>: {scope}\nПорог: {threshold}{pnote}\n\nЧто присылать?"
+
+
+@dp.message(F.text == BTN_PUSH)
+async def btn_push(m: Message) -> None:
+    await m.answer(await _push_scope_text(), reply_markup=_push_kb())
+
+
+@dp.callback_query(F.data.startswith("push:"))
+async def on_push(cq: CallbackQuery) -> None:
+    parts = cq.data.split(":")
+    action = parts[1]
+    if action == "all":
+        await _repo.save_cursor(PUSH_VERTICALS_KEY, "")
+        await cq.answer("Пуши: все вертикали")
+    elif action == "only" and len(parts) > 2 and parts[2] in VERTICALS:
+        await _repo.save_cursor(PUSH_VERTICALS_KEY, parts[2])
+        await cq.answer(f"Пуши: только {LABELS.get(parts[2], parts[2])}")
+    elif action == "pause":
+        await _repo.save_cursor(PAUSED_KEY, str(time.time() + 8 * 3600))
+        await cq.answer("⏸ Пауза 8ч")
+    elif action == "resume":
+        await _repo.save_cursor(PAUSED_KEY, "0")
+        await cq.answer("▶️ Пауза снята")
+    elif action == "thr":
+        cur = await _repo.get_cursor(THRESHOLD_KEY)
+        val = float(cur) if cur else settings.push_threshold
+        op = parts[2] if len(parts) > 2 else "reset"
+        val = settings.push_threshold if op == "reset" else val + (0.05 if op == "up" else -0.05)
+        val = max(0.0, min(1.0, round(val, 2)))
+        await _repo.save_cursor(THRESHOLD_KEY, str(val))
+        await cq.answer(f"Порог: {val}")
+    else:
+        await cq.answer("?")
+        return
+    with suppress(Exception):
+        await cq.message.edit_text(await _push_scope_text(), reply_markup=_push_kb())
+
+
+@dp.message(Command("pushonly"))
+async def cmd_pushonly(m: Message, command: CommandObject) -> None:
+    if not command.args:
+        await m.answer(await _push_scope_text(), reply_markup=_push_kb())
+        return
+    vs: list[str] = []
+    for t in command.args.lower().replace(",", " ").split():
+        v = _V_ALIAS.get(t)
+        if v and v not in vs:
+            vs.append(v)
+    if not vs:
+        await m.answer("Пример: /pushonly it · /pushonly it business · /pushall — вернуть все")
+        return
+    await _repo.save_cursor(PUSH_VERTICALS_KEY, ",".join(vs))
+    await m.answer(f"🔔 Пуши теперь только: {', '.join(LABELS.get(v, v) for v in vs)}")
+
+
+@dp.message(Command("pushall"))
+async def cmd_pushall(m: Message) -> None:
+    await _repo.save_cursor(PUSH_VERTICALS_KEY, "")
+    await m.answer("🔔 Пуши по всем вертикалям.")
 
 
 # --- кнопки-фидбек ---
@@ -508,6 +632,9 @@ async def _maybe_push(item_id: int) -> None:
         return
     item = await _repo.get_by_id(item_id)
     if item is None or item.personal_score is None or item.pushed_at is not None:
+        return
+    allow = await _repo.get_cursor(PUSH_VERTICALS_KEY)  # скоуп вертикалей (пусто = все)
+    if allow and (item.vertical or "") not in set(allow.split(",")):
         return
     thr = await _repo.get_cursor(THRESHOLD_KEY)
     threshold = float(thr) if thr else settings.push_threshold
