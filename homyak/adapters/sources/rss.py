@@ -4,17 +4,38 @@ from __future__ import annotations
 
 import calendar
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import feedparser
 import httpx
 import structlog
 
-from homyak.core.config import RSSFeedConfig
+from homyak.core.config import RSSFeedConfig, settings
 from homyak.core.interfaces import NewsItemDTO
 from homyak.core.textutils import clean_title, strip_html
 
 log = structlog.get_logger(__name__)
+
+
+def _effective_cutoff(
+    cursor: str | None, interval_seconds: int, now: datetime, factor: float
+) -> datetime:
+    """Граница «прошлое не нужно»: не старше одного окна поллинга (interval * factor).
+
+    Первый контакт с фидом → берём только текущее окно, а не всю выдачу (~20 старых твитов).
+    После простоя (курсор протух) → не догоняем долги, стартуем от горизонта.
+    В обычном режиме курсор свежее горизонта → работает он.
+    """
+    horizon = now - timedelta(seconds=interval_seconds * factor)
+    if not cursor:
+        return horizon
+    try:
+        c = datetime.fromisoformat(cursor)
+    except ValueError:
+        return horizon
+    if c.tzinfo is None:
+        c = c.replace(tzinfo=timezone.utc)
+    return max(c, horizon)
 
 
 def _entry_text(e) -> str | None:
@@ -76,7 +97,12 @@ class RSSSource:
             return
 
         parsed = feedparser.parse(content)
-        cutoff = datetime.fromisoformat(cursor) if cursor else None
+        cutoff = _effective_cutoff(
+            cursor,
+            self.interval_seconds,
+            datetime.now(timezone.utc),
+            settings.ingest_age_factor,
+        )
 
         # сортируем по published ASC, чтобы курсор двигался монотонно
         entries = sorted(
@@ -86,7 +112,7 @@ class RSSSource:
         max_cursor = cutoff
         for e in entries:
             pub = _entry_published(e)
-            if cutoff and pub and pub <= cutoff:
+            if pub and pub <= cutoff:  # уже видели ИЛИ старше окна — прошлое не нужно
                 continue
             dto = NewsItemDTO(
                 source_type="rss",

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     watchlist_path: str = Field(default="config/watchlist.yaml", alias="WATCHLIST_PATH")
     watchlist_boost: float = Field(default=0.15, alias="WATCHLIST_BOOST")  # буст personal_score
 
+    # «Прошлое не нужно»: на ингесте берём только окно текущего цикла — не старше
+    # interval * factor. Убивает залп старья при первом контакте и долги после простоя.
+    ingest_age_factor: float = Field(default=1.5, alias="INGEST_AGE_FACTOR")
+
     # Поллинг: не долбим источники (особенно RSSHub на одном twitter-токене).
     poll_concurrency: int = Field(default=3, alias="POLL_CONCURRENCY")  # макс. одновременных фетчей
     poll_stagger_seconds: float = Field(default=7.0, alias="POLL_STAGGER_SECONDS")  # разнос старта между источниками

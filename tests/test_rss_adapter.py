@@ -1,31 +1,39 @@
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
+
 import httpx
 import respx
 
-from homyak.core.config import RSSFeedConfig
 from homyak.adapters.sources.rss import RSSSource
+from homyak.core.config import RSSFeedConfig
 
-RSS_XML = b"""<?xml version="1.0"?>
-<rss version="2.0"><channel>
-<title>Test</title><link>https://example.com</link><description>d</description>
-<item>
-  <title>Old post</title>
-  <link>https://example.com/old</link>
-  <guid>https://example.com/old</guid>
-  <pubDate>Mon, 01 Jan 2024 10:00:00 GMT</pubDate>
-</item>
-<item>
-  <title>New post</title>
-  <link>https://example.com/new</link>
-  <guid>https://example.com/new</guid>
-  <pubDate>Tue, 02 Jan 2024 10:00:00 GMT</pubDate>
-</item>
-</channel></rss>"""
+NOW = datetime.now(timezone.utc)
+OLD = NOW - timedelta(hours=5)
+NEW = NOW - timedelta(hours=1)
+DAY = 86400  # интервал фида → окно 36ч, оба поста внутри (проверяем курсор, не свежесть)
+
+
+def _rss(*items) -> bytes:
+    body = "".join(
+        f"<item><title>{t}</title><link>https://example.com/{s}</link>"
+        f"<guid>https://example.com/{s}</guid><pubDate>{format_datetime(d)}</pubDate></item>"
+        for t, s, d in items
+    )
+    return (
+        '<?xml version="1.0"?><rss version="2.0"><channel><title>Test</title>'
+        f"<link>https://example.com</link><description>d</description>{body}</channel></rss>"
+    ).encode()
+
+
+RSS_XML = _rss(("Old post", "old", OLD), ("New post", "new", NEW))
 
 
 @respx.mock
 async def test_rss_parses_and_advances_cursor():
     respx.get("https://example.com/rss").mock(return_value=httpx.Response(200, content=RSS_XML))
-    src = RSSSource(RSSFeedConfig(name="t", url="https://example.com/rss", category="tech"))
+    src = RSSSource(
+        RSSFeedConfig(name="t", url="https://example.com/rss", category="tech", interval_seconds=DAY)
+    )
 
     results = [(dto, cur) async for dto, cur in src.poll(None)]
 
@@ -35,14 +43,26 @@ async def test_rss_parses_and_advances_cursor():
     assert first.source_id == "https://example.com/old"
     assert first.category == "tech"
     # финальный курсор = дата самого свежего поста
-    assert results[-1][1].startswith("2024-01-02")
+    assert results[-1][1].startswith(NEW.strftime("%Y-%m-%d"))
 
 
 @respx.mock
 async def test_rss_cursor_skips_seen():
     respx.get("https://example.com/rss").mock(return_value=httpx.Response(200, content=RSS_XML))
-    src = RSSSource(RSSFeedConfig(name="t", url="https://example.com/rss"))
+    src = RSSSource(RSSFeedConfig(name="t", url="https://example.com/rss", interval_seconds=DAY))
 
-    results = [(dto, cur) async for dto, cur in src.poll("2024-01-01T10:00:00+00:00")]
+    results = [(dto, cur) async for dto, cur in src.poll(OLD.isoformat())]
 
     assert [d.title for d, _ in results] == ["New post"]  # старый отфильтрован курсором
+
+
+@respx.mock
+async def test_rss_skips_stale_beyond_poll_window():
+    """Прошлое не нужно: при первом контакте не тащим то, что старше окна поллинга."""
+    respx.get("https://example.com/rss").mock(return_value=httpx.Response(200, content=RSS_XML))
+    # интервал 10 мин → окно 15 мин; обоим постам 1ч и 5ч → не берём ничего
+    src = RSSSource(RSSFeedConfig(name="t", url="https://example.com/rss", interval_seconds=600))
+
+    results = [dto async for dto, _ in src.poll(None)]
+
+    assert results == []
