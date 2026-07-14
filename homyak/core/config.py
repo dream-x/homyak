@@ -37,6 +37,8 @@ class Settings(BaseSettings):
 
     # Извлечение статей: фолбэк на reader-сервис (r.jina.ai) при бот-блоке/JS. Внешний вызов.
     article_reader_fallback: bool = Field(default=True, alias="ARTICLE_READER_FALLBACK")
+    # Хосты с жёсткой бот-стеной (403 даже reader'у) — не пытаемся тянуть, берём RSS-огрызок.
+    article_skip_hosts: str = Field(default="investing.com", alias="ARTICLE_SKIP_HOSTS")
 
     # Phase 4: LLM
     llm_model: str = Field(default="qwen2.5:14b", alias="LLM_MODEL")

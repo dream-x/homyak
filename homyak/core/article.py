@@ -9,6 +9,7 @@ Best-effort — при любой проблеме None.
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -33,6 +34,12 @@ _HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 _MIN_CHARS = 400  # ниже — считаем извлечение неудачным, пробуем reader-фолбэк
+_SKIP_HOSTS = tuple(h.strip().lower() for h in settings.article_skip_hosts.split(",") if h.strip())
+
+
+def _skipped(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return any(h in host for h in _SKIP_HOSTS)
 
 
 def _strip_reader(md: str | None) -> str | None:
@@ -72,7 +79,7 @@ async def _reader_fallback(url: str, timeout: float) -> str | None:
 
 async def fetch_article(url: str, timeout: float = 20.0) -> str | None:
     """Скачивает URL и извлекает основной текст. Фолбэк на reader при неудаче. None при провале."""
-    if not url:
+    if not url or _skipped(url):  # известная бот-стена — не тратим попытки
         return None
 
     text = ""
