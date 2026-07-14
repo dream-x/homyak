@@ -53,6 +53,12 @@ async def dashboard_item(item_id: int) -> dict:
     return await dashboard.item_detail(item_id)
 
 
+@app.get("/dashboard/watchlist")
+async def dashboard_watchlist() -> dict:
+    """Панели по трендовым темам (счётчик + свежие айтемы на тему)."""
+    return await dashboard.watchlist_snapshot()
+
+
 def _item_json(it: NewsItemDTO) -> dict:
     return {
         "id": it.id,

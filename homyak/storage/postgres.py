@@ -66,6 +66,7 @@ def _dto(row: NewsItem) -> NewsItemDTO:
         published_at=row.published_at,
         category=row.category,
         tags=list(row.tags or []),
+        watch_topics=list(row.watch_topics or []),
         vertical=row.vertical,
         summary=row.summary,
         score=row.score,
@@ -513,6 +514,10 @@ class NewsRepo:
             conditions.append(NewsItem.raw_score >= query.min_score)
         if query.min_insight is not None:
             conditions.append(NewsItem.insight_score >= query.min_insight)
+        if query.watch_topic:
+            conditions.append(NewsItem.watch_topics.any(query.watch_topic))
+        if query.has_watch:
+            conditions.append(func.cardinality(NewsItem.watch_topics) > 0)
 
         by_score = query.sort == "score"
         by_personal = query.sort == "personal"

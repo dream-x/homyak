@@ -1,0 +1,21 @@
+# Трендовые темы под пристальное внимание. Матч по алиасам (RU+EN, регистронезависимо):
+# короткие токены — по границе слова (\bopec\b), фразы — по вхождению. Правь свободно (volume-mount).
+watchlist:
+  - name: ChatGPT
+    aliases: [chatgpt, "chat gpt", "gpt-4", "gpt-5", "gpt4o", "gpt-4o"]
+  - name: Claude
+    aliases: [claude, anthropic, "claude opus", "claude sonnet"]
+  - name: Iran
+    aliases: [iran, iranian, tehran, иран, иранск, тегеран]
+  - name: Trump
+    aliases: [trump, "donald trump", трамп]
+  - name: Нефть
+    aliases: [oil, "crude oil", crude, brent, wti, opec, petroleum, нефть, нефт, опек, баррел, barrel]
+  - name: Недоношенность
+    aliases: [preterm, "premature birth", "premature infant", prematurity, neonatal, preemie,
+              недоношен, "преждевременные роды", неонатал]
+  - name: RUB/USD
+    aliases: ["usd/rub", "rub/usd", "usd rub", ruble, rouble, рубль, рубл, "курс рубля", "ruble exchange"]
+  - name: Рынок России
+    aliases: [moex, "russian market", "russian stocks", "rts index", ммвб, мосбиржа,
+              "рынок россии", "российский рынок", "российских акци", "российского рынка"]

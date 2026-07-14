@@ -79,5 +79,8 @@ class PersonalizerAnalyzer:
             weights=self._weights,
             taste_ramp=self._taste_ramp,
         )
+        # Пристальное внимание: айтемы вотчлиста бустим (не выше 1.0).
+        if item.watch_topics:
+            ps = min(1.0, ps + settings.watchlist_boost)
         ctx.personal_score = ps
         item.personal_score = ps

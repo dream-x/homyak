@@ -52,6 +52,9 @@ class NewsItem(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default=sa_text("'{}'::text[]")
     )
+    watch_topics: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, default=list, server_default=sa_text("'{}'::text[]")
+    )
     category: Mapped[str | None] = mapped_column(String(64))
     summary: Mapped[str | None] = mapped_column(Text)
     score: Mapped[float | None] = mapped_column(Float)
@@ -95,6 +98,7 @@ class NewsItem(Base):
         Index("idx_news_fts", "search_tsv", postgresql_using="gin"),
         Index("idx_news_feed", "feed_name", postgresql_where=sa_text("feed_name IS NOT NULL")),
         Index("idx_news_vertical", "vertical", postgresql_where=sa_text("vertical IS NOT NULL")),
+        Index("idx_news_watch", "watch_topics", postgresql_using="gin"),
         Index(
             "idx_news_url_normalized",
             "url_normalized",

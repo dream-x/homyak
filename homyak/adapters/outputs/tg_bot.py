@@ -63,6 +63,7 @@ dp = Dispatcher()
 BTN_BIZ = "💼 Business"
 BTN_IT = "💻 IT"
 BTN_MED = "🩺 Medical"
+BTN_WATCH = "👁 Watchlist"
 BTN_INSIGHTS = "💡 Insights"
 BTN_TWITTER = "🐦 Twitter"
 BTN_DIGEST = "📰 Дайджест"
@@ -76,7 +77,7 @@ _BTN_VERTICAL = {BTN_BIZ: "business", BTN_IT: "it", BTN_MED: "medical"}
 MAIN_KB = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=BTN_BIZ), KeyboardButton(text=BTN_IT), KeyboardButton(text=BTN_MED)],
-        [KeyboardButton(text=BTN_INSIGHTS), KeyboardButton(text=BTN_TWITTER), KeyboardButton(text=BTN_DIGEST)],
+        [KeyboardButton(text=BTN_WATCH), KeyboardButton(text=BTN_INSIGHTS), KeyboardButton(text=BTN_TWITTER), KeyboardButton(text=BTN_DIGEST)],
         [KeyboardButton(text=BTN_PUSH), KeyboardButton(text=BTN_SOURCES), KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
     ],
     resize_keyboard=True,
@@ -88,6 +89,7 @@ BOT_COMMANDS = [
     BotCommand(command="business", description="💼 Лента: бизнес/рынки"),
     BotCommand(command="it", description="💻 Лента: технологии/IT"),
     BotCommand(command="medical", description="🩺 Лента: медицина"),
+    BotCommand(command="trending", description="👁 Watchlist: трендовые темы под вниманием"),
     BotCommand(command="insights", description="💡 Инсайды: посты с реальной мыслью"),
     BotCommand(command="digest", description="📰 Топ по всем вертикалям"),
     BotCommand(command="twitter", description="🐦 Только твиттер (все аккаунты)"),
@@ -117,8 +119,10 @@ def _fmt(item) -> str:
     vlabel = LABELS.get(item.vertical, "")
     ins = getattr(item, "insight_score", None)
     ins_badge = f" · 💡 <b>{int(round(ins * 100))}%</b>" if ins is not None and ins >= 0.6 else ""
+    watch = getattr(item, "watch_topics", None) or []
+    watch_badge = f"👁 <b>{_esc(', '.join(watch))}</b>\n" if watch else ""
     head = (
-        f"{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>{ins_badge}"
+        f"{watch_badge}{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>{ins_badge}"
         + (f" · {_esc(tags)}" if tags else "")
     )
     body = f"<b>{_esc(item.title or '(без заголовка)')}</b>"
@@ -221,6 +225,23 @@ async def _send_vertical(m: Message, vertical: str, n: int = 8) -> None:
     for it in result.items:
         await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
         await _repo.mark_pushed(it.id)
+
+
+async def _send_watch(m: Message, n: int = 12) -> None:
+    # Кросс-вертикальный срез: айтемы, попавшие в трендовые темы вотчлиста.
+    result = await _repo.feed(FeedQuery(sort="personal", has_watch=True, limit=n))
+    if not result.items:
+        await m.answer("👁 Watchlist: пока пусто — как появятся посты по темам, соберу.")
+        return
+    await m.answer("👁 Watchlist — трендовые темы под пристальным вниманием:")
+    for it in result.items:
+        await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
+        await _repo.mark_pushed(it.id)
+
+
+@dp.message(Command("trending"))
+async def cmd_trending(m: Message) -> None:
+    await _send_watch(m, 12)
 
 
 INSIGHT_MIN = 0.5  # порог insight_score для ленты 💡 Insights (лента всё равно сортирует по убыванию)
@@ -410,6 +431,11 @@ async def btn_profile(m: Message) -> None:
 @dp.message(F.text == BTN_STATS)
 async def btn_stats(m: Message) -> None:
     await cmd_stats(m)
+
+
+@dp.message(F.text == BTN_WATCH)
+async def btn_watch(m: Message) -> None:
+    await _send_watch(m, 12)
 
 
 @dp.message(F.text == BTN_INSIGHTS)

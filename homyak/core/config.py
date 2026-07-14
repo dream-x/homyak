@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     nats_url: str = Field(default="nats://localhost:4222", alias="NATS_URL")
     sources_config_path: str = Field(default="config/sources.yaml", alias="SOURCES_CONFIG_PATH")
+    watchlist_path: str = Field(default="config/watchlist.yaml", alias="WATCHLIST_PATH")
+    watchlist_boost: float = Field(default=0.15, alias="WATCHLIST_BOOST")  # буст personal_score
 
     # Поллинг: не долбим источники (особенно RSSHub на одном twitter-токене).
     poll_concurrency: int = Field(default=3, alias="POLL_CONCURRENCY")  # макс. одновременных фетчей

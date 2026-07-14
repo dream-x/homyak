@@ -14,6 +14,7 @@ from homyak.adapters.analyzers.personalizer import PersonalizerAnalyzer
 from homyak.adapters.analyzers.scorer import ScorerAnalyzer
 from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
 from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
+from homyak.adapters.analyzers.watchlist_matcher import WatchlistAnalyzer
 from homyak.adapters.sources.miniflux import MinifluxSource
 from homyak.adapters.sources.rss import RSSSource
 from homyak.core.config import SourcesConfig
@@ -40,7 +41,7 @@ def build_analyzers(
     scorer (6). При with_llm: llm_tagger (4), llm_summarizer (5). При with_llm+repo (Phase 6):
     llm_relevance (7, судья) + personalizer (8, свёртка personal_score).
     """
-    analyzers: list[Analyzer] = [ArticleFetchAnalyzer(), UrlDedupAnalyzer()]
+    analyzers: list[Analyzer] = [ArticleFetchAnalyzer(), UrlDedupAnalyzer(), WatchlistAnalyzer()]
     if qdrant is not None:
         analyzers.append(EmbedderAnalyzer(qdrant))
         analyzers.append(SimilarityDedupAnalyzer(qdrant))

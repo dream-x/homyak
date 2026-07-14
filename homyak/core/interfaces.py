@@ -36,6 +36,7 @@ class NewsItemDTO:
     category: str | None = None
     # заполняется обработкой:
     tags: list[str] | None = None
+    watch_topics: list[str] | None = None  # трендовые темы вотчлиста (Iran/Нефть/…)
     vertical: str | None = None  # business/it/medical — нужен для метки в ленте
     summary: str | None = None
     score: float | None = None
@@ -102,6 +103,8 @@ class FeedQuery:
     vertical: str | None = None
     min_score: float | None = None
     min_insight: float | None = None  # порог insight_score для ленты 💡 Insights
+    watch_topic: str | None = None  # только айтемы с этой темой вотчлиста
+    has_watch: bool = False  # только айтемы с любой темой вотчлиста
     since: datetime | None = None
     collapse_clusters: bool = True
     sort: str = "recent"  # "recent" | "score"

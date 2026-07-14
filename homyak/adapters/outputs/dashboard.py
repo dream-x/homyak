@@ -118,6 +118,56 @@ async def queue_snapshot(limit: int = 40) -> dict:
     }
 
 
+async def watchlist_snapshot(per_topic: int = 6) -> dict:
+    """Для каждой темы вотчлиста: счётчик + свежие айтемы (для панелей на дашборде)."""
+    from homyak.core.watchlist import topic_names
+
+    names = topic_names()
+    async with SessionFactory() as s:
+        counts = dict(
+            (
+                await s.execute(
+                    text(
+                        "select topic, count(*) from news_items, unnest(watch_topics) topic"
+                        " where processed_at is not null group by topic"
+                    )
+                )
+            ).all()
+        )
+        topics = []
+        for name in names:
+            rows = (
+                await s.execute(
+                    text(
+                        "select id, title, source_type, feed_name, vertical, personal_score,"
+                        " extract(epoch from (now()-fetched_at))::int age_s"
+                        " from news_items where :t = any(watch_topics) and processed_at is not null"
+                        " order by fetched_at desc limit :lim"
+                    ),
+                    {"t": name, "lim": per_topic},
+                )
+            ).all()
+            topics.append(
+                {
+                    "name": name,
+                    "count": int(counts.get(name, 0)),
+                    "items": [
+                        {
+                            "id": r.id,
+                            "title": r.title,
+                            "bucket": _bucket(r.source_type, r.feed_name),
+                            "feed": r.feed_name,
+                            "vertical": r.vertical,
+                            "score": r.personal_score,
+                            "age_s": r.age_s,
+                        }
+                        for r in rows
+                    ],
+                }
+            )
+    return {"topics": topics}
+
+
 async def item_detail(item_id: int) -> dict:
     """Полная карточка айтема для просмотра исходного сообщения."""
     async with SessionFactory() as s:
@@ -135,6 +185,7 @@ async def item_detail(item_id: int) -> dict:
         "bucket": _bucket(it.source_type, it.feed_name),
         "vertical": it.vertical,
         "tags": list(it.tags or []),
+        "watch": list(it.watch_topics or []),
         "summary": it.summary,
         "score": it.personal_score,
         "insight": it.insight_score,
@@ -182,6 +233,7 @@ async def stream_events(request: Request) -> EventSourceResponse:
                         "feed": it.feed_name,
                         "bucket": _bucket(it.source_type, it.feed_name),
                         "tags": list(it.tags or [])[:3],
+                        "watch": list(it.watch_topics or []),
                     }
                     yield {"event": "flow", "data": json.dumps(payload, ensure_ascii=False)}
         finally:
@@ -262,6 +314,18 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 .cardbtn{cursor:pointer;transition:border-color .15s} .cardbtn:hover{border-color:var(--accent)}
 .qlist{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .mback{display:inline-block;color:var(--accent);cursor:pointer;font-size:12px;margin-bottom:10px}
+.watch{flex:none;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:700;background:rgba(255,110,110,.16);color:#ff8f8f}
+.wlwrap{max-width:1400px;margin:0 auto;padding:0 20px 26px}
+.wlwrap>h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);margin:0 0 10px}
+.wlgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.wlcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px;min-width:0}
+.wlcard h3{margin:0 0 8px;font-size:14px;display:flex;align-items:center;gap:8px}
+.wlcard h3 .cnt{margin-left:auto;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.wlcard .il{display:flex;flex-direction:column;gap:5px}
+.wlitem{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12.5px;padding:3px 0;border-radius:6px}
+.wlitem:hover{background:#212a3a}
+.wlitem .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wlitem .n{flex:none;color:var(--dim);font-size:11px}
 </style></head>
 <body>
 <header>
@@ -308,7 +372,12 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
   </aside>
 </div>
 
-<div class="modal" id="modal"><div class="mbox">
+<div class="wlwrap">
+  <h2>👁 Watchlist · трендовые темы под пристальным вниманием</h2>
+  <div class="wlgrid" id="wlgrid"><div class="muted">…</div></div>
+</div>
+
+<div class="modal" id="modal"><div class="mbox" id="mbox">
   <button class="mclose" id="mclose">✕</button>
   <div id="mbody"></div>
 </div></div>
@@ -336,7 +405,8 @@ function addRow(m){
   const acc=m.feed&&m.feed.startsWith('tw_')?'@'+m.feed.slice(3):(m.feed||m.bucket);
   const vp=m.vertical?`<span class="vpill v-${m.vertical}">${VLABEL[m.vertical]||m.vertical}</span>`:'';
   const sc=m.score!=null?`<span class="sc">${Math.round(m.score*100)}%</span>`:'';
-  row.innerHTML=`<span class="badge ${bc}">${be} ${acc}</span>${vp}<span class="ttl">${esc(m.title||'—')}</span>${sc}`;
+  const wb=(m.watch&&m.watch.length)?`<span class="watch">👁 ${esc(m.watch.join(', '))}</span>`:'';
+  row.innerHTML=`<span class="badge ${bc}">${be} ${acc}</span>${vp}${wb}<span class="ttl">${esc(m.title||'—')}</span>${sc}`;
   row.onclick=()=>openItem(m.id);
   flow.prepend(row);
   while(flow.children.length>60)flow.removeChild(flow.lastChild);
@@ -370,7 +440,26 @@ function renderStats(s){
 async function pollStats(){try{const r=await fetch('/dashboard/stats');renderStats(await r.json());}catch(e){}}
 pollStats();setInterval(pollStats,12000);
 
+async function pollWatchlist(){try{
+  const w=await (await fetch('/dashboard/watchlist')).json();
+  $('wlgrid').innerHTML=w.topics.map(t=>{
+    const items=t.items.map(it=>{const [bc,be]=BADGE[it.bucket]||BADGE.other;
+      return `<div class="wlitem" onclick="openItem(${it.id})"><span class="badge ${bc}">${be}</span><span class="ttl">${esc(it.title||'—')}</span><span class="n">${fmtAge(it.age_s)}</span></div>`;
+    }).join('')||'<div class="muted">пока пусто</div>';
+    return `<div class="wlcard"><h3>👁 ${esc(t.name)}<span class="cnt">${t.count.toLocaleString('ru-RU')}</span></h3><div class="il">${items}</div></div>`;
+  }).join('')||'<div class="muted">вотчлист пуст</div>';
+}catch(e){}}
+pollWatchlist();setInterval(pollWatchlist,15000);
+
+let mStack=[];
+function mHide(){$('modal').classList.remove('on');mStack=[];}
+function mBack(){
+  if(mStack.length){const s=mStack.pop();$('mbody').innerHTML=s.html;const b=$('mbox');if(b)requestAnimationFrame(()=>{b.scrollTop=s.scroll;});}
+  else mHide();
+}
+
 async function openQueue(){try{
+  mStack=[];
   $('mbody').innerHTML='<div class="muted">Загружаю очередь…</div>';
   $('modal').classList.add('on');
   const q=await (await fetch('/dashboard/queue?limit=200')).json();
@@ -387,10 +476,12 @@ async function openQueue(){try{
 async function openItem(id,fromQueue){try{
   const it=await (await fetch('/dashboard/item/'+id)).json();
   if(!it.id)return;
+  if(fromQueue){mStack.push({html:$('mbody').innerHTML,scroll:$('mbox')?$('mbox').scrollTop:0});}
   const src=it.feed&&it.feed.startsWith('tw_')?'🐦 @'+it.feed.slice(3):(it.feed||it.source_type||'?');
-  const meta=[src, it.vertical?VLABEL[it.vertical]:'', it.processed?'✓ обработан':'⏳ в очереди',
+  const meta=[src, it.vertical?VLABEL[it.vertical]:'',
+    (it.watch&&it.watch.length)?'👁 '+it.watch.join(', '):'', it.processed?'✓ обработан':'⏳ в очереди',
     it.score!=null?'🎯 '+Math.round(it.score*100)+'%':'', it.insight!=null?'💡 '+Math.round(it.insight*100)+'%':''].filter(Boolean);
-  let h=fromQueue?`<span class="mback" onclick="openQueue()">← к очереди</span>`:'';
+  let h=mStack.length?`<span class="mback" onclick="mBack()">← назад</span>`:'';
   h+=`<h3>${esc(it.title||'(без заголовка)')}</h3>`;
   h+=`<div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
@@ -400,9 +491,9 @@ async function openItem(id,fromQueue){try{
   $('mbody').innerHTML=h;
   $('modal').classList.add('on');
 }catch(e){}}
-$('mclose').onclick=()=>$('modal').classList.remove('on');
-$('modal').onclick=e=>{if(e.target.id==='modal')$('modal').classList.remove('on');};
-document.addEventListener('keydown',e=>{if(e.key==='Escape')$('modal').classList.remove('on');});
+$('mclose').onclick=mBack;
+$('modal').onclick=e=>{if(e.target.id==='modal')mBack();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')mBack();});
 
 let es;
 function connect(){
