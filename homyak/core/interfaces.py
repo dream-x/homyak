@@ -40,6 +40,7 @@ class NewsItemDTO:
     summary: str | None = None
     score: float | None = None
     personal_score: float | None = None
+    insight_score: float | None = None  # 0..1: несёт ли пост инсайт
     llm_reason: str | None = None
     cluster_id: int | None = None
 
@@ -100,6 +101,7 @@ class FeedQuery:
     feed_prefix: str | None = None  # префикс feed_name, напр. 'tw_' — все твиттер-аккаунты
     vertical: str | None = None
     min_score: float | None = None
+    min_insight: float | None = None  # порог insight_score для ленты 💡 Insights
     since: datetime | None = None
     collapse_clusters: bool = True
     sort: str = "recent"  # "recent" | "score"

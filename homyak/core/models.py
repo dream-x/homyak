@@ -75,6 +75,7 @@ class NewsItem(Base):
     llm_relevance: Mapped[float | None] = mapped_column(Float)
     llm_reason: Mapped[str | None] = mapped_column(Text)
     personal_score: Mapped[float | None] = mapped_column(Float)
+    insight_score: Mapped[float | None] = mapped_column(Float)  # 0..1: несёт ли пост инсайт
     scored_profile_version: Mapped[int | None] = mapped_column(Integer)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -106,6 +107,11 @@ class NewsItem(Base):
         ),
         Index("idx_news_score", sa_text("score DESC NULLS LAST")),
         Index("idx_news_personal", sa_text("personal_score DESC NULLS LAST")),
+        Index(
+            "idx_news_insight",
+            sa_text("insight_score DESC NULLS LAST"),
+            postgresql_where=sa_text("insight_score IS NOT NULL"),
+        ),
         Index(
             "idx_news_pushable",
             sa_text("personal_score DESC"),

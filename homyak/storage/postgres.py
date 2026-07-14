@@ -70,6 +70,7 @@ def _dto(row: NewsItem) -> NewsItemDTO:
         summary=row.summary,
         score=row.score,
         personal_score=row.personal_score,
+        insight_score=row.insight_score,
         llm_reason=row.llm_reason,
         cluster_id=row.cluster_id,
     )
@@ -510,13 +511,19 @@ class NewsRepo:
             conditions.append(NewsItem.published_at >= query.since)
         if query.min_score is not None:
             conditions.append(NewsItem.raw_score >= query.min_score)
+        if query.min_insight is not None:
+            conditions.append(NewsItem.insight_score >= query.min_insight)
 
         by_score = query.sort == "score"
         by_personal = query.sort == "personal"
+        by_insight = query.sort == "insight"
         if by_personal:
             conditions.append(NewsItem.personal_score.isnot(None))  # muted/unscored — вон
+        if by_insight:
+            conditions.append(NewsItem.insight_score.isnot(None))
+        keyset = not by_score and not by_personal and not by_insight
         sort_ts = _sort_ts()
-        if not by_score and not by_personal and query.cursor:  # keyset только для recent
+        if keyset and query.cursor:  # keyset только для recent
             c_ts, c_id = _decode_cursor(query.cursor)
             conditions.append(
                 or_(sort_ts < c_ts, sa.and_(sort_ts == c_ts, NewsItem.id < c_id))
@@ -524,6 +531,13 @@ class NewsRepo:
 
         if by_personal:
             order = [NewsItem.personal_score.desc().nullslast(), NewsItem.id.desc()]
+        elif by_insight:
+            # инсайты: сперва по insight, потом по персональной релевантности
+            order = [
+                NewsItem.insight_score.desc().nullslast(),
+                NewsItem.personal_score.desc().nullslast(),
+                NewsItem.id.desc(),
+            ]
         elif by_score:
             order = [NewsItem.score.desc().nullslast(), NewsItem.id.desc()]
         else:
@@ -549,7 +563,7 @@ class NewsRepo:
 
         has_more = len(rows) > query.limit
         rows = rows[: query.limit]
-        keyset_ok = not by_score and not by_personal
+        keyset_ok = keyset
         next_cursor = _encode_cursor(rows[-1]) if has_more and rows and keyset_ok else None
         return Feed(items=[_dto(r) for r in rows], next_cursor=next_cursor)
 

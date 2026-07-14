@@ -63,6 +63,7 @@ dp = Dispatcher()
 BTN_BIZ = "💼 Business"
 BTN_IT = "💻 IT"
 BTN_MED = "🩺 Medical"
+BTN_INSIGHTS = "💡 Insights"
 BTN_TWITTER = "🐦 Twitter"
 BTN_DIGEST = "📰 Дайджест"
 BTN_PUSH = "🔔 Пуши"
@@ -71,12 +72,12 @@ BTN_PROFILE = "👤 Профили"
 BTN_STATS = "📊 Статистика"
 _BTN_VERTICAL = {BTN_BIZ: "business", BTN_IT: "it", BTN_MED: "medical"}
 
-# Ряд 1 — переключение вертикали (лента + пуши следуют за ней); ряд 2/3 — сервис/срезы.
+# Ряд 1 — переключение вертикали (лента + пуши следуют за ней); ряд 2/3 — срезы/сервис.
 MAIN_KB = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=BTN_BIZ), KeyboardButton(text=BTN_IT), KeyboardButton(text=BTN_MED)],
-        [KeyboardButton(text=BTN_TWITTER), KeyboardButton(text=BTN_DIGEST), KeyboardButton(text=BTN_PUSH)],
-        [KeyboardButton(text=BTN_SOURCES), KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
+        [KeyboardButton(text=BTN_INSIGHTS), KeyboardButton(text=BTN_TWITTER), KeyboardButton(text=BTN_DIGEST)],
+        [KeyboardButton(text=BTN_PUSH), KeyboardButton(text=BTN_SOURCES), KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
     ],
     resize_keyboard=True,
     is_persistent=True,
@@ -87,6 +88,7 @@ BOT_COMMANDS = [
     BotCommand(command="business", description="💼 Лента: бизнес/рынки"),
     BotCommand(command="it", description="💻 Лента: технологии/IT"),
     BotCommand(command="medical", description="🩺 Лента: медицина"),
+    BotCommand(command="insights", description="💡 Инсайды: посты с реальной мыслью"),
     BotCommand(command="digest", description="📰 Топ по всем вертикалям"),
     BotCommand(command="twitter", description="🐦 Только твиттер (все аккаунты)"),
     BotCommand(command="profile", description="👤 Мои профили (3 вертикали)"),
@@ -113,7 +115,12 @@ def _fmt(item) -> str:
     pct = int(round((item.personal_score or 0) * 100))
     tags = ", ".join((item.tags or [])[:3])
     vlabel = LABELS.get(item.vertical, "")
-    head = f"{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>" + (f" · {_esc(tags)}" if tags else "")
+    ins = getattr(item, "insight_score", None)
+    ins_badge = f" · 💡 <b>{int(round(ins * 100))}%</b>" if ins is not None and ins >= 0.6 else ""
+    head = (
+        f"{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>{ins_badge}"
+        + (f" · {_esc(tags)}" if tags else "")
+    )
     body = f"<b>{_esc(item.title or '(без заголовка)')}</b>"
     if item.summary:
         body += f"\n{_esc(item.summary)}"
@@ -214,6 +221,26 @@ async def _send_vertical(m: Message, vertical: str, n: int = 8) -> None:
     for it in result.items:
         await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
         await _repo.mark_pushed(it.id)
+
+
+INSIGHT_MIN = 0.5  # порог insight_score для ленты 💡 Insights (лента всё равно сортирует по убыванию)
+
+
+async def _send_insights(m: Message, n: int = 10) -> None:
+    # Кросс-вертикальный срез: посты с реальной мыслью (insight_score высок), приоритет людям.
+    result = await _repo.feed(FeedQuery(sort="insight", min_insight=INSIGHT_MIN, limit=n))
+    if not result.items:
+        await m.answer("💡 Insights: пока пусто — копятся (детектор ставит insight свежим постам).")
+        return
+    await m.answer("💡 Insights — посты с реальной мыслью (все источники):")
+    for it in result.items:
+        await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
+        await _repo.mark_pushed(it.id)
+
+
+@dp.message(Command("insights"))
+async def cmd_insights(m: Message) -> None:
+    await _send_insights(m, 10)
 
 
 async def _send_twitter(m: Message, n: int = 10) -> None:
@@ -383,6 +410,11 @@ async def btn_profile(m: Message) -> None:
 @dp.message(F.text == BTN_STATS)
 async def btn_stats(m: Message) -> None:
     await cmd_stats(m)
+
+
+@dp.message(F.text == BTN_INSIGHTS)
+async def btn_insights(m: Message) -> None:
+    await _send_insights(m, 10)
 
 
 @dp.message(F.text == BTN_TWITTER)
