@@ -41,6 +41,18 @@ async def dashboard_stats() -> dict:
     return await dashboard.stats_snapshot()
 
 
+@app.get("/dashboard/queue")
+async def dashboard_queue() -> dict:
+    """Очередь на обработку (pending-айтемы)."""
+    return await dashboard.queue_snapshot()
+
+
+@app.get("/dashboard/item/{item_id}")
+async def dashboard_item(item_id: int) -> dict:
+    """Карточка айтема (исходное сообщение + мета)."""
+    return await dashboard.item_detail(item_id)
+
+
 def _item_json(it: NewsItemDTO) -> dict:
     return {
         "id": it.id,

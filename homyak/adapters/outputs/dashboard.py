@@ -86,6 +86,62 @@ async def stats_snapshot() -> dict:
     }
 
 
+async def queue_snapshot(limit: int = 40) -> dict:
+    """Очередь на обработку: pending-айтемы (processed_at IS NULL), старейшие сверху."""
+    async with SessionFactory() as s:
+        total = (
+            await s.execute(text("select count(*) from news_items where processed_at is null"))
+        ).scalar() or 0
+        rows = (
+            await s.execute(
+                text(
+                    "select id, title, source_type, feed_name,"
+                    " extract(epoch from (now()-fetched_at))::int age_s"
+                    " from news_items where processed_at is null"
+                    " order by fetched_at asc limit :lim"
+                ),
+                {"lim": limit},
+            )
+        ).all()
+    return {
+        "pending": total,
+        "items": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "bucket": _bucket(r.source_type, r.feed_name),
+                "feed": r.feed_name,
+                "age_s": r.age_s,
+            }
+            for r in rows
+        ],
+    }
+
+
+async def item_detail(item_id: int) -> dict:
+    """Полная карточка айтема для просмотра исходного сообщения."""
+    async with SessionFactory() as s:
+        it = await s.get(NewsItem, item_id)
+    if it is None:
+        return {}
+    return {
+        "id": it.id,
+        "title": it.title,
+        "text": it.text,
+        "url": it.url,
+        "source_type": it.source_type,
+        "feed": it.feed_name,
+        "author": it.author,
+        "bucket": _bucket(it.source_type, it.feed_name),
+        "vertical": it.vertical,
+        "tags": list(it.tags or []),
+        "summary": it.summary,
+        "score": it.personal_score,
+        "insight": it.insight_score,
+        "processed": it.processed_at is not None,
+    }
+
+
 async def stream_events(request: Request) -> EventSourceResponse:
     async def gen():
         nc = await nats.connect(settings.nats_url)
@@ -192,6 +248,16 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 .pulse.on{animation:p .6s ease}
 @keyframes p{0%{opacity:1;transform:scale(1.6)}100%{opacity:0;transform:scale(1)}}
 .muted{color:var(--dim);font-size:12px;text-align:center;padding:14px}
+.row,.qrow{cursor:pointer} .row:hover,.qrow:hover{background:#212a3a}
+.qrow .ttl{font-size:12.5px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;z-index:20;padding:18px}
+.modal.on{display:flex}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;max-height:86vh;overflow:auto;padding:22px 22px 18px;position:relative}
+.mclose{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--dim);font-size:20px;cursor:pointer;line-height:1}
+.mbox h3{margin:0 0 10px;font-size:17px;padding-right:26px;line-height:1.3}
+.mmeta{color:var(--dim);font-size:12px;display:flex;gap:12px;flex-wrap:wrap;margin:4px 0}
+.mtext{white-space:pre-wrap;word-break:break-word;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:12px;margin:10px 0;font-size:13px;line-height:1.55}
+.mlbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-top:8px}
 </style></head>
 <body>
 <header>
@@ -219,6 +285,10 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 
   <aside>
     <div class="panel">
+      <h2>⏳ Очередь на обработку <span id="q-n"></span></h2>
+      <div id="queue" class="feedlist"><div class="muted">…</div></div>
+    </div>
+    <div class="panel">
       <h2>По вертикалям</h2>
       <div class="bar" id="vbar"></div>
       <div class="legend" id="vleg"></div>
@@ -238,8 +308,15 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
   </aside>
 </div>
 
+<div class="modal" id="modal"><div class="mbox">
+  <button class="mclose" id="mclose">✕</button>
+  <div id="mbody"></div>
+</div></div>
+
 <script>
 const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const fmtAge=s=>{s=Math.max(0,s|0);return s<60?s+'с':s<3600?Math.floor(s/60)+'м':Math.floor(s/3600)+'ч';};
 const VCOLOR={business:'--biz',it:'--it',medical:'--med'};
 const VLABEL={business:'💼 Business',it:'💻 IT',medical:'🩺 Medical'};
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
@@ -259,8 +336,8 @@ function addRow(m){
   const acc=m.feed&&m.feed.startsWith('tw_')?'@'+m.feed.slice(3):(m.feed||m.bucket);
   const vp=m.vertical?`<span class="vpill v-${m.vertical}">${VLABEL[m.vertical]||m.vertical}</span>`:'';
   const sc=m.score!=null?`<span class="sc">${Math.round(m.score*100)}%</span>`:'';
-  row.innerHTML=`<span class="badge ${bc}">${be} ${acc}</span>${vp}<span class="ttl">${(m.title||'—').replace(/</g,'&lt;')}</span>${sc}`;
-  if(m.url)row.title=m.url;
+  row.innerHTML=`<span class="badge ${bc}">${be} ${acc}</span>${vp}<span class="ttl">${esc(m.title||'—')}</span>${sc}`;
+  row.onclick=()=>openItem(m.id);
   flow.prepend(row);
   while(flow.children.length>60)flow.removeChild(flow.lastChild);
 }
@@ -292,6 +369,35 @@ function renderStats(s){
 
 async function pollStats(){try{const r=await fetch('/dashboard/stats');renderStats(await r.json());}catch(e){}}
 pollStats();setInterval(pollStats,12000);
+
+async function pollQueue(){try{
+  const q=await (await fetch('/dashboard/queue')).json();
+  $('q-n').textContent='('+q.pending.toLocaleString('ru-RU')+')';
+  $('queue').innerHTML=q.items.map(it=>{
+    const [bc,be]=BADGE[it.bucket]||BADGE.other;
+    return `<div class="srcrow qrow" onclick="openItem(${it.id})"><span class="badge ${bc}">${be}</span><span class="ttl">${esc(it.title||'—')}</span><span class="n">${fmtAge(it.age_s)}</span></div>`;
+  }).join('')||'<div class="muted">очередь пуста 🎉</div>';
+}catch(e){}}
+pollQueue();setInterval(pollQueue,8000);
+
+async function openItem(id){try{
+  const it=await (await fetch('/dashboard/item/'+id)).json();
+  if(!it.id)return;
+  const src=it.feed&&it.feed.startsWith('tw_')?'🐦 @'+it.feed.slice(3):(it.feed||it.source_type||'?');
+  const meta=[src, it.vertical?VLABEL[it.vertical]:'', it.processed?'✓ обработан':'⏳ в очереди',
+    it.score!=null?'🎯 '+Math.round(it.score*100)+'%':'', it.insight!=null?'💡 '+Math.round(it.insight*100)+'%':''].filter(Boolean);
+  let h=`<h3>${esc(it.title||'(без заголовка)')}</h3>`;
+  h+=`<div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
+  if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
+  h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
+  if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
+  if(it.url)h+=`<a href="${esc(it.url)}" target="_blank" rel="noopener" style="color:var(--accent)">🔗 Открыть оригинал</a>`;
+  $('mbody').innerHTML=h;
+  $('modal').classList.add('on');
+}catch(e){}}
+$('mclose').onclick=()=>$('modal').classList.remove('on');
+$('modal').onclick=e=>{if(e.target.id==='modal')$('modal').classList.remove('on');};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')$('modal').classList.remove('on');});
 
 let es;
 function connect(){
