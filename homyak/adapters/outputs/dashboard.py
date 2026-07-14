@@ -203,7 +203,7 @@ PAGE = r"""<!doctype html>
   --txt:#e6e9ef; --dim:#8a93a6; --accent:#6ee7ff;
   --biz:#f5b942; --it:#5aa9ff; --med:#4fd6a0; --tw:#7db9ff; --rss:#ff9b6a; --tg:#a78bfa;
 }
-*{box-sizing:border-box} html,body{margin:0}
+*{box-sizing:border-box} html,body{margin:0;max-width:100%;overflow-x:hidden}
 body{background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 a{color:inherit;text-decoration:none}
 header{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(11,14,20,.9);backdrop-filter:blur(8px);z-index:5}
@@ -212,7 +212,8 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 .dot.live{background:#4fd6a0;box-shadow:0 0 10px #4fd6a0}
 .spacer{flex:1}
 .clock{color:var(--dim);font-variant-numeric:tabular-nums}
-.wrap{display:grid;grid-template-columns:1fr 320px;gap:16px;padding:16px 20px;max-width:1400px;margin:0 auto}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;padding:16px 20px;max-width:1400px;margin:0 auto}
+.main,aside{min-width:0}
 @media(max-width:900px){.wrap{grid-template-columns:1fr}}
 .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
 @media(max-width:640px){.cards{grid-template-columns:repeat(2,1fr)}}
@@ -258,6 +259,9 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 .mmeta{color:var(--dim);font-size:12px;display:flex;gap:12px;flex-wrap:wrap;margin:4px 0}
 .mtext{white-space:pre-wrap;word-break:break-word;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:12px;margin:10px 0;font-size:13px;line-height:1.55}
 .mlbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-top:8px}
+.cardbtn{cursor:pointer;transition:border-color .15s} .cardbtn:hover{border-color:var(--accent)}
+.qlist{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.mback{display:inline-block;color:var(--accent);cursor:pointer;font-size:12px;margin-bottom:10px}
 </style></head>
 <body>
 <header>
@@ -274,7 +278,7 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
       <div class="card"><div class="k">Обработано</div><div class="v" id="c-proc">–</div></div>
       <div class="card"><div class="k">За час</div><div class="v" id="c-hour">–</div></div>
       <div class="card"><div class="k">Скорость</div><div class="v" id="c-rate">–<small>/мин</small></div></div>
-      <div class="card"><div class="k">В очереди</div><div class="v" id="c-pend">–</div></div>
+      <div class="card cardbtn" onclick="openQueue()"><div class="k">В очереди ▸</div><div class="v" id="c-pend">–</div></div>
       <div class="card"><div class="k">Пушей</div><div class="v" id="c-push">–</div></div>
     </div>
     <div class="panel">
@@ -284,10 +288,6 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
   </div>
 
   <aside>
-    <div class="panel">
-      <h2>⏳ Очередь на обработку <span id="q-n"></span></h2>
-      <div id="queue" class="feedlist"><div class="muted">…</div></div>
-    </div>
     <div class="panel">
       <h2>По вертикалям</h2>
       <div class="bar" id="vbar"></div>
@@ -370,23 +370,28 @@ function renderStats(s){
 async function pollStats(){try{const r=await fetch('/dashboard/stats');renderStats(await r.json());}catch(e){}}
 pollStats();setInterval(pollStats,12000);
 
-async function pollQueue(){try{
-  const q=await (await fetch('/dashboard/queue')).json();
-  $('q-n').textContent='('+q.pending.toLocaleString('ru-RU')+')';
-  $('queue').innerHTML=q.items.map(it=>{
+async function openQueue(){try{
+  $('mbody').innerHTML='<div class="muted">Загружаю очередь…</div>';
+  $('modal').classList.add('on');
+  const q=await (await fetch('/dashboard/queue?limit=200')).json();
+  let h=`<h3>⏳ Очередь на обработку · ${q.pending.toLocaleString('ru-RU')}</h3>`;
+  h+=`<div class="mmeta">старейшие сверху · клик по айтему — исходное сообщение${q.pending>q.items.length?' · показаны первые '+q.items.length:''}</div>`;
+  h+='<div class="qlist">'+(q.items.map(it=>{
     const [bc,be]=BADGE[it.bucket]||BADGE.other;
-    return `<div class="srcrow qrow" onclick="openItem(${it.id})"><span class="badge ${bc}">${be}</span><span class="ttl">${esc(it.title||'—')}</span><span class="n">${fmtAge(it.age_s)}</span></div>`;
-  }).join('')||'<div class="muted">очередь пуста 🎉</div>';
-}catch(e){}}
-pollQueue();setInterval(pollQueue,8000);
+    const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.bucket);
+    return `<div class="srcrow qrow" onclick="openItem(${it.id},1)"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl">${esc(it.title||'—')}</span><span class="n">${fmtAge(it.age_s)}</span></div>`;
+  }).join('')||'<div class="muted">очередь пуста 🎉</div>')+'</div>';
+  $('mbody').innerHTML=h;
+}catch(e){$('mbody').innerHTML='<div class="muted">ошибка загрузки</div>';}}
 
-async function openItem(id){try{
+async function openItem(id,fromQueue){try{
   const it=await (await fetch('/dashboard/item/'+id)).json();
   if(!it.id)return;
   const src=it.feed&&it.feed.startsWith('tw_')?'🐦 @'+it.feed.slice(3):(it.feed||it.source_type||'?');
   const meta=[src, it.vertical?VLABEL[it.vertical]:'', it.processed?'✓ обработан':'⏳ в очереди',
     it.score!=null?'🎯 '+Math.round(it.score*100)+'%':'', it.insight!=null?'💡 '+Math.round(it.insight*100)+'%':''].filter(Boolean);
-  let h=`<h3>${esc(it.title||'(без заголовка)')}</h3>`;
+  let h=fromQueue?`<span class="mback" onclick="openQueue()">← к очереди</span>`:'';
+  h+=`<h3>${esc(it.title||'(без заголовка)')}</h3>`;
   h+=`<div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;

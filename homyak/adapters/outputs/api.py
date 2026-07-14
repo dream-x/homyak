@@ -42,9 +42,9 @@ async def dashboard_stats() -> dict:
 
 
 @app.get("/dashboard/queue")
-async def dashboard_queue() -> dict:
+async def dashboard_queue(limit: int = 40) -> dict:
     """Очередь на обработку (pending-айтемы)."""
-    return await dashboard.queue_snapshot()
+    return await dashboard.queue_snapshot(min(max(limit, 1), 300))
 
 
 @app.get("/dashboard/item/{item_id}")
