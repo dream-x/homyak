@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
     similarity_threshold: float = Field(default=0.88, alias="SIMILARITY_THRESHOLD")
 
+    # Извлечение статей: фолбэк на reader-сервис (r.jina.ai) при бот-блоке/JS. Внешний вызов.
+    article_reader_fallback: bool = Field(default=True, alias="ARTICLE_READER_FALLBACK")
+
     # Phase 4: LLM
     llm_model: str = Field(default="qwen2.5:14b", alias="LLM_MODEL")
     summary_model: str = Field(default="gpt-oss:120b-cloud", alias="SUMMARY_MODEL")
