@@ -56,7 +56,9 @@ async def main_async() -> None:
     stagger = max(0.0, settings.poll_stagger_seconds)
     jitter = max(0, settings.poll_jitter_seconds)
 
-    scheduler = AsyncIOScheduler()
+    # misfire_grace_time: дефолт APScheduler = 1 секунда — любая заминка event-loop'а
+    # в момент срабатывания молча пропускала прогон, а дыру окно ингеста не покрывает.
+    scheduler = AsyncIOScheduler(job_defaults={"misfire_grace_time": 300, "coalesce": True})
     for i, src in enumerate(sources):
         scheduler.add_job(
             run_source,

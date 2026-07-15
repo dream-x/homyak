@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
@@ -100,10 +101,14 @@ class RSSSource:
                 resp.raise_for_status()
                 content = resp.content
         except Exception as e:
+            # Пробрасываем: run_source запишет last_error в ingest_state. Раньше ошибку
+            # глотали здесь → самый частый отказ (HTTP/timeout) не попадал в мониторинг.
             log.warning("rss_fetch_failed", source=self.name, error=str(e))
-            return
+            raise
 
-        parsed = feedparser.parse(content)
+        # to_thread: feedparser синхронный, а фиды бывают на 300-800 записей —
+        # парс в корутине вставал бы колом и ронял чужие поллинги в misfire.
+        parsed = await asyncio.to_thread(feedparser.parse, content)
         cutoff = _effective_cutoff(
             cursor,
             self.interval_seconds,
