@@ -96,7 +96,8 @@ async def queue_snapshot(limit: int = 40) -> dict:
             await s.execute(
                 text(
                     "select id, title, source_type, feed_name,"
-                    " extract(epoch from (now()-fetched_at))::int age_s"
+                    " extract(epoch from (now()-coalesce(published_at, fetched_at)))::int age_s,"
+                    " extract(epoch from (now()-fetched_at))::int lag_s"
                     " from news_items where processed_at is null"
                     " order by fetched_at asc limit :lim"
                 ),
@@ -112,6 +113,7 @@ async def queue_snapshot(limit: int = 40) -> dict:
                 "bucket": _bucket(r.source_type, r.feed_name),
                 "feed": r.feed_name,
                 "age_s": r.age_s,
+                "lag_s": r.lag_s,
             }
             for r in rows
         ],
@@ -140,7 +142,7 @@ async def watchlist_snapshot(per_topic: int = 6) -> dict:
                 await s.execute(
                     text(
                         "select id, title, source_type, feed_name, vertical, personal_score,"
-                        " extract(epoch from (now()-fetched_at))::int age_s"
+                        " extract(epoch from (now()-coalesce(published_at, fetched_at)))::int age_s"
                         " from news_items where :t = any(watch_topics) and processed_at is not null"
                         " order by fetched_at desc limit :lim"
                     ),
@@ -464,11 +466,12 @@ async function openQueue(){try{
   $('modal').classList.add('on');
   const q=await (await fetch('/dashboard/queue?limit=200')).json();
   let h=`<h3>⏳ Очередь на обработку · ${q.pending.toLocaleString('ru-RU')}</h3>`;
-  h+=`<div class="mmeta">старейшие сверху · клик по айтему — исходное сообщение${q.pending>q.items.length?' · показаны первые '+q.items.length:''}</div>`;
+  h+=`<div class="mmeta">старейшие сверху · возраст = когда новость вышла (·у нас = сколько ждёт обработки) · клик — исходник${q.pending>q.items.length?' · показаны первые '+q.items.length:''}</div>`;
   h+='<div class="qlist">'+(q.items.map(it=>{
     const [bc,be]=BADGE[it.bucket]||BADGE.other;
     const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.bucket);
-    return `<div class="srcrow qrow" onclick="openItem(${it.id},1)"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl">${esc(it.title||'—')}</span><span class="n">${fmtAge(it.age_s)}</span></div>`;
+    const lag = it.lag_s!=null?` <span style="opacity:.5">·у нас ${fmtAge(it.lag_s)}</span>`:'';
+    return `<div class="srcrow qrow" onclick="openItem(${it.id},1)"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl">${esc(it.title||'—')}</span><span class="n" title="возраст новости">${fmtAge(it.age_s)}${lag}</span></div>`;
   }).join('')||'<div class="muted">очередь пуста 🎉</div>')+'</div>';
   $('mbody').innerHTML=h;
 }catch(e){$('mbody').innerHTML='<div class="muted">ошибка загрузки</div>';}}
