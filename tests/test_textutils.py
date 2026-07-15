@@ -26,3 +26,30 @@ def test_clean_title_keeps_junklike_words():
 def test_clean_title_none_on_empty():
     assert clean_title(None) is None
     assert clean_title("  <br> ") is None
+
+
+def test_hashtags_basic_and_hyphen():
+    from homyak.core.textutils import hashtags
+
+    # дефис Telegram не понимает → подчёркивание
+    assert hashtags(["ai", "ai-agents", "python"]) == "#ai #ai_agents #python"
+
+
+def test_hashtags_cyrillic_and_dedup():
+    from homyak.core.textutils import hashtags
+
+    assert hashtags(["нефть", "нефть", "рынок россии"]) == "#нефть #рынок_россии"
+
+
+def test_hashtags_drops_digit_start_and_empty():
+    from homyak.core.textutils import hashtags
+
+    assert hashtags(["3d", "ok"]) == "#ok"  # тег с цифры Telegram не подсветит
+    assert hashtags(None) == ""
+    assert hashtags(["", "  ", "---"]) == ""
+
+
+def test_hashtags_limit():
+    from homyak.core.textutils import hashtags
+
+    assert hashtags(["a", "b", "c", "d", "e", "f"], limit=3) == "#a #b #c"

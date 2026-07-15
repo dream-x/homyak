@@ -37,6 +37,26 @@ def strip_html(raw: str | None) -> str | None:
     return text
 
 
+_HASH_BAD = re.compile(r"[^0-9a-zA-Zа-яА-ЯёЁ_]+")
+
+
+def hashtags(tags: list[str] | None, limit: int = 5) -> str:
+    """Теги → кликабельные #хэштеги для Telegram.
+
+    Telegram понимает только буквы/цифры/подчёркивание и требует букву в начале:
+    'ai-agents' → '#ai_agents', '3d-печать' → '#d_печать' отбрасываем (начинается с цифры).
+    """
+    out: list[str] = []
+    for t in (tags or [])[:limit]:
+        s = _HASH_BAD.sub("_", str(t).strip().lower()).strip("_")
+        if not s or s[0].isdigit():
+            continue
+        tag = f"#{s}"
+        if tag not in out:
+            out.append(tag)
+    return " ".join(out)
+
+
 def clean_title(raw: str | None) -> str | None:
     """Заголовок → плоский текст: срезает теги, распаковывает entity, схлопывает пробелы.
 

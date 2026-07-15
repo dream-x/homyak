@@ -60,7 +60,7 @@ rss:
   # === twitter/X via RSSHub (needs TWITTER_AUTH_TOKEN in .env). Vertical decided by tagger. ===
   # People (individual voices) w1.0; news wires/orgs w0.4 so people rank higher.
   # Many accounts on one token WILL hit rate limits — long intervals on purpose; prune dead 404s.
-  # --- business: 15 hot(30m) + 30 people(180m) + 103 wires(1h) ---
+  # --- business: 15 hot(30m) + 30 people(180m) + 103 wires(30m) ---
   - {name: tw_unusual_whales, url: "http://rsshub:1200/twitter/user/unusual_whales", category: business, interval_seconds: 1800, weight: 1.0}
   - {name: tw_jimcramer, url: "http://rsshub:1200/twitter/user/jimcramer", category: business, interval_seconds: 10800, weight: 1.0}
   - {name: tw_elerianm, url: "http://rsshub:1200/twitter/user/elerianm", category: business, interval_seconds: 1800, weight: 1.0}
@@ -106,42 +106,42 @@ rss:
   - {name: tw_econguyrosie, url: "http://rsshub:1200/twitter/user/EconguyRosie", category: business, interval_seconds: 10800, weight: 1.0}
   - {name: tw_justinwolfers, url: "http://rsshub:1200/twitter/user/JustinWolfers", category: business, interval_seconds: 10800, weight: 1.0}
   - {name: tw_conorsen, url: "http://rsshub:1200/twitter/user/conorsen", category: business, interval_seconds: 10800, weight: 1.0}
-  - {name: tw_deitaone, url: "http://rsshub:1200/twitter/user/DeItaone", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_zerohedge, url: "http://rsshub:1200/twitter/user/zerohedge", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_business, url: "http://rsshub:1200/twitter/user/business", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_markets, url: "http://rsshub:1200/twitter/user/markets", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_wsjmarkets, url: "http://rsshub:1200/twitter/user/WSJmarkets", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_wsj, url: "http://rsshub:1200/twitter/user/WSJ", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_ft, url: "http://rsshub:1200/twitter/user/FT", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_theeconomist, url: "http://rsshub:1200/twitter/user/TheEconomist", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_reuters, url: "http://rsshub:1200/twitter/user/Reuters", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_cnbc, url: "http://rsshub:1200/twitter/user/CNBC", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_marketwatch, url: "http://rsshub:1200/twitter/user/MarketWatch", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_yahoofinance, url: "http://rsshub:1200/twitter/user/YahooFinance", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_benzinga, url: "http://rsshub:1200/twitter/user/Benzinga", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_stocktwits, url: "http://rsshub:1200/twitter/user/Stocktwits", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_federalreserve, url: "http://rsshub:1200/twitter/user/federalreserve", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_imfnews, url: "http://rsshub:1200/twitter/user/IMFNews", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_worldbank, url: "http://rsshub:1200/twitter/user/WorldBank", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_oecd, url: "http://rsshub:1200/twitter/user/OECD", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_ustreasury, url: "http://rsshub:1200/twitter/user/USTreasury", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_secgov, url: "http://rsshub:1200/twitter/user/SECGov", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_harvardbiz, url: "http://rsshub:1200/twitter/user/HarvardBiz", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_mckinsey, url: "http://rsshub:1200/twitter/user/McKinsey", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_forbes, url: "http://rsshub:1200/twitter/user/Forbes", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_fortunemagazine, url: "http://rsshub:1200/twitter/user/FortuneMagazine", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_axios, url: "http://rsshub:1200/twitter/user/axios", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_semafor, url: "http://rsshub:1200/twitter/user/semafor", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_goldmansachs, url: "http://rsshub:1200/twitter/user/GoldmanSachs", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_jpmorgan, url: "http://rsshub:1200/twitter/user/jpmorgan", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_morganstanley, url: "http://rsshub:1200/twitter/user/MorganStanley", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_blackrock, url: "http://rsshub:1200/twitter/user/BlackRock", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_kkr, url: "http://rsshub:1200/twitter/user/KKR", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_blackstone, url: "http://rsshub:1200/twitter/user/blackstone", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_firstsquawk, url: "http://rsshub:1200/twitter/user/FirstSquawk", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_livesquawk, url: "http://rsshub:1200/twitter/user/LiveSquawk", category: business, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_financialjuice, url: "http://rsshub:1200/twitter/user/financialjuice", category: business, interval_seconds: 3600, weight: 0.4}
-  # --- it: 15 hot(30m) + 62 people(120m) + 103 wires(1h) ---
+  - {name: tw_deitaone, url: "http://rsshub:1200/twitter/user/DeItaone", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_zerohedge, url: "http://rsshub:1200/twitter/user/zerohedge", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_business, url: "http://rsshub:1200/twitter/user/business", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_markets, url: "http://rsshub:1200/twitter/user/markets", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_wsjmarkets, url: "http://rsshub:1200/twitter/user/WSJmarkets", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_wsj, url: "http://rsshub:1200/twitter/user/WSJ", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_ft, url: "http://rsshub:1200/twitter/user/FT", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_theeconomist, url: "http://rsshub:1200/twitter/user/TheEconomist", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_reuters, url: "http://rsshub:1200/twitter/user/Reuters", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_cnbc, url: "http://rsshub:1200/twitter/user/CNBC", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_marketwatch, url: "http://rsshub:1200/twitter/user/MarketWatch", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_yahoofinance, url: "http://rsshub:1200/twitter/user/YahooFinance", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_benzinga, url: "http://rsshub:1200/twitter/user/Benzinga", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_stocktwits, url: "http://rsshub:1200/twitter/user/Stocktwits", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_federalreserve, url: "http://rsshub:1200/twitter/user/federalreserve", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_imfnews, url: "http://rsshub:1200/twitter/user/IMFNews", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_worldbank, url: "http://rsshub:1200/twitter/user/WorldBank", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_oecd, url: "http://rsshub:1200/twitter/user/OECD", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_ustreasury, url: "http://rsshub:1200/twitter/user/USTreasury", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_secgov, url: "http://rsshub:1200/twitter/user/SECGov", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_harvardbiz, url: "http://rsshub:1200/twitter/user/HarvardBiz", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_mckinsey, url: "http://rsshub:1200/twitter/user/McKinsey", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_forbes, url: "http://rsshub:1200/twitter/user/Forbes", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_fortunemagazine, url: "http://rsshub:1200/twitter/user/FortuneMagazine", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_axios, url: "http://rsshub:1200/twitter/user/axios", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_semafor, url: "http://rsshub:1200/twitter/user/semafor", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_goldmansachs, url: "http://rsshub:1200/twitter/user/GoldmanSachs", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_jpmorgan, url: "http://rsshub:1200/twitter/user/jpmorgan", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_morganstanley, url: "http://rsshub:1200/twitter/user/MorganStanley", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_blackrock, url: "http://rsshub:1200/twitter/user/BlackRock", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_kkr, url: "http://rsshub:1200/twitter/user/KKR", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_blackstone, url: "http://rsshub:1200/twitter/user/blackstone", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_firstsquawk, url: "http://rsshub:1200/twitter/user/FirstSquawk", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_livesquawk, url: "http://rsshub:1200/twitter/user/LiveSquawk", category: business, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_financialjuice, url: "http://rsshub:1200/twitter/user/financialjuice", category: business, interval_seconds: 1800, weight: 0.4}
+  # --- it: 15 hot(30m) + 62 people(120m) + 103 wires(30m) ---
   - {name: tw_karpathy, url: "http://rsshub:1200/twitter/user/karpathy", category: tech, interval_seconds: 1800, weight: 1.0}
   - {name: tw_simonw, url: "http://rsshub:1200/twitter/user/simonw", category: tech, interval_seconds: 1800, weight: 1.0}
   - {name: tw_sama, url: "http://rsshub:1200/twitter/user/sama", category: tech, interval_seconds: 1800, weight: 1.0}
@@ -219,34 +219,34 @@ rss:
   - {name: tw_amanrsanger, url: "http://rsshub:1200/twitter/user/amanrsanger", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_mckaywrigley, url: "http://rsshub:1200/twitter/user/mckaywrigley", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_oriolvinyalsml, url: "http://rsshub:1200/twitter/user/OriolVinyalsML", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_huggingface, url: "http://rsshub:1200/twitter/user/huggingface", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_openai, url: "http://rsshub:1200/twitter/user/OpenAI", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_googledeepmind, url: "http://rsshub:1200/twitter/user/GoogleDeepMind", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_anthropicai, url: "http://rsshub:1200/twitter/user/AnthropicAI", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_ollama, url: "http://rsshub:1200/twitter/user/ollama", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_langchainai, url: "http://rsshub:1200/twitter/user/LangChainAI", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_weights_biases, url: "http://rsshub:1200/twitter/user/weights_biases", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_mistralai, url: "http://rsshub:1200/twitter/user/MistralAI", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_cohere, url: "http://rsshub:1200/twitter/user/cohere", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_stabilityai, url: "http://rsshub:1200/twitter/user/StabilityAI", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_stripe, url: "http://rsshub:1200/twitter/user/stripe", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_vercel, url: "http://rsshub:1200/twitter/user/vercel", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_github, url: "http://rsshub:1200/twitter/user/github", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_golang, url: "http://rsshub:1200/twitter/user/golang", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_rustlang, url: "http://rsshub:1200/twitter/user/rustlang", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_thepsf, url: "http://rsshub:1200/twitter/user/ThePSF", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_nodejs, url: "http://rsshub:1200/twitter/user/nodejs", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_denoland, url: "http://rsshub:1200/twitter/user/denoland", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_kubernetesio, url: "http://rsshub:1200/twitter/user/kubernetesio", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_hashicorp, url: "http://rsshub:1200/twitter/user/HashiCorp", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_docker, url: "http://rsshub:1200/twitter/user/Docker", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_gitlab, url: "http://rsshub:1200/twitter/user/gitlab", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_cloudflare, url: "http://rsshub:1200/twitter/user/Cloudflare", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_tailscale, url: "http://rsshub:1200/twitter/user/tailscale", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_supabase, url: "http://rsshub:1200/twitter/user/supabase", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_planetscale, url: "http://rsshub:1200/twitter/user/PlanetScale", category: tech, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_theregister, url: "http://rsshub:1200/twitter/user/TheRegister", category: tech, interval_seconds: 3600, weight: 0.4}
-  # --- medical: 15 hot(30m) + 17 people(180m) + 103 wires(1h) ---
+  - {name: tw_huggingface, url: "http://rsshub:1200/twitter/user/huggingface", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_openai, url: "http://rsshub:1200/twitter/user/OpenAI", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_googledeepmind, url: "http://rsshub:1200/twitter/user/GoogleDeepMind", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_anthropicai, url: "http://rsshub:1200/twitter/user/AnthropicAI", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_ollama, url: "http://rsshub:1200/twitter/user/ollama", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_langchainai, url: "http://rsshub:1200/twitter/user/LangChainAI", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_weights_biases, url: "http://rsshub:1200/twitter/user/weights_biases", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_mistralai, url: "http://rsshub:1200/twitter/user/MistralAI", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_cohere, url: "http://rsshub:1200/twitter/user/cohere", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_stabilityai, url: "http://rsshub:1200/twitter/user/StabilityAI", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_stripe, url: "http://rsshub:1200/twitter/user/stripe", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_vercel, url: "http://rsshub:1200/twitter/user/vercel", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_github, url: "http://rsshub:1200/twitter/user/github", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_golang, url: "http://rsshub:1200/twitter/user/golang", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_rustlang, url: "http://rsshub:1200/twitter/user/rustlang", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_thepsf, url: "http://rsshub:1200/twitter/user/ThePSF", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_nodejs, url: "http://rsshub:1200/twitter/user/nodejs", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_denoland, url: "http://rsshub:1200/twitter/user/denoland", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_kubernetesio, url: "http://rsshub:1200/twitter/user/kubernetesio", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_hashicorp, url: "http://rsshub:1200/twitter/user/HashiCorp", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_docker, url: "http://rsshub:1200/twitter/user/Docker", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_gitlab, url: "http://rsshub:1200/twitter/user/gitlab", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_cloudflare, url: "http://rsshub:1200/twitter/user/Cloudflare", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_tailscale, url: "http://rsshub:1200/twitter/user/tailscale", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_supabase, url: "http://rsshub:1200/twitter/user/supabase", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_planetscale, url: "http://rsshub:1200/twitter/user/PlanetScale", category: tech, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_theregister, url: "http://rsshub:1200/twitter/user/TheRegister", category: tech, interval_seconds: 1800, weight: 0.4}
+  # --- medical: 15 hot(30m) + 17 people(180m) + 103 wires(30m) ---
   - {name: tw_erictopol, url: "http://rsshub:1200/twitter/user/EricTopol", category: medical, interval_seconds: 1800, weight: 1.0}
   - {name: tw_apoorva_nyc, url: "http://rsshub:1200/twitter/user/apoorva_nyc", category: medical, interval_seconds: 1800, weight: 1.0}
   - {name: tw_helenbranswell, url: "http://rsshub:1200/twitter/user/helenbranswell", category: medical, interval_seconds: 1800, weight: 1.0}
@@ -279,44 +279,44 @@ rss:
   - {name: tw_jeremyfaust, url: "http://rsshub:1200/twitter/user/jeremyfaust", category: medical, interval_seconds: 1800, weight: 1.0}
   - {name: tw_drericding, url: "http://rsshub:1200/twitter/user/DrEricDing", category: medical, interval_seconds: 10800, weight: 1.0}
   - {name: tw_monicagandhi9, url: "http://rsshub:1200/twitter/user/MonicaGandhi9", category: medical, interval_seconds: 10800, weight: 1.0}
-  - {name: tw_naturemedicine, url: "http://rsshub:1200/twitter/user/NatureMedicine", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_thelancet, url: "http://rsshub:1200/twitter/user/TheLancet", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_nejm, url: "http://rsshub:1200/twitter/user/NEJM", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_bmj_latest, url: "http://rsshub:1200/twitter/user/bmj_latest", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_sciencemagazine, url: "http://rsshub:1200/twitter/user/ScienceMagazine", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_nature, url: "http://rsshub:1200/twitter/user/Nature", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_jama_current, url: "http://rsshub:1200/twitter/user/JAMA_current", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_medrxivpreprint, url: "http://rsshub:1200/twitter/user/medrxivpreprint", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_biorxivpreprint, url: "http://rsshub:1200/twitter/user/biorxivpreprint", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_cdcgov, url: "http://rsshub:1200/twitter/user/CDCgov", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_who, url: "http://rsshub:1200/twitter/user/WHO", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_us_fda, url: "http://rsshub:1200/twitter/user/US_FDA", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_nih, url: "http://rsshub:1200/twitter/user/NIH", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_niaidnews, url: "http://rsshub:1200/twitter/user/NIAIDNews", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_mayoclinic, url: "http://rsshub:1200/twitter/user/MayoClinic", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_clevelandclinic, url: "http://rsshub:1200/twitter/user/ClevelandClinic", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_hopkinsmedicine, url: "http://rsshub:1200/twitter/user/HopkinsMedicine", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_harvardmed, url: "http://rsshub:1200/twitter/user/harvardmed", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_stanfordmed, url: "http://rsshub:1200/twitter/user/StanfordMed", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_yalemed, url: "http://rsshub:1200/twitter/user/YaleMed", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_fiercebiotech, url: "http://rsshub:1200/twitter/user/fiercebiotech", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_fiercepharma, url: "http://rsshub:1200/twitter/user/fiercepharma", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_endpointsnews, url: "http://rsshub:1200/twitter/user/EndpointsNews", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_khnews, url: "http://rsshub:1200/twitter/user/KHNews", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_medpagetoday, url: "http://rsshub:1200/twitter/user/MedPageToday", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_medscape, url: "http://rsshub:1200/twitter/user/Medscape", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_healthline, url: "http://rsshub:1200/twitter/user/healthline", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_thescientistllc, url: "http://rsshub:1200/twitter/user/TheScientistLLC", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_genomeweb, url: "http://rsshub:1200/twitter/user/GenomeWeb", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_sciencedaily, url: "http://rsshub:1200/twitter/user/ScienceDaily", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_eurekalert, url: "http://rsshub:1200/twitter/user/EurekAlert", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_statnews, url: "http://rsshub:1200/twitter/user/statnews", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_oncoalert, url: "http://rsshub:1200/twitter/user/OncoAlert", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_asco, url: "http://rsshub:1200/twitter/user/ASCO", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_thenci, url: "http://rsshub:1200/twitter/user/theNCI", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_americancancer, url: "http://rsshub:1200/twitter/user/AmericanCancer", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_ema_news, url: "http://rsshub:1200/twitter/user/EMA_News", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_ecdc_eu, url: "http://rsshub:1200/twitter/user/ECDC_EU", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_naturebiotech, url: "http://rsshub:1200/twitter/user/NatureBiotech", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_cellcellpress, url: "http://rsshub:1200/twitter/user/CellCellPress", category: medical, interval_seconds: 3600, weight: 0.4}
-  - {name: tw_retractionwatch, url: "http://rsshub:1200/twitter/user/RetractionWatch", category: medical, interval_seconds: 3600, weight: 0.4}
+  - {name: tw_naturemedicine, url: "http://rsshub:1200/twitter/user/NatureMedicine", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_thelancet, url: "http://rsshub:1200/twitter/user/TheLancet", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_nejm, url: "http://rsshub:1200/twitter/user/NEJM", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_bmj_latest, url: "http://rsshub:1200/twitter/user/bmj_latest", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_sciencemagazine, url: "http://rsshub:1200/twitter/user/ScienceMagazine", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_nature, url: "http://rsshub:1200/twitter/user/Nature", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_jama_current, url: "http://rsshub:1200/twitter/user/JAMA_current", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_medrxivpreprint, url: "http://rsshub:1200/twitter/user/medrxivpreprint", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_biorxivpreprint, url: "http://rsshub:1200/twitter/user/biorxivpreprint", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_cdcgov, url: "http://rsshub:1200/twitter/user/CDCgov", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_who, url: "http://rsshub:1200/twitter/user/WHO", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_us_fda, url: "http://rsshub:1200/twitter/user/US_FDA", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_nih, url: "http://rsshub:1200/twitter/user/NIH", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_niaidnews, url: "http://rsshub:1200/twitter/user/NIAIDNews", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_mayoclinic, url: "http://rsshub:1200/twitter/user/MayoClinic", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_clevelandclinic, url: "http://rsshub:1200/twitter/user/ClevelandClinic", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_hopkinsmedicine, url: "http://rsshub:1200/twitter/user/HopkinsMedicine", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_harvardmed, url: "http://rsshub:1200/twitter/user/harvardmed", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_stanfordmed, url: "http://rsshub:1200/twitter/user/StanfordMed", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_yalemed, url: "http://rsshub:1200/twitter/user/YaleMed", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_fiercebiotech, url: "http://rsshub:1200/twitter/user/fiercebiotech", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_fiercepharma, url: "http://rsshub:1200/twitter/user/fiercepharma", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_endpointsnews, url: "http://rsshub:1200/twitter/user/EndpointsNews", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_khnews, url: "http://rsshub:1200/twitter/user/KHNews", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_medpagetoday, url: "http://rsshub:1200/twitter/user/MedPageToday", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_medscape, url: "http://rsshub:1200/twitter/user/Medscape", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_healthline, url: "http://rsshub:1200/twitter/user/healthline", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_thescientistllc, url: "http://rsshub:1200/twitter/user/TheScientistLLC", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_genomeweb, url: "http://rsshub:1200/twitter/user/GenomeWeb", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_sciencedaily, url: "http://rsshub:1200/twitter/user/ScienceDaily", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_eurekalert, url: "http://rsshub:1200/twitter/user/EurekAlert", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_statnews, url: "http://rsshub:1200/twitter/user/statnews", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_oncoalert, url: "http://rsshub:1200/twitter/user/OncoAlert", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_asco, url: "http://rsshub:1200/twitter/user/ASCO", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_thenci, url: "http://rsshub:1200/twitter/user/theNCI", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_americancancer, url: "http://rsshub:1200/twitter/user/AmericanCancer", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_ema_news, url: "http://rsshub:1200/twitter/user/EMA_News", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_ecdc_eu, url: "http://rsshub:1200/twitter/user/ECDC_EU", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_naturebiotech, url: "http://rsshub:1200/twitter/user/NatureBiotech", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_cellcellpress, url: "http://rsshub:1200/twitter/user/CellCellPress", category: medical, interval_seconds: 1800, weight: 0.4}
+  - {name: tw_retractionwatch, url: "http://rsshub:1200/twitter/user/RetractionWatch", category: medical, interval_seconds: 1800, weight: 0.4}
