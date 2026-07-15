@@ -59,9 +59,9 @@ rss:
 
   # --- 🇷🇺 русские источники (вертикаль определяет теггер) ---
   # Закрывают провал по watchlist-темам «Рынок России» и «RUB/USD» — англоязычные их почти не пишут.
+  # РБК убран: общая новостная лента (ДТП, суды, погода) — гейт резал ~50%, узкого бизнес-фида у них нет.
   # Каждый фид проверен живьём (HTTP 200 + непустая выдача). MOEX не берём: там 509 записей
   # биржевой канцелярии («проводится дискретный аукцион»), а не новости.
-  - {name: rbc,            url: "https://rssexport.rbc.ru/rbcnews/news/30/full.rss",     category: business, interval_seconds: 1800, weight: 0.9}
   - {name: vedomosti_fin,  url: "https://www.vedomosti.ru/rss/rubric/finance",           category: business, interval_seconds: 1800, weight: 0.9}
   - {name: kommersant_econ, url: "https://www.kommersant.ru/RSS/section-economics.xml",  category: business, interval_seconds: 1800, weight: 0.9}
   - {name: interfax,       url: "https://www.interfax.ru/rss.asp",                       category: business, interval_seconds: 1800, weight: 0.8}
