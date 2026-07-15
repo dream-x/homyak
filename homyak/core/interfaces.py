@@ -75,6 +75,10 @@ class AnalyzerContext:
     # прокидывается между стадиями:
     embedding: list[float] | None = None
     cluster_id: int | None = None
+    # Гейт предобработки: prefilter ставит skip=True → processor обрывает конвейер до дорогих
+    # LLM-стадий. Причина пишется в БД, чтобы отсеянное было видно, а не терялось молча.
+    skip: bool = False
+    skip_reason: str | None = None
     tags: list[str] | None = None
     vertical: str | None = None  # business/it/medical
     summary: str | None = None

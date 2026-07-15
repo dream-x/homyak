@@ -36,10 +36,19 @@ def make_handler(repo: NewsRepo, bus: NatsBus, analyzers):
                 try:
                     for analyzer in analyzers:
                         await analyzer.analyze(ctx)
+                        if ctx.skip:  # гейт отсеял — дальше (LLM) не идём
+                            item.skip_reason = ctx.skip_reason
+                            break
                     await s.commit()  # persist новые кластеры + мутации item'а
                 except Exception:
                     await s.rollback()
                     raise
+
+            if ctx.skip:
+                # Помечаем обработанным без score → в ленты/пуши не попадёт, sweeper не воскресит.
+                await repo.mark_processed(item_id, cluster_id=ctx.cluster_id)
+                log.info("prefiltered", news_item_id=item_id, reason=ctx.skip_reason)
+                return
 
             await repo.mark_processed(
                 item_id,

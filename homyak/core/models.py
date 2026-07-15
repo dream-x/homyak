@@ -79,6 +79,7 @@ class NewsItem(Base):
     llm_reason: Mapped[str | None] = mapped_column(Text)
     personal_score: Mapped[float | None] = mapped_column(Float)
     insight_score: Mapped[float | None] = mapped_column(Float)  # 0..1: несёт ли пост инсайт
+    skip_reason: Mapped[str | None] = mapped_column(Text)  # отсеян гейтом → почему
     scored_profile_version: Mapped[int | None] = mapped_column(Integer)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -99,6 +100,11 @@ class NewsItem(Base):
         Index("idx_news_feed", "feed_name", postgresql_where=sa_text("feed_name IS NOT NULL")),
         Index("idx_news_vertical", "vertical", postgresql_where=sa_text("vertical IS NOT NULL")),
         Index("idx_news_watch", "watch_topics", postgresql_using="gin"),
+        Index(
+            "idx_news_skipped",
+            "skip_reason",
+            postgresql_where=sa_text("skip_reason IS NOT NULL"),
+        ),
         Index(
             "idx_news_url_normalized",
             "url_normalized",

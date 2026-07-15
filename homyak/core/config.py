@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     summary_model: str = Field(default="gpt-oss:120b-cloud", alias="SUMMARY_MODEL")
     summary_fallback_model: str = Field(default="gemma4:latest", alias="SUMMARY_FALLBACK_MODEL")
 
+    # Гейт предобработки: отсекает шум до дорогих LLM-стадий (теггер+судья).
+    # Порог из живого замера: мусор 0.23-0.37, содержательное 0.49-0.60.
+    prefilter_enabled: bool = Field(default=True, alias="PREFILTER_ENABLED")
+    prefilter_min_sim: float = Field(default=0.40, alias="PREFILTER_MIN_SIM")
+
     # Phase 6: персонализация (веса свёртки personal_score)
     personalize_llm_weight: float = Field(default=0.50, alias="PERSONALIZE_LLM_WEIGHT")
     personalize_taste_weight: float = Field(default=0.20, alias="PERSONALIZE_TASTE_WEIGHT")

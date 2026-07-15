@@ -11,6 +11,7 @@ from homyak.adapters.analyzers.llm_relevance import LlmRelevanceAnalyzer
 from homyak.adapters.analyzers.llm_summarizer import LlmSummarizerAnalyzer
 from homyak.adapters.analyzers.llm_tagger import LlmTaggerAnalyzer
 from homyak.adapters.analyzers.personalizer import PersonalizerAnalyzer
+from homyak.adapters.analyzers.prefilter import PrefilterAnalyzer
 from homyak.adapters.analyzers.scorer import ScorerAnalyzer
 from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
 from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
@@ -45,6 +46,7 @@ def build_analyzers(
     if qdrant is not None:
         analyzers.append(EmbedderAnalyzer(qdrant))
         analyzers.append(SimilarityDedupAnalyzer(qdrant))
+        analyzers.append(PrefilterAnalyzer(qdrant))  # гейт: режет шум до LLM
         if with_llm:
             llm = OllamaLLM()
             analyzers.append(LlmTaggerAnalyzer(llm))
