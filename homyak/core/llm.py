@@ -42,7 +42,8 @@ class OllamaLLM:
                 {"role": "user", "content": user},
             ],
             "stream": False,
-            "options": {"temperature": 0.1},
+            # num_ctx явно: у новых моделей дефолт 128K+ раздувает KV-кэш в разы (4B → 13G VRAM)
+            "options": {"temperature": 0.1, "num_ctx": settings.llm_num_ctx},
         }
         if json_format:
             payload["format"] = "json"
@@ -55,7 +56,9 @@ class OllamaLLM:
         return data["message"]["content"]
 
     async def chat_json(self, system: str, user: str) -> dict:
-        content = await self._with_fallback(system, user, True, None)
+        # think=False обязателен: у thinking-моделей (qwen3.5) reasoning ради JSON-разметки
+        # раздувает время с ~1с до ~60с на айтем. Рассуждения тут не нужны.
+        content = await self._with_fallback(system, user, True, False)
         return json.loads(content)
 
     async def chat_text(self, system: str, user: str, think: bool | None = None) -> str:

@@ -42,10 +42,16 @@ class Settings(BaseSettings):
     # Извлечение статей: фолбэк на reader-сервис (r.jina.ai) при бот-блоке/JS. Внешний вызов.
     article_reader_fallback: bool = Field(default=True, alias="ARTICLE_READER_FALLBACK")
     # Хосты с жёсткой бот-стеной (403 даже reader'у) — не пытаемся тянуть, берём RSS-огрызок.
-    article_skip_hosts: str = Field(default="investing.com", alias="ARTICLE_SKIP_HOSTS")
+    # x.com/twitter.com — текст твита уже пришёл из RSSHub, а сам сайт всё равно 403'ит.
+    article_skip_hosts: str = Field(
+        default="investing.com,x.com,twitter.com", alias="ARTICLE_SKIP_HOSTS"
+    )
 
     # Phase 4: LLM
-    llm_model: str = Field(default="qwen2.5:14b", alias="LLM_MODEL")
+    # qwen3.5:9b — новейший, 1.22с/айтем (быстрее старого qwen2.5:14b при 3.5x меньшем размере),
+    # вертикали 3/4, и лучше всех отделяет мусор (SEC-филинг → insight 0.0). Требует think=False.
+    llm_model: str = Field(default="qwen3.5:9b", alias="LLM_MODEL")
+    llm_num_ctx: int = Field(default=32768, alias="LLM_NUM_CTX")
     summary_model: str = Field(default="gpt-oss:120b-cloud", alias="SUMMARY_MODEL")
     summary_fallback_model: str = Field(default="gemma4:latest", alias="SUMMARY_FALLBACK_MODEL")
 
