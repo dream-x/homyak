@@ -12,6 +12,7 @@ import structlog
 
 from homyak.core.circuit import CircuitBreaker
 from homyak.core.config import settings
+from homyak.core.ollama import targets
 
 log = structlog.get_logger(__name__)
 
@@ -49,11 +50,18 @@ class OllamaLLM:
             payload["format"] = "json"
         if think is not None:  # для thinking-моделей (qwen3): отключаем reasoning
             payload["think"] = think
-        async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=300) as client:
-            resp = await client.post("/api/chat", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-        return data["message"]["content"]
+        last: Exception | None = None
+        for url, m in targets(payload["model"]):
+            payload["model"] = m
+            try:
+                async with httpx.AsyncClient(base_url=url, timeout=300) as client:
+                    resp = await client.post("/api/chat", json=payload)
+                    resp.raise_for_status()
+                    return resp.json()["message"]["content"]
+            except Exception as e:  # хост лёг/недоступен → пробуем запасной с его моделью
+                last = e
+                log.warning("ollama_host_failed", url=url, model=m, error=str(e)[:120])
+        raise last if last else RuntimeError("нет доступных ollama-хостов")
 
     async def chat_json(self, system: str, user: str) -> dict:
         # think=False обязателен: у thinking-моделей (qwen3.5) reasoning ради JSON-разметки

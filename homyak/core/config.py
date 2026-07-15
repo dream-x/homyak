@@ -37,7 +37,10 @@ class Settings(BaseSettings):
 
     # Phase 3: эмбеддинги + similarity
     qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
+    # Два хоста: основной — GPU-бокс (5090), запасной — локальная Ollama на Metal.
+    # У них РАЗНЫЕ модели, поэтому фолбэк идёт парой (url, model) — см. core/ollama.py.
     ollama_url: str = Field(default="http://localhost:11434", alias="OLLAMA_URL")
+    ollama_url_fallback: str | None = Field(default=None, alias="OLLAMA_URL_FALLBACK")
     embedding_model: str = Field(default="bge-m3", alias="EMBEDDING_MODEL")
     embedding_version: int = Field(default=1, alias="EMBEDDING_VERSION")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
@@ -55,6 +58,7 @@ class Settings(BaseSettings):
     # qwen3.5:9b — новейший, 1.22с/айтем (быстрее старого qwen2.5:14b при 3.5x меньшем размере),
     # вертикали 3/4, и лучше всех отделяет мусор (SEC-филинг → insight 0.0). Требует think=False.
     llm_model: str = Field(default="qwen3.5:9b", alias="LLM_MODEL")
+    llm_model_fallback: str | None = Field(default=None, alias="LLM_MODEL_FALLBACK")
     llm_num_ctx: int = Field(default=32768, alias="LLM_NUM_CTX")
     # Саммари — на той же qwen3.5:9b: облачная gpt-oss:120b упёрлась в недельный лимит (429),
     # каждое саммари молча падало на gemma4 — то есть 120B мы и так уже не получали, а в памяти

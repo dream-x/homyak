@@ -12,6 +12,7 @@ import structlog
 
 from homyak.core.circuit import CircuitBreaker
 from homyak.core.config import settings
+from homyak.core.ollama import targets
 from homyak.core.interfaces import AnalyzerContext
 from homyak.storage.qdrant import QdrantStore
 
@@ -37,7 +38,17 @@ class EmbedderAnalyzer:
         return combined[:_MAX_CHARS] or title or "(empty)"
 
     async def _embed(self, text: str) -> list[float]:
-        async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=60) as client:
+        last: Exception | None = None
+        for url, _m in targets():  # bge-m3 одинакова на обоих хостах
+            try:
+                return await self._embed_at(url, text)
+            except Exception as e:
+                last = e
+                log.warning("ollama_host_failed", url=url, error=str(e)[:120])
+        raise last if last else RuntimeError("нет доступных ollama-хостов")
+
+    async def _embed_at(self, base_url: str, text: str) -> list[float]:
+        async with httpx.AsyncClient(base_url=base_url, timeout=60) as client:
             resp = await client.post("/api/embed", json={"model": self._model, "input": text})
             resp.raise_for_status()
             data = resp.json()
