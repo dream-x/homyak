@@ -36,9 +36,14 @@ async def stream_response(request: Request, category: str | None = None) -> Even
                     break
                 try:
                     msg = await sub.next_msg(timeout=25)
-                except Exception:
+                except TimeoutError:
                     yield {"event": "keepalive", "data": ""}
                     continue
+                except Exception as e:
+                    # НЕ keepalive+continue на любой ошибке: при закрытом NATS next_msg кидает
+                    # мгновенно (а не по таймауту) → горячий цикл жёг ядро и заливал клиента.
+                    log.info("sse_stream_stopped", error=str(e))
+                    break
 
                 await msg.ack()
                 data = json.loads(msg.data)

@@ -112,6 +112,10 @@ def _esc(s: str | None) -> str:
     return html.escape(s or "")
 
 
+_TG_LIMIT = 4096
+_TG_SAFE = 3900  # запас на служебную разметку; summary ничем не ограничен (Text-колонка)
+
+
 def _fmt(item) -> str:
     pct = int(round((item.personal_score or 0) * 100))
     vlabel = LABELS.get(item.vertical, "")
@@ -132,7 +136,19 @@ def _fmt(item) -> str:
         src = _esc(item.source_type + (f"/{item.author}" if item.author else ""))
     tags = hashtags(item.tags)  # кликабельные #хэштеги — по ним ищется весь чат
     foot = src + (f"\n{tags}" if tags else "")
-    return f"{head}\n\n{body}\n\n{foot}"
+    card = f"{head}\n\n{body}\n\n{foot}"
+    if len(card) > _TG_SAFE:
+        # Обрезаем САММАРИ, а не хвост: иначе потеряем ссылку и теги. Без этого карточка
+        # >4096 роняла отправку — в лентах рвался цикл, в пушах айтем терялся молча
+        # (suppress(Exception) в push_loop → mark_pushed не вызывался).
+        overflow = len(card) - _TG_SAFE + 1
+        summary = _esc(item.summary or "")
+        if len(summary) > overflow:
+            body = body[: len(body) - overflow - 1] + "…"
+            card = f"{head}\n\n{body}\n\n{foot}"
+        else:  # саммари не спасает — режем всё целиком
+            card = card[: _TG_SAFE - 1] + "…"
+    return card
 
 
 def _kb(item_id: int, url: str | None) -> InlineKeyboardMarkup:
