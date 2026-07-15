@@ -20,3 +20,13 @@ def test_skipped_hosts():
 
     assert _skipped("https://www.investing.com/news/viavi-x")  # жёсткая стена
     assert not _skipped("https://www.phoronix.com/news/x")
+
+
+def test_skip_matches_host_boundary_not_substring():
+    from homyak.core.article import _skipped
+
+    assert _skipped("https://x.com/ThePrimeagen/status/1")  # сам x.com
+    assert _skipped("https://mobile.x.com/a")  # поддомен
+    # регресс: 'x.com' НЕ должен ловить phoronix.com / netflix.com
+    assert not _skipped("https://www.phoronix.com/news/x")
+    assert not _skipped("https://netflix.com/title/1")

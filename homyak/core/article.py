@@ -38,8 +38,9 @@ _SKIP_HOSTS = tuple(h.strip().lower() for h in settings.article_skip_hosts.split
 
 
 def _skipped(url: str) -> bool:
+    # Матч по границе хоста, НЕ по подстроке: иначе 'x.com' поймает 'phoronix.com'/'netflix.com'.
     host = (urlparse(url).hostname or "").lower()
-    return any(h in host for h in _SKIP_HOSTS)
+    return any(host == h or host.endswith("." + h) for h in _SKIP_HOSTS)
 
 
 def _strip_reader(md: str | None) -> str | None:
