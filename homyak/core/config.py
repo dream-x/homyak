@@ -56,9 +56,10 @@ class Settings(BaseSettings):
     summary_fallback_model: str = Field(default="gemma4:latest", alias="SUMMARY_FALLBACK_MODEL")
 
     # Гейт предобработки: отсекает шум до дорогих LLM-стадий (теггер+судья).
-    # Порог из живого замера: мусор 0.23-0.37, содержательное 0.49-0.60.
+    # Порог 0.35 из живого замера: мусор (SEC-филинги 0.29, ДТП/погода 0.31) режется,
+    # пограничный бизнес (ЦБ 0.36, логистика 0.38) проходит, содержательное 0.49-0.60.
     prefilter_enabled: bool = Field(default=True, alias="PREFILTER_ENABLED")
-    prefilter_min_sim: float = Field(default=0.40, alias="PREFILTER_MIN_SIM")
+    prefilter_min_sim: float = Field(default=0.35, alias="PREFILTER_MIN_SIM")
 
     # Phase 6: персонализация (веса свёртки personal_score)
     personalize_llm_weight: float = Field(default=0.50, alias="PERSONALIZE_LLM_WEIGHT")
