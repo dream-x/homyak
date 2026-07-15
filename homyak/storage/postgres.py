@@ -497,7 +497,10 @@ class NewsRepo:
         return [(r[0], int(r[1])) for r in rows]
 
     async def feed(self, query: FeedQuery) -> Feed:
-        conditions = [NewsItem.processed_at.isnot(None)]
+        # skip_reason IS NULL — отсеянные гейтом не показываем НИ В ОДНОЙ ленте.
+        # Раньше их спасал только фильтр personal_score в sort=personal, а sort=recent
+        # (дефолт для /feed, /feed.rss, /feed.json) тащил их наружу.
+        conditions = [NewsItem.processed_at.isnot(None), NewsItem.skip_reason.is_(None)]
         if query.category:
             conditions.append(NewsItem.category == query.category)
         if query.source_types:
@@ -515,7 +518,9 @@ class NewsRepo:
         if query.min_insight is not None:
             conditions.append(NewsItem.insight_score >= query.min_insight)
         if query.watch_topic:
-            conditions.append(NewsItem.watch_topics.any(query.watch_topic))
+            # .contains() → оператор @>, который умеет в GIN idx_news_watch;
+            # .any() компилируется в '= ANY(...)' и индекс не задействует.
+            conditions.append(NewsItem.watch_topics.contains([query.watch_topic]))
         if query.has_watch:
             conditions.append(func.cardinality(NewsItem.watch_topics) > 0)
 

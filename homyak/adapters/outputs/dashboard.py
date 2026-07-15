@@ -145,7 +145,7 @@ async def watchlist_snapshot(per_topic: int = 6) -> dict:
                     text(
                         "select id, title, source_type, feed_name, vertical, personal_score,"
                         " extract(epoch from (now()-coalesce(published_at, fetched_at)))::int age_s"
-                        " from news_items where :t = any(watch_topics) and processed_at is not null"
+                        " from news_items where watch_topics @> array[:t] and processed_at is not null"
                         " order by fetched_at desc limit :lim"
                     ),
                     {"t": name, "lim": per_topic},
