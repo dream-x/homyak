@@ -52,8 +52,11 @@ class Settings(BaseSettings):
     # вертикали 3/4, и лучше всех отделяет мусор (SEC-филинг → insight 0.0). Требует think=False.
     llm_model: str = Field(default="qwen3.5:9b", alias="LLM_MODEL")
     llm_num_ctx: int = Field(default=32768, alias="LLM_NUM_CTX")
-    summary_model: str = Field(default="gpt-oss:120b-cloud", alias="SUMMARY_MODEL")
-    summary_fallback_model: str = Field(default="gemma4:latest", alias="SUMMARY_FALLBACK_MODEL")
+    # Саммари — на той же qwen3.5:9b: облачная gpt-oss:120b упёрлась в недельный лимит (429),
+    # каждое саммари молча падало на gemma4 — то есть 120B мы и так уже не получали, а в памяти
+    # висели три модели (17.2G). Одна модель на теггер+судью+саммари = 2 модели в памяти (7.5G).
+    summary_model: str = Field(default="qwen3.5:9b", alias="SUMMARY_MODEL")
+    summary_fallback_model: str | None = Field(default=None, alias="SUMMARY_FALLBACK_MODEL")
 
     # Гейт предобработки: отсекает шум до дорогих LLM-стадий (теггер+судья).
     # Порог 0.35 из живого замера: мусор (SEC-филинги 0.29, ДТП/погода 0.31) режется,
