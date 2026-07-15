@@ -59,12 +59,14 @@ rss:
 
   # --- 🇷🇺 русские источники (вертикаль определяет теггер) ---
   # Закрывают провал по watchlist-темам «Рынок России» и «RUB/USD» — англоязычные их почти не пишут.
-  # РБК убран: общая новостная лента (ДТП, суды, погода) — гейт резал ~50%, узкого бизнес-фида у них нет.
+  # РБК и Интерфакс убраны: общие новостные ленты (ДТП, суды, погода) — гейт резал 40-52%,
+  # узких бизнес-фидов у них нет. Остались точечные: Ведомости, Коммерсантъ, vc.ru, tproger.
   # Каждый фид проверен живьём (HTTP 200 + непустая выдача). MOEX не берём: там 509 записей
   # биржевой канцелярии («проводится дискретный аукцион»), а не новости.
-  - {name: vedomosti_fin,  url: "https://www.vedomosti.ru/rss/rubric/finance",           category: business, interval_seconds: 1800, weight: 0.9}
-  - {name: kommersant_econ, url: "https://www.kommersant.ru/RSS/section-economics.xml",  category: business, interval_seconds: 1800, weight: 0.9}
-  - {name: interfax,       url: "https://www.interfax.ru/rss.asp",                       category: business, interval_seconds: 1800, weight: 0.8}
+  - {name: vedomosti_fin,  url: "https://www.vedomosti.ru/rss/rubric/finance",           category: business, interval_seconds: 7200, weight: 0.9}
+  # Коммерсантъ/Ведомости пишут медленно (свежая статья раз в 7+ часов) — при интервале 30мин
+  # окно свежести 45мин их просто не догоняло. Ставим интервал под их темп.
+  - {name: kommersant_econ, url: "https://www.kommersant.ru/RSS/section-economics.xml",  category: business, interval_seconds: 21600, weight: 0.9}
   - {name: vc_ru,          url: "https://vc.ru/rss",                                     category: tech,     interval_seconds: 1800, weight: 0.7}
   - {name: tproger,        url: "https://tproger.ru/feed/",                              category: tech,     interval_seconds: 3600, weight: 0.7}
 
