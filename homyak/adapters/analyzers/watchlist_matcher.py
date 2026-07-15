@@ -1,4 +1,4 @@
-"""Analyzer stage 1: матч айтема на трендовые темы вотчлиста (config/watchlist.yaml).
+"""Analyzer stage 2: матч айтема на трендовые темы вотчлиста (config/watchlist.yaml).
 
 Без LLM — ключи/синонимы (RU+EN). Ставит ctx.item.watch_topics (персистит processor).
 Читает уже дозагруженный article_fetch'ем текст (stage 0), поэтому матч по полному тексту.
@@ -16,7 +16,7 @@ log = structlog.get_logger(__name__)
 
 class WatchlistAnalyzer:
     name = "watchlist"
-    stage = 1
+    stage = 2  # ПО НОМЕРУ до prefilter(3): тот читает watch_topics как whitelist
 
     def __init__(self) -> None:
         self._wl = load_watchlist()

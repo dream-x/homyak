@@ -441,7 +441,12 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 
 <script>
 const $=id=>document.getElementById(id);
-const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// Экранируем ВСЁ, включая кавычки: esc() попадает и в атрибуты (href/title), где
+// незакрытая кавычка = выход из атрибута = XSS. Заголовки/URL приходят из чужих RSS.
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// href принимаем только http(s): 'javascript:' из чужого фида иначе выполнится по клику.
+const safeUrl=u=>{try{const p=new URL(u).protocol;return (p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
 const fmtAge=s=>{s=Math.max(0,s|0);return s<60?s+'с':s<3600?Math.floor(s/60)+'м':Math.floor(s/3600)+'ч';};
 const VCOLOR={business:'--biz',it:'--it',medical:'--med'};
 const VLABEL={business:'💼 Business',it:'💻 IT',medical:'🩺 Medical'};
@@ -459,7 +464,7 @@ function addRow(m){
   const row=document.createElement('div');
   row.className='row '+(m.vertical?({business:'biz',it:'it',medical:'med'}[m.vertical]||'none'):'none');
   const [bc,be]=BADGE[m.bucket]||BADGE.other;
-  const acc=m.feed&&m.feed.startsWith('tw_')?'@'+m.feed.slice(3):(m.feed||m.bucket);
+  const acc=esc(m.feed&&m.feed.startsWith('tw_')?'@'+m.feed.slice(3):(m.feed||m.bucket));
   const vp=m.vertical?`<span class="vpill v-${m.vertical}">${VLABEL[m.vertical]||m.vertical}</span>`:'';
   const sc=m.score!=null?`<span class="sc">${Math.round(m.score*100)}%</span>`:'';
   const wb=(m.watch&&m.watch.length)?`<span class="watch">👁 ${esc(m.watch.join(', '))}</span>`:'';
@@ -486,11 +491,11 @@ function renderStats(s){
   const bs=s.by_source, smax=Math.max(...Object.values(bs),1);
   $('srclist').innerHTML=Object.entries(bs).map(([k,n])=>{
     const [bc,be]=BADGE[k]||BADGE.other;const col=k==='twitter'?'--tw':k==='telegram'?'--tg':'--rss';
-    return `<div class="srcrow"><span class="badge ${bc}">${be} ${k}</span><span class="mini"><i style="width:${n/smax*100}%;background:var(${col})"></i></span><span class="n">${n.toLocaleString('ru-RU')}</span></div>`;
+    return `<div class="srcrow"><span class="badge ${bc}">${be} ${esc(k)}</span><span class="mini"><i style="width:${n/smax*100}%;background:var(${col})"></i></span><span class="n">${n.toLocaleString('ru-RU')}</span></div>`;
   }).join('')||'<div class="muted">нет данных</div>';
   // топ фидов
   const fmax=(s.top_feeds[0]?.n)||1;
-  $('feedlist').innerHTML=s.top_feeds.map(f=>{const nm=f.feed.startsWith('tw_')?'🐦 @'+f.feed.slice(3):f.feed;
+  $('feedlist').innerHTML=s.top_feeds.map(f=>{const nm=esc(f.feed.startsWith('tw_')?'🐦 @'+f.feed.slice(3):f.feed);
     return `<div class="srcrow"><span class="ttl">${nm}</span><span class="mini"><i style="width:${f.n/fmax*100}%;background:var(--accent)"></i></span><span class="n">${f.n}</span></div>`;
   }).join('')||'<div class="muted">за час тихо</div>';
 }
@@ -565,7 +570,8 @@ async function openItem(id,fromQueue){try{
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
   if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
-  if(it.url)h+=`<a href="${esc(it.url)}" target="_blank" rel="noopener" style="color:var(--accent)">🔗 Открыть оригинал</a>`;
+  const u=safeUrl(it.url);
+  if(u)h+=`<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent)">🔗 Открыть оригинал</a>`;
   $('mbody').innerHTML=h;
   $('modal').classList.add('on');
 }catch(e){}}

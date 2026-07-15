@@ -17,6 +17,8 @@ Entertainment», инсайдерские сделки, тикерная кан�
 
 from __future__ import annotations
 
+import time
+
 import structlog
 from sqlalchemy import text
 
@@ -27,34 +29,53 @@ from homyak.core.scoring import cosine
 
 log = structlog.get_logger(__name__)
 
+_REFS_TTL = 60.0  # сек: как часто сверять версии профилей
+_REFS_RETRY = 5.0  # сек: пауза перед повтором после ошибки
+
 
 class PrefilterAnalyzer:
     name = "prefilter"
-    stage = 3  # после embedder(2)/similarity_dedup(3), до llm_tagger(4)
+    stage = 3  # ПО НОМЕРУ: после watchlist(2)/embedder(2), строго до llm_tagger(4)
 
     def __init__(self, qdrant, embedder: EmbedderAnalyzer | None = None) -> None:
         self._q = qdrant
         self._emb = embedder or EmbedderAnalyzer(qdrant)
         self._refs: dict[str, list[float]] | None = None  # вектора профилей, лениво
+        self._sig: tuple = ()  # (вертикаль, версия профиля) — для инвалидации кэша
+        self._refs_at: float = 0.0
 
     async def _refs_vectors(self, session) -> dict[str, list[float]]:
-        """Опорные вектора = активные профили (описание + темы). Считаем один раз на процесс."""
-        if self._refs is not None:
+        """Опорные вектора = активные профили. Кэш с TTL + инвалидация по версии профиля.
+
+        Профиль меняется в рантайме (🔇 mute → set_profile, refine, CLI), а гейт по старому
+        вектору начал бы резать новые темы — и это НЕВОССТАНОВИМО: пути переобработки
+        skipped-айтемов не существует. Поэтому сверяем версии, а не кэшируем навсегда.
+        """
+        now = time.monotonic()
+        if self._refs is not None and (now - self._refs_at) < _REFS_TTL:
             return self._refs
-        self._refs = {}
         try:
             rows = (
                 await session.execute(
-                    text("select vertical, description, topics::text from profile where active")
+                    text(
+                        "select vertical, version, description, topics::text"
+                        " from profile where active order by vertical"
+                    )
                 )
             ).all()
-            for vertical, desc, topics in rows:
-                self._refs[vertical] = await self._emb._embed(f"{desc} {topics}")
-            log.info("prefilter_refs_ready", verticals=list(self._refs))
-        except Exception as e:  # без опорных векторов гейт просто не режет
+            sig = tuple((r[0], r[1]) for r in rows)
+            if self._refs is not None and sig == self._sig:
+                self._refs_at = now  # профили не менялись — продлеваем кэш без переэмбеддинга
+                return self._refs
+            refs = {v: await self._emb._embed(f"{d} {t}") for v, _ver, d, t in rows}
+            self._refs, self._sig, self._refs_at = refs, sig, now
+            log.info("prefilter_refs_ready", verticals=list(refs), versions=sig)
+        except Exception as e:
+            # НЕ кэшируем провал: иначе одна моргнувшая ошибка (Ollama жонглирует моделями,
+            # embed ловит таймаут) выключала бы гейт навсегда до рестарта процесса.
             log.warning("prefilter_refs_failed", error=str(e))
-            self._refs = {}
-        return self._refs
+            self._refs_at = now - _REFS_TTL + _REFS_RETRY  # ретрай скоро, но не на каждом айтеме
+        return self._refs or {}
 
     async def analyze(self, ctx: AnalyzerContext) -> None:
         if not settings.prefilter_enabled:

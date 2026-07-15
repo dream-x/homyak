@@ -52,7 +52,14 @@ class PersonalizerAnalyzer:
         # hard-mute: если тег в замьюченных темах профиля вертикали — вон из ленты
         profile = await self._repo.get_active_profile(vertical)
         if profile is not None:
-            muted = {t["name"] for t in profile[2] if t.get("polarity") == "mute"}
+            # isinstance + t.get("name"): LLM-профиль применяется как есть (refine/бот/CLI),
+            # и одна тема без "name" роняла бы КАЖДЫЙ айтем вертикали → mark_failed x5 →
+            # вертикаль переставала обрабатываться совсем.
+            muted = {
+                t["name"]
+                for t in profile[2]
+                if isinstance(t, dict) and t.get("name") and t.get("polarity") == "mute"
+            }
             if muted and any(t in muted for t in tags):
                 ctx.personal_score = None
                 item.personal_score = None
