@@ -57,6 +57,17 @@ rss:
   - {name: selfhst,        url: "https://selfh.st/rss/",                               category: tech,     interval_seconds: 3600, weight: 0.9}
   - {name: selfhst_weekly, url: "https://selfh.st/weekly/rss/",                        category: tech,     interval_seconds: 86400, weight: 1.0}
 
+  # --- 🇷🇺 русские источники (вертикаль определяет теггер) ---
+  # Закрывают провал по watchlist-темам «Рынок России» и «RUB/USD» — англоязычные их почти не пишут.
+  # Каждый фид проверен живьём (HTTP 200 + непустая выдача). MOEX не берём: там 509 записей
+  # биржевой канцелярии («проводится дискретный аукцион»), а не новости.
+  - {name: rbc,            url: "https://rssexport.rbc.ru/rbcnews/news/30/full.rss",     category: business, interval_seconds: 1800, weight: 0.9}
+  - {name: vedomosti_fin,  url: "https://www.vedomosti.ru/rss/rubric/finance",           category: business, interval_seconds: 1800, weight: 0.9}
+  - {name: kommersant_econ, url: "https://www.kommersant.ru/RSS/section-economics.xml",  category: business, interval_seconds: 1800, weight: 0.9}
+  - {name: interfax,       url: "https://www.interfax.ru/rss.asp",                       category: business, interval_seconds: 1800, weight: 0.8}
+  - {name: vc_ru,          url: "https://vc.ru/rss",                                     category: tech,     interval_seconds: 1800, weight: 0.7}
+  - {name: tproger,        url: "https://tproger.ru/feed/",                              category: tech,     interval_seconds: 3600, weight: 0.7}
+
   # === twitter/X via RSSHub (needs TWITTER_AUTH_TOKEN in .env). Vertical decided by tagger. ===
   # People (individual voices) w1.0; news wires/orgs w0.4 so people rank higher.
   # Many accounts on one token WILL hit rate limits — long intervals on purpose; prune dead 404s.
