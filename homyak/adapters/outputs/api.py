@@ -53,6 +53,12 @@ async def dashboard_item(item_id: int) -> dict:
     return await dashboard.item_detail(item_id)
 
 
+@app.get("/dashboard/skipped")
+async def dashboard_skipped(limit: int = 60) -> dict:
+    """Что отсёк гейт до LLM (с причиной)."""
+    return await dashboard.skipped_snapshot(min(max(limit, 1), 300))
+
+
 @app.get("/dashboard/watchlist")
 async def dashboard_watchlist() -> dict:
     """Панели по трендовым темам (счётчик + свежие айтемы на тему)."""

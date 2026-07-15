@@ -42,7 +42,8 @@ async def stats_snapshot() -> dict:
                     " count(*) filter (where processed_at is null) pending,"
                     " count(*) filter (where pushed_at is not null) pushed,"
                     " count(*) filter (where processed_at > now() - interval '60 min') last_hour,"
-                    " count(*) filter (where processed_at > now() - interval '10 min') last_10m"
+                    " count(*) filter (where processed_at > now() - interval '10 min') last_10m,"
+                    " count(*) filter (where skip_reason is not null) skipped"
                     " from news_items"
                 )
             )
@@ -80,6 +81,7 @@ async def stats_snapshot() -> dict:
         "pushed": totals.pushed if totals else 0,
         "last_hour": totals.last_hour if totals else 0,
         "last_10m": totals.last_10m if totals else 0,
+        "skipped": totals.skipped if totals else 0,
         "by_vertical": {v: n for v, n in by_vertical},
         "by_source": {v: n for v, n in by_source},
         "top_feeds": [{"feed": f, "n": n} for f, n in top_feeds],
@@ -168,6 +170,57 @@ async def watchlist_snapshot(per_topic: int = 6) -> dict:
                 }
             )
     return {"topics": topics}
+
+
+async def skipped_snapshot(limit: int = 60) -> dict:
+    """Что отсеял гейт: счётчик + примеры с причиной. Чтобы отсев был виден, а не молчал."""
+    async with SessionFactory() as s:
+        total = (
+            await s.execute(text("select count(*) from news_items where skip_reason is not null"))
+        ).scalar() or 0
+        last_hour = (
+            await s.execute(
+                text(
+                    "select count(*) from news_items where skip_reason is not null"
+                    " and processed_at > now() - interval '60 min'"
+                )
+            )
+        ).scalar() or 0
+        rows = (
+            await s.execute(
+                text(
+                    "select id, title, source_type, feed_name, skip_reason,"
+                    " extract(epoch from (now()-coalesce(published_at, fetched_at)))::int age_s"
+                    " from news_items where skip_reason is not null"
+                    " order by processed_at desc limit :lim"
+                ),
+                {"lim": limit},
+            )
+        ).all()
+        by_feed = (
+            await s.execute(
+                text(
+                    "select coalesce(feed_name, source_type) src, count(*) n from news_items"
+                    " where skip_reason is not null group by 1 order by 2 desc limit 8"
+                )
+            )
+        ).all()
+    return {
+        "total": total,
+        "last_hour": last_hour,
+        "by_feed": [{"feed": f, "n": n} for f, n in by_feed],
+        "items": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "bucket": _bucket(r.source_type, r.feed_name),
+                "feed": r.feed_name,
+                "reason": r.skip_reason,
+                "age_s": r.age_s,
+            }
+            for r in rows
+        ],
+    }
 
 
 async def item_detail(item_id: int) -> dict:
@@ -269,7 +322,8 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 .wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;padding:16px 20px;max-width:1400px;margin:0 auto}
 .main,aside{min-width:0}
 @media(max-width:900px){.wrap{grid-template-columns:1fr}}
-.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:1100px){.cards{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:640px){.cards{grid-template-columns:repeat(2,1fr)}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .card .k{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
@@ -345,6 +399,7 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
       <div class="card"><div class="k">За час</div><div class="v" id="c-hour">–</div></div>
       <div class="card"><div class="k">Скорость</div><div class="v" id="c-rate">–<small>/мин</small></div></div>
       <div class="card cardbtn" onclick="openQueue()"><div class="k">В очереди ▸</div><div class="v" id="c-pend">–</div></div>
+      <div class="card cardbtn" onclick="openSkipped()"><div class="k">🚫 Отсеяно ▸</div><div class="v" id="c-skip">–</div></div>
       <div class="card"><div class="k">Пушей</div><div class="v" id="c-push">–</div></div>
     </div>
     <div class="panel">
@@ -420,6 +475,7 @@ function renderStats(s){
   $('c-rate').innerHTML=(s.last_10m/10).toFixed(1)+'<small>/мин</small>';
   $('c-pend').textContent=s.pending.toLocaleString('ru-RU');
   $('c-push').textContent=s.pushed.toLocaleString('ru-RU');
+  $('c-skip').textContent=(s.skipped||0).toLocaleString('ru-RU');
   // bar по вертикалям
   const bv=s.by_vertical, tot=Object.values(bv).reduce((a,b)=>a+b,0)||1;
   const order=['business','it','medical'];
@@ -459,6 +515,25 @@ function mBack(){
   if(mStack.length){const s=mStack.pop();$('mbody').innerHTML=s.html;const b=$('mbox');if(b)requestAnimationFrame(()=>{b.scrollTop=s.scroll;});}
   else mHide();
 }
+
+async function openSkipped(){try{
+  mStack=[];
+  $('mbody').innerHTML='<div class="muted">Загружаю…</div>';
+  $('modal').classList.add('on');
+  const q=await (await fetch('/dashboard/skipped?limit=100')).json();
+  let h=`<h3>🚫 Отсеяно гейтом · ${q.total.toLocaleString('ru-RU')}</h3>`;
+  h+=`<div class="mmeta">за час: ${q.last_hour} · до LLM не дошли (сэкономлено ~${(q.last_hour*2).toLocaleString('ru-RU')} вызовов) · клик — исходник</div>`;
+  if(q.by_feed&&q.by_feed.length){
+    h+='<div class="mmeta">'+q.by_feed.map(f=>`<span>${esc(f.feed||'?')}: <b>${f.n}</b></span>`).join('')+'</div>';
+  }
+  h+='<div class="qlist">'+(q.items.map(it=>{
+    const [bc,be]=BADGE[it.bucket]||BADGE.other;
+    const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.bucket);
+    const sim=(it.reason||'').match(/0\.[0-9]+/);
+    return `<div class="srcrow qrow" onclick="openItem(${it.id},1)"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl">${esc(it.title||'—')}</span><span class="n" title="${esc(it.reason||'')}">${sim?sim[0]:''}</span></div>`;
+  }).join('')||'<div class="muted">гейт пока ничего не отсёк</div>')+'</div>';
+  $('mbody').innerHTML=h;
+}catch(e){$('mbody').innerHTML='<div class="muted">ошибка загрузки</div>';}}
 
 async function openQueue(){try{
   mStack=[];

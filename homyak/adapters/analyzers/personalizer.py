@@ -18,6 +18,7 @@ from homyak.core.scoring import (
     personal_score,
     weights_from_settings,
 )
+from homyak.core.watchlist import no_boost_topics
 from homyak.storage.qdrant import QdrantStore
 
 log = structlog.get_logger(__name__)
@@ -79,8 +80,9 @@ class PersonalizerAnalyzer:
             weights=self._weights,
             taste_ramp=self._taste_ramp,
         )
-        # Пристальное внимание: айтемы вотчлиста бустим (не выше 1.0).
-        if item.watch_topics:
+        # Пристальное внимание: айтемы вотчлиста бустим (не выше 1.0). Темы с boost:false
+        # (напр. «Природные явления») отслеживаем, но в ранге не поднимаем.
+        if item.watch_topics and set(item.watch_topics) - no_boost_topics():
             ps = min(1.0, ps + settings.watchlist_boost)
         ctx.personal_score = ps
         item.personal_score = ps

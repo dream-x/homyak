@@ -39,3 +39,22 @@ def test_multiple_and_empty():
     got = _m("Iran boosts oil exports", "")
     assert {"Iran", "Нефть"} <= got
     assert _m("", "") == set()
+
+
+def test_nature_topic_avoids_false_friends():
+    """Ловушки: 'град' не должен ловить 'градус', 'стихи' — стихотворения."""
+    from homyak.core.watchlist import load_watchlist, match
+
+    wl = load_watchlist("config/watchlist.yaml")
+    assert "Природные явления" in match("МЧС предупредило о ливнях и урагане", "", wl)
+    assert "Природные явления" in match("Hurricane makes landfall in Florida", "", wl)
+    # 'температура 5 градусов' и стихи — НЕ стихия
+    assert "Природные явления" not in match("Температура выросла на 5 градусов", "", wl)
+    assert "Природные явления" not in match("Поэт прочитал свои стихи", "", wl)
+
+
+def test_nature_is_tracked_but_not_boosted():
+    from homyak.core.watchlist import no_boost_topics
+
+    assert "Природные явления" in no_boost_topics("config/watchlist.yaml")
+    assert "Нефть" not in no_boost_topics("config/watchlist.yaml")  # остальные бустятся

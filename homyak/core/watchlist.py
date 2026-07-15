@@ -58,3 +58,20 @@ def load_watchlist(path: str | None = None) -> list[_Topic]:
 
 def topic_names(path: str | None = None) -> list[str]:
     return [name for name, _ in load_watchlist(path)]
+
+
+@lru_cache(maxsize=1)
+def no_boost_topics(path: str | None = None) -> frozenset[str]:
+    """Темы с `boost: false` — отслеживаем (панель, 👁, гейт пропускает), но в ранге НЕ поднимаем.
+
+    Пример: «Природные явления» — погоду видеть хочу, а наверх ленты тащить незачем.
+    """
+    p = Path(path or getattr(settings, "watchlist_path", "config/watchlist.yaml"))
+    if not p.exists():
+        return frozenset()
+    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return frozenset(
+        t["name"]
+        for t in (data.get("watchlist") or [])
+        if t.get("name") and t.get("boost") is False
+    )
