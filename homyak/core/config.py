@@ -22,9 +22,13 @@ class Settings(BaseSettings):
     watchlist_path: str = Field(default="config/watchlist.yaml", alias="WATCHLIST_PATH")
     watchlist_boost: float = Field(default=0.15, alias="WATCHLIST_BOOST")  # буст personal_score
 
-    # «Прошлое не нужно»: на ингесте берём только окно текущего цикла — не старше
-    # interval * factor. Убивает залп старья при первом контакте и долги после простоя.
+    # Окно ингеста = max(interval * factor, min_window). Курсор и так даёт «только новое»;
+    # окно — лишь страховка от залпа истории при первом контакте и долгов после простоя.
+    # ПОЛ ОБЯЗАТЕЛЕН: без него окно меряло не то время и молча убивало источники —
+    # у hn pubDate это момент сабмита (на морду через 0.5-3ч), habr_best — дайджест за сутки,
+    # huggingface/nature датируют 00:00. Окно в 15-90 мин не ловило их в принципе.
     ingest_age_factor: float = Field(default=1.5, alias="INGEST_AGE_FACTOR")
+    ingest_min_window_hours: float = Field(default=24.0, alias="INGEST_MIN_WINDOW_HOURS")
 
     # Поллинг: не долбим источники (особенно RSSHub на одном twitter-токене).
     poll_concurrency: int = Field(default=3, alias="POLL_CONCURRENCY")  # макс. одновременных фетчей

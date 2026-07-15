@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 
-import pytest
 
 from homyak.adapters.analyzers.prefilter import PrefilterAnalyzer
 from homyak.core.config import settings

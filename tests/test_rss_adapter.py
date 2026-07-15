@@ -57,12 +57,18 @@ async def test_rss_cursor_skips_seen():
 
 
 @respx.mock
-async def test_rss_skips_stale_beyond_poll_window():
-    """Прошлое не нужно: при первом контакте не тащим то, что старше окна поллинга."""
-    respx.get("https://example.com/rss").mock(return_value=httpx.Response(200, content=RSS_XML))
-    # интервал 10 мин → окно 15 мин; обоим постам 1ч и 5ч → не берём ничего
+async def test_rss_skips_only_truly_ancient_on_first_contact():
+    """Первый контакт не тащит всю историю фида, но и не режет свежее по-живому.
+
+    Пол окна (24ч) обязателен: без него частый поллинг давал окно в 15 мин, и источники,
+    у которых pubDate != момент появления (hn, habr_best, huggingface), выдавали ноль.
+    """
+    ancient = NOW - timedelta(days=30)
+    xml = _rss(("Ancient", "old", ancient), ("Today", "new", NEW))
+    respx.get("https://example.com/rss").mock(return_value=httpx.Response(200, content=xml))
+    # интервал 10 мин: окно = max(15 мин, пол 24ч) = 24ч
     src = RSSSource(RSSFeedConfig(name="t", url="https://example.com/rss", interval_seconds=600))
 
-    results = [dto async for dto, _ in src.poll(None)]
+    titles = [dto.title async for dto, _ in src.poll(None)]
 
-    assert results == []
+    assert titles == ["Today"]  # месячная древность отсечена, свежее — взято

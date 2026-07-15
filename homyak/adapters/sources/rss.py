@@ -18,15 +18,22 @@ log = structlog.get_logger(__name__)
 
 
 def _effective_cutoff(
-    cursor: str | None, interval_seconds: int, now: datetime, factor: float
+    cursor: str | None,
+    interval_seconds: int,
+    now: datetime,
+    factor: float,
+    min_window_hours: float = 0.0,
 ) -> datetime:
-    """Граница «прошлое не нужно»: не старше одного окна поллинга (interval * factor).
+    """Граница ингеста: не старше max(interval * factor, min_window).
 
-    Первый контакт с фидом → берём только текущее окно, а не всю выдачу (~20 старых твитов).
-    После простоя (курсор протух) → не догоняем долги, стартуем от горизонта.
-    В обычном режиме курсор свежее горизонта → работает он.
+    Курсор даёт «только новое с прошлого поллинга» — окно нужно лишь против залпа истории
+    при первом контакте и долгов после простоя. Поэтому у окна есть ПОЛ: без него оно
+    меряло pubDate, который у многих фидов не равен моменту появления (hn — время сабмита,
+    habr_best — дайджест за сутки, huggingface/nature — дата 00:00), и такие источники
+    молча выдавали ноль. Повторов пол не создаёт: их режет курсор + идемпотентный upsert.
     """
-    horizon = now - timedelta(seconds=interval_seconds * factor)
+    window = max(interval_seconds * factor, min_window_hours * 3600)
+    horizon = now - timedelta(seconds=window)
     if not cursor:
         return horizon
     try:
@@ -102,6 +109,7 @@ class RSSSource:
             self.interval_seconds,
             datetime.now(timezone.utc),
             settings.ingest_age_factor,
+            settings.ingest_min_window_hours,
         )
 
         # сортируем по published ASC, чтобы курсор двигался монотонно
