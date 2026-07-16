@@ -124,9 +124,9 @@ async def queue_snapshot(limit: int = 40) -> dict:
 
 async def watchlist_snapshot(per_topic: int = 6) -> dict:
     """Для каждой темы вотчлиста: счётчик + свежие айтемы (для панелей на дашборде)."""
-    from homyak.core.watchlist import topic_names
+    from homyak.core.interests import watch_topic_names
 
-    names = topic_names()
+    names = watch_topic_names()
     async with SessionFactory() as s:
         counts = dict(
             (
@@ -220,6 +220,75 @@ async def skipped_snapshot(limit: int = 60) -> dict:
             }
             for r in rows
         ],
+    }
+
+
+async def interests_snapshot() -> dict:
+    """Три слоя «что мне нравится» разом: декларация · выученное · веса.
+
+    Смысл панели — чтобы место, где задаются интересы, было видно, а не искалось по шести
+    точкам. Отдельно показываем дрейф файла и БД: `medical: mute`, выкосивший 21% вертикали,
+    прожил трое суток именно потому, что расхождение негде было увидеть.
+    """
+    import json as _json
+
+    from homyak.core.interests import diff_declaration, load_interests
+
+    inter = load_interests()
+    async with SessionFactory() as s:
+        profiles = (
+            await s.execute(
+                text(
+                    "select vertical, version, description, topics::text, created_at"
+                    " from profile where active order by vertical"
+                )
+            )
+        ).all()
+        muted = (
+            await s.execute(text("select vertical, tag from muted_tags order by vertical, tag"))
+        ).all()
+        learned = (
+            await s.execute(
+                text(
+                    "select vertical, tag, weight, n_pos, n_neg from tag_affinity"
+                    " where n_pos > 0 or n_neg > 0 order by weight desc limit 24"
+                )
+            )
+        ).all()
+        taste = (await s.execute(text("select vertical, n_liked from taste_state"))).all()
+        feedback_n = (await s.execute(text("select count(*) from feedback"))).scalar() or 0
+
+    db = {r.vertical: r for r in profiles}
+    verticals = []
+    for name, decl in inter.verticals.items():
+        row = db.get(name)
+        drift = (
+            diff_declaration(decl, row.description, _json.loads(row.topics)) if row else ["нет в БД"]
+        )
+        by_pol: dict[str, list[str]] = {}
+        for t in decl.topics:
+            by_pol.setdefault(t.polarity, []).append(t.name)
+        verticals.append(
+            {
+                "vertical": name,
+                "version": row.version if row else None,
+                "description": " ".join((decl.description or "").split()),
+                "topics": by_pol,
+                "drift": drift,
+            }
+        )
+
+    return {
+        "verticals": verticals,
+        "muted": [{"vertical": v, "tag": t} for v, t in muted],
+        "learned": [
+            {"vertical": v, "tag": t, "weight": round(w, 2), "n_pos": p, "n_neg": n}
+            for v, t, w, p, n in learned
+        ],
+        "taste": [{"vertical": v, "n_liked": n} for v, n in taste],
+        "feedback_n": feedback_n,
+        "weights": inter.weights.model_dump(),
+        "watch_n": len(inter.watch),
     }
 
 
@@ -380,6 +449,15 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 .wlwrap>h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);margin:0 0 10px}
 .wlgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
 .wlcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px;min-width:0}
+/* Панель «Что мне нравится»: слои разделены визуально — в этом весь смысл панели. */
+.ilayer{margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
+.ivert{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px}
+.ivert h4{margin:0 0 6px;font-size:13px}
+.idesc{color:var(--dim);font-size:12px;line-height:1.5;margin-bottom:8px}
+.irow{display:flex;gap:10px;align-items:baseline;font-size:12px;padding:3px 0;min-width:0}
+.ipol{flex:0 0 108px;color:var(--dim);white-space:nowrap}
+.irow>span:last-child{min-width:0;word-break:break-word}
+.idrift{margin-top:8px;padding:6px 8px;border-radius:6px;background:#3a2a10;border:1px solid #6b4a15;color:#f0b849;font-size:11px}
 .wlcard h3{margin:0 0 8px;font-size:14px;display:flex;align-items:center;gap:8px}
 .wlcard h3 .cnt{margin-left:auto;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .wlcard .il{display:flex;flex-direction:column;gap:5px}
@@ -406,6 +484,7 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
       <div class="card cardbtn" onclick="openQueue()"><div class="k">В очереди ▸</div><div class="v" id="c-pend">–</div></div>
       <div class="card cardbtn" onclick="openSkipped()"><div class="k">🚫 Отсеяно ▸</div><div class="v" id="c-skip">–</div></div>
       <div class="card"><div class="k">Пушей</div><div class="v" id="c-push">–</div></div>
+      <div class="card cardbtn" onclick="openInterests()"><div class="k">👤 Что мне нравится ▸</div><div class="v" style="font-size:15px">3 слоя</div></div>
     </div>
     <div class="panel">
       <h2>Поток в реальном времени · источник → вертикаль → score</h2>
@@ -525,6 +604,45 @@ function mBack(){
   if(mStack.length){const s=mStack.pop();$('mbody').innerHTML=s.html;const b=$('mbox');if(b)requestAnimationFrame(()=>{b.scrollTop=s.scroll;});}
   else mHide();
 }
+
+const POL={love:['❤️','обожаю'],like:['👍','нравится'],meh:['😐','нейтрально'],dislike:['👎','не люблю'],mute:['🔇','мьют']};
+
+// Панель существует ради одного: чтобы «где задаётся, что мне нравится» было ВИДНО.
+// Слои показаны раздельно и в том же порядке, что в config/interests.yaml и в CLI.
+async function openInterests(){try{
+  mStack=[];
+  $('mbody').innerHTML='<div class="muted">Загружаю…</div>';
+  $('modal').classList.add('on');
+  const d=await (await fetch('/dashboard/interests')).json();
+  let h='<h3>👤 Что мне нравится</h3>';
+  h+='<div class="mmeta"><span>задаётся в <b>config/interests.yaml</b></span><span>применить: <b>homyak-interests apply</b></span></div>';
+
+  h+='<div class="ilayer"><b>1 · ДЕКЛАРАЦИЯ</b> — твои слова, из файла</div>';
+  h+=d.verticals.map(v=>{
+    const drift=v.drift&&v.drift.length
+      ? `<div class="idrift">≠ файл разошёлся с БД: ${v.drift.map(x=>esc(x)).join(' · ')}</div>` : '';
+    const tp=Object.keys(POL).filter(p=>v.topics[p]&&v.topics[p].length)
+      .map(p=>`<div class="irow"><span class="ipol">${POL[p][0]} ${POL[p][1]}</span><span>${esc(v.topics[p].join(', '))}</span></div>`).join('');
+    return `<div class="ivert"><h4>${esc(v.vertical)} <span class="cnt">v${v.version??'—'}</span></h4>`
+         + `<div class="idesc">${esc(v.description)}</div>${tp}${drift}</div>`;
+  }).join('');
+
+  h+='<div class="ilayer"><b>2 · ВЫУЧЕННОЕ</b> — система сама, из 👍/👎. В файл не пишет</div>';
+  const taste=d.taste.map(t=>`${esc(t.vertical)}: ${t.n_liked}`).join(', ')||'—';
+  h+=`<div class="mmeta"><span>фидбеков всего: <b>${d.feedback_n}</b></span><span>вкус (n_liked): <b>${taste}</b></span></div>`;
+  h+= d.muted.length
+    ? '<div class="irow"><span class="ipol">🔇 кнопкой</span><span>'+d.muted.map(m=>esc(m.vertical+'/'+m.tag)).join(', ')+'</span></div>'
+    : '<div class="irow"><span class="ipol">🔇 кнопкой</span><span class="muted">пусто</span></div>';
+  h+= d.learned.length
+    ? '<div class="qlist">'+d.learned.map(l=>`<div class="srcrow"><span class="badge b-rss">${esc(l.vertical)}</span><span class="ttl">${esc(l.tag)}</span><span class="n">${l.weight>0?'+':''}${l.weight} <small>(${l.n_pos}👍/${l.n_neg}👎)</small></span></div>`).join('')+'</div>'
+    : '<div class="muted">обучение пока ничего не накопило</div>';
+
+  h+='<div class="ilayer"><b>3 · ВЕСА</b> — сколько что значит</div>';
+  h+='<div class="qlist">'+Object.entries(d.weights).map(([k,v])=>
+      `<div class="srcrow"><span class="ttl">${esc(k)}</span><span class="n">${v}</span></div>`).join('')+'</div>';
+  h+=`<div class="mmeta"><span>под наблюдением (watch): <b>${d.watch_n}</b> тем</span></div>`;
+  $('mbody').innerHTML=h;
+}catch(e){$('mbody').innerHTML='<div class="muted">ошибка загрузки</div>';}}
 
 async function openSkipped(){try{
   mStack=[];

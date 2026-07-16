@@ -43,9 +43,9 @@ def test_multiple_and_empty():
 
 def test_nature_topic_avoids_false_friends():
     """Ловушки: 'град' не должен ловить 'градус', 'стихи' — стихотворения."""
-    from homyak.core.watchlist import load_watchlist, match
+    from homyak.core.interests import compiled_watchlist
 
-    wl = load_watchlist("config/watchlist.yaml")
+    wl = compiled_watchlist("config/interests.yaml")
     assert "Природные явления" in match("МЧС предупредило о ливнях и урагане", "", wl)
     assert "Природные явления" in match("Hurricane makes landfall in Florida", "", wl)
     # 'температура 5 градусов' и стихи — НЕ стихия
@@ -54,7 +54,7 @@ def test_nature_topic_avoids_false_friends():
 
 
 def test_nature_is_tracked_but_not_boosted():
-    from homyak.core.watchlist import no_boost_topics
+    from homyak.core.interests import no_boost_topics
 
-    assert "Природные явления" in no_boost_topics("config/watchlist.yaml")
-    assert "Нефть" not in no_boost_topics("config/watchlist.yaml")  # остальные бустятся
+    assert "Природные явления" in no_boost_topics("config/interests.yaml")
+    assert "Нефть" not in no_boost_topics("config/interests.yaml")  # остальные бустятся

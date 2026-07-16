@@ -231,7 +231,9 @@ CREATE INDEX idx_news_pushable  ON news_items (personal_score DESC)
   - `up`   → taste centroid update (+), `tag_affinity[tags] +`, `source_affinity +`.
   - `down` → taste push-away (−, малый lr), `tag_affinity[tags] −`, `source_affinity −`.
   - `save` → как `up`, но с бóльшим весом (сильный позитив).
-  - `mute_topic` → добавить topic в активный профиль с `polarity=mute` (новая версия профиля).
+  - `mute_topic` → тег в таблицу `muted_tags` (слой «выученное»). В профиль НЕ пишем: кнопка не
+    должна переписывать декларацию пользователя — так `medical: mute` выключил 21% вертикали.
+    Снять: `homyak-interests unmute <вертикаль> <тег>`.
   - `open`/`skip` → слабые сигналы (опц., Phase 6.5): open как микро-плюс, skip как микро-минус.
 - Идемпотентность: `feedback.UNIQUE(news_item_id, signal)` — повторный клик не даёт двойного обучения
   (toggle: повторный 👍 снимает лайк и откатывает вклад).
@@ -357,7 +359,7 @@ docker compose up -d postgres nats qdrant ollama
 uv run alembic upgrade head            # применит 0004
 
 # 2. Стартовый профиль
-uv run homyak-profile-set --file config/profile.yaml   # или через бот /interest
+uv run homyak-interests apply   # из config/interests.yaml; или через бот /profile
 
 # 3. Процессы
 uv run homyak-ingest-poll &

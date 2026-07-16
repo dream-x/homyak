@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy import delete, func, or_, select, update
@@ -13,6 +14,7 @@ from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
 from homyak.core.models import (
     Feedback,
     IngestState,
+    MutedTag,
     NewsItem,
     Profile,
     SourceAffinity,
@@ -217,6 +219,18 @@ class NewsRepo:
                 select(func.max(Profile.version)).where(Profile.vertical == vertical)
             )
             version = (cur or 0) + 1
+            # Полярности прошлой версии — чтобы отличить «ты передумал» от «просто переприменили».
+            prev_topics = (
+                await s.scalar(
+                    select(Profile.topics).where(Profile.active, Profile.vertical == vertical)
+                )
+                or []
+            )
+            prev_pol = {
+                t["name"]: t.get("polarity", "like")
+                for t in prev_topics
+                if isinstance(t, dict) and t.get("name")
+            }
             await s.execute(
                 update(Profile)
                 .where(Profile.active, Profile.vertical == vertical)
@@ -231,16 +245,39 @@ class NewsRepo:
                     active=True,
                 )
             )
+            # Стена между декларацией (слой 1) и выученным (слой 2), но не глухая:
+            #   полярность НЕ менялась → do_nothing: переприменение профиля не смеет обнулять
+            #     то, что накопили 👍/👎. Раньше тут был безусловный do_update, и каждый apply
+            #     стирал обучение начисто.
+            #   полярность изменилась (или тема новая) → do_update: ты передумал, это приказ,
+            #     и он должен подействовать — иначе правка файла молча ничего не делала бы.
+            names = [t["name"] for t in topics if t.get("name")]
             for t in topics:
                 name = t.get("name")
                 if not name:
                     continue
-                weight = _POLARITY_WEIGHT.get(t.get("polarity", "like"), 0.0)
+                pol = t.get("polarity", "like")
+                weight = _POLARITY_WEIGHT.get(pol, 0.0)
                 stmt = pg_insert(TagAffinity).values(vertical=vertical, tag=name, weight=weight)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["vertical", "tag"], set_={"weight": weight}
-                )
+                if prev_pol.get(name) == pol:
+                    stmt = stmt.on_conflict_do_nothing(index_elements=["vertical", "tag"])
+                else:
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["vertical", "tag"], set_={"weight": weight}
+                    )
                 await s.execute(stmt)
+
+            # Подчищаем сирот: тема ушла из декларации, а её посеянный вес остался и продолжал
+            # влиять. Из-за этого `medical: -1` пережил снятие мьюта и штрафовал всю вертикаль.
+            # Трогаем ТОЛЬКО нетронутые обучением строки (n_pos=n_neg=0) — выученное не наше.
+            await s.execute(
+                delete(TagAffinity).where(
+                    TagAffinity.vertical == vertical,
+                    TagAffinity.tag.notin_(names) if names else sa.true(),
+                    TagAffinity.n_pos == 0,
+                    TagAffinity.n_neg == 0,
+                )
+            )
             await s.commit()
         return version
 
@@ -292,26 +329,36 @@ class NewsRepo:
 
     async def record_feedback(
         self, news_item_id: int, signal: str, topic: str | None = None
-    ) -> str:
-        """Toggle: первый клик добавляет фидбек ('added'), повторный снимает ('removed')."""
+    ) -> tuple[str, str | None]:
+        """Toggle: первый клик добавляет ('added'), повторный снимает ('removed').
+
+        Возвращает (action, topic). Ключ — (item, signal, topic), поэтому на одной статье можно
+        замьютить несколько тегов, и toggle снимает именно тот, что выбрали. Раньше тема в ключ
+        не входила: мьют второго тега снимал первый и возвращал «снято» на чужую тему.
+
+        is_not_distinct_from, а не ==: у 👍/👎/⭐ topic=NULL, и `topic = NULL` не совпало бы
+        ни с чем — повторный клик перестал бы отменять фидбек.
+        """
         async with self._sf() as s:
             ins = (
                 pg_insert(Feedback)
                 .values(news_item_id=news_item_id, signal=signal, topic=topic)
-                .on_conflict_do_nothing(index_elements=["news_item_id", "signal"])
+                .on_conflict_do_nothing(index_elements=["news_item_id", "signal", "topic"])
                 .returning(Feedback.id)
             )
             row = (await s.execute(ins)).first()
             if row is None:
                 await s.execute(
                     delete(Feedback).where(
-                        Feedback.news_item_id == news_item_id, Feedback.signal == signal
+                        Feedback.news_item_id == news_item_id,
+                        Feedback.signal == signal,
+                        Feedback.topic.is_not_distinct_from(topic),
                     )
                 )
                 await s.commit()
-                return "removed"
+                return "removed", topic
             await s.commit()
-            return "added"
+            return "added", topic
 
     async def bump_tag_affinity(
         self, vertical: str, tags: list[str], direction: int, lr: float
@@ -364,19 +411,44 @@ class NewsRepo:
                     row.n_neg += 1
             await s.commit()
 
-    async def mute_topic(self, vertical: str, topic: str) -> int:
-        """Добавить тему в mute активного профиля вертикали → новая версия профиля."""
-        prof = await self.get_active_profile(vertical)
-        if prof is None:
-            return await self.set_profile(
-                vertical,
-                f"Интересы (авто). Не интересно: {topic}.",
-                [{"name": topic, "polarity": "mute"}],
+    async def mute_topic(self, vertical: str, topic: str) -> None:
+        """🔇 → слой «выученное» (muted_tags). Декларацию (interests.yaml) НЕ трогаем.
+
+        Раньше тут был set_profile: кнопка дописывала mute в profile.topics, то есть
+        переписывала текст, который пользователь объявил сам. Плюс мьютился первый тег статьи
+        — самый широкий. Итог: `medical: mute` в медицинской вертикали, 273 убитых айтема.
+        """
+        async with self._sf() as s:
+            stmt = pg_insert(MutedTag).values(vertical=vertical, tag=topic)
+            await s.execute(stmt.on_conflict_do_nothing(index_elements=["vertical", "tag"]))
+            await s.commit()
+
+    async def unmute_topic(self, vertical: str, topic: str) -> None:
+        """Снять мьют: повторное нажатие 🔇 — это отмена (record_feedback тоже toggle)."""
+        async with self._sf() as s:
+            await s.execute(
+                delete(MutedTag).where(MutedTag.vertical == vertical, MutedTag.tag == topic)
             )
-        _version, desc, topics = prof
-        topics = [t for t in topics if t.get("name") != topic]
-        topics.append({"name": topic, "polarity": "mute"})
-        return await self.set_profile(vertical, desc, topics)
+            await s.commit()
+
+    async def get_muted_tags(self, vertical: str) -> set[str]:
+        async with self._sf() as s:
+            rows = (
+                await s.execute(select(MutedTag.tag).where(MutedTag.vertical == vertical))
+            ).all()
+        return {r[0] for r in rows}
+
+    async def list_muted_tags(self) -> list[tuple[str, str, datetime]]:
+        """Все мьюты (панель «Интересы»): что кнопка нарешала поверх декларации."""
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    select(MutedTag.vertical, MutedTag.tag, MutedTag.created_at).order_by(
+                        MutedTag.vertical, MutedTag.tag
+                    )
+                )
+            ).all()
+        return [(r[0], r[1], r[2]) for r in rows]
 
     async def set_item_text(self, news_item_id: int, text: str) -> None:
         async with self._sf() as s:

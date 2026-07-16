@@ -306,8 +306,9 @@ Analyzer'ы выполняются последовательно в `processor`
   вектор вкуса — своя точка в Qdrant-коллекции `taste` на каждую вертикаль.
 - **Скоринг:** `llm_relevance` судит статью против профиля ЕЁ вертикали; `personalizer` считает
   `personal_score` из аффинити/вкуса этой вертикали. `learner` обучает вертикаль, к которой относится item.
-- **Профили:** `config/profiles/{business,it,medical}.yaml` → `homyak-profile-set`. Правки профилей и
-  рефайнмент — per-vertical.
+- **Интересы:** `config/interests.yaml` — единственное место, где объявляется «что мне нравится»
+  → `homyak-interests apply`. Стена односторонняя: декларация сеет выученное, выученное в файл
+  не пишет. 🔇 уходит в `muted_tags`, а не в профиль. Рефайнмент только ПРЕДЛАГАЕТ — применяешь ты.
 - **Выходы:** бот — команды/кнопки `/business /it /medical`, метка вертикали в посте; лента `?vertical=`.
 - **Источники** тематические (WSJ/Economist… → business; STAT/Lancet… → medical; HN/arxiv… → it), но
   вертикаль определяет теггер по содержимому, не источник.
@@ -361,7 +362,7 @@ Analyzer'ы выполняются последовательно в `processor`
 
 - **6.0 offline-скоринг ✅** — миграция 0005 (profile/tag_affinity/source_affinity/feedback/taste_state +
   колонки), `core/scoring.py::personal_score`, `llm_relevance` (stage 7, судья), `personalizer`
-  (stage 8, свёртка + hard-mute), `homyak-profile-set`. Лента `?sort=personal`. E2E: AI/Rust
+  (stage 8, свёртка + hard-mute), `homyak-interests`. Лента `?sort=personal`. E2E: AI/Rust
   ранжируются высоко, спорт низко, крипта отсекается mute. (В доке миграция названа 0004 — фактически 0005.)
 - **6.1-6.3 (осталось)** — бот-реакции 👍/👎 + `learner` (обучение taste/affinity), политика пуша,
   команды бота, profile refinement. Требуют TG-бот (токен от @BotFather).

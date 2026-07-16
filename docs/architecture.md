@@ -123,8 +123,9 @@ vector and feed. A like in IT does not affect medical.
   is a per-vertical point in the Qdrant `taste` collection.
 - **Scoring:** `llm_relevance` judges a story against the profile of **its** vertical; `personalizer`
   computes `personal_score` from that vertical's affinities/taste; `learner` trains the item's vertical.
-- **Profiles:** `config/profiles/{business,it,medical}.yaml` → `homyak-profile-set`. Refinement and mute are
-  per-vertical.
+- **Interests:** `config/interests.yaml` is the single place a preference is ever declared → `homyak-interests
+  apply`. One-way wall: the declaration seeds the learned layer, the learned layer never writes back.
+  🔇 lands in `muted_tags`, not in the profile. Refinement only *proposes*; you accept it via the bot.
 - **Outputs:** bot commands/buttons `/business /it /medical`, a vertical badge on each post; feed `?vertical=`.
 - **Sources** are topical (WSJ/Economist… → business; STAT/Lancet… → medical; HN/arXiv… → it), but the
   vertical is decided by the tagger from content, not by the source.

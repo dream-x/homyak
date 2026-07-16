@@ -47,16 +47,12 @@ class PersonalWeights:
     fresh: float = 0.05
 
 
-def weights_from_settings() -> PersonalWeights:
-    from homyak.core.config import settings
+def weights_from_interests() -> PersonalWeights:
+    """Веса свёртки из config/interests.yaml (секция weights) — там же, где сами интересы."""
+    from homyak.core.interests import weights
 
-    return PersonalWeights(
-        llm=settings.personalize_llm_weight,
-        taste=settings.personalize_taste_weight,
-        tag=settings.personalize_tag_weight,
-        source=settings.personalize_source_weight,
-        fresh=settings.personalize_fresh_weight,
-    )
+    w = weights()
+    return PersonalWeights(llm=w.llm, taste=w.taste, tag=w.tag, source=w.source, fresh=w.fresh)
 
 
 def cosine(a: Sequence[float] | None, b: Sequence[float] | None) -> float:

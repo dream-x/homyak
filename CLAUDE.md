@@ -49,7 +49,9 @@ podman compose down       # стоп (volumes сохраняются)
 → llm_tagger → llm_summarizer → scorer → llm_relevance (судья) → personalizer. Процессы:
 `homyak-ingest-poll` (RSS), `homyak-telegram-ingest` (TG из tscrapper через NATS `homyak.telegram.raw`),
 `homyak-processor`, `homyak-learner` (обучение на 👍/👎), `homyak-sweeper`, `homyak-tgbot`, `homyak-api`.
-CLI: `homyak-cli`, `homyak-profile-set`, `homyak-reembed`. Осталось Phase 6.3 (profile refinement).
+CLI: `homyak-cli`, `homyak-interests` (show/diff/apply/backfill), `homyak-reembed`.
+**Интересы — только `config/interests.yaml`** (verticals + watch + weights), применять `homyak-interests
+apply`. Выученное (affinity/taste/muted_tags) в БД и в файл не пишет. Осталось Phase 6.3.
 Токен бота — в `.env` (gitignored). Telegram-каналы задаются в config.yaml tscrapper'а.
 
 ## Порядок работ

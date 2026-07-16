@@ -38,7 +38,7 @@ homyak-tg-relay = "homyak.pipeline.tg_relay:main"
 homyak-telegram-ingest = "homyak.pipeline.telegram_ingest:main"
 homyak-reembed = "homyak.cli.reembed:main"
 homyak-cli = "homyak.adapters.outputs.cli:main"
-homyak-profile-set = "homyak.cli.profile:main"
+homyak-interests = "homyak.cli.interests:main"
 homyak-tgbot = "homyak.adapters.outputs.tg_bot:main"
 homyak-learner = "homyak.pipeline.learner:main"
 

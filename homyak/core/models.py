@@ -206,6 +206,27 @@ class SourceAffinity(Base):
     )
 
 
+class MutedTag(Base):
+    """Мьюты от кнопки 🔇 — слой 2 (выученное), НЕ декларация.
+
+    Отдельная таблица принципиальна. Раньше 🔇 звал set_profile и дописывал mute прямо в
+    profile.topics, то есть кнопка переписывала твой текст. Мьютился при этом ПЕРВЫЙ тег
+    статьи — а он самый широкий: у медицинской статьи это `medical`. Одно нажатие выключило
+    21% вертикали (273 айтема), и увидеть это было неоткуда.
+
+    Теперь стена: слой 2 пишет только сюда, config/interests.yaml не трогает никто, кроме тебя.
+    Таблицу можно снести целиком — декларация не пострадает.
+    """
+
+    __tablename__ = "muted_tags"
+
+    vertical: Mapped[str] = mapped_column(String(16), primary_key=True)
+    tag: Mapped[str] = mapped_column(Text, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class Feedback(Base):
     __tablename__ = "feedback"
 
@@ -221,7 +242,17 @@ class Feedback(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("news_item_id", "signal", name="uq_feedback_item_signal"),
+        # topic В КЛЮЧЕ: мьют двухшаговый, на одной статье можно замьютить несколько тегов.
+        # Без темы toggle снимал бы предыдущий мьют вместо добавления нового.
+        # nulls_not_distinct: у 👍/👎/⭐ topic=NULL, а NULL'ы по умолчанию различны — иначе
+        # повторный клик перестал бы отменять фидбек и плодил бы дубли.
+        UniqueConstraint(
+            "news_item_id",
+            "signal",
+            "topic",
+            name="uq_feedback_item_signal_topic",
+            postgresql_nulls_not_distinct=True,
+        ),
         Index("idx_feedback_created", sa_text("created_at DESC")),
     )
 

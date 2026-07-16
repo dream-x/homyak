@@ -59,6 +59,12 @@ async def dashboard_skipped(limit: int = 60) -> dict:
     return await dashboard.skipped_snapshot(min(max(limit, 1), 300))
 
 
+@app.get("/dashboard/interests")
+async def dashboard_interests() -> dict:
+    """Три слоя «что мне нравится»: декларация · выученное · веса (+ дрейф файла и БД)."""
+    return await dashboard.interests_snapshot()
+
+
 @app.get("/dashboard/watchlist")
 async def dashboard_watchlist() -> dict:
     """Панели по трендовым темам (счётчик + свежие айтемы на тему)."""

@@ -24,6 +24,7 @@ from sqlalchemy import text
 
 from homyak.adapters.analyzers.embedder import EmbedderAnalyzer
 from homyak.core.config import settings
+from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import AnalyzerContext
 from homyak.core.scoring import cosine
 
@@ -38,7 +39,8 @@ class PrefilterAnalyzer:
     stage = 3  # ПО НОМЕРУ: после watchlist(2)/embedder(2), строго до llm_tagger(4)
 
     def __init__(self, qdrant, embedder: EmbedderAnalyzer | None = None) -> None:
-        self._q = qdrant
+        # qdrant тут нужен только чтобы собрать эмбеддер: сам гейт в Qdrant не ходит —
+        # он сравнивает вектор айтема с векторами профилей, которые держит у себя в _refs.
         self._emb = embedder or EmbedderAnalyzer(qdrant)
         self._refs: dict[str, list[float]] | None = None  # вектора профилей, лениво
         self._sig: tuple = ()  # (вертикаль, версия профиля) — для инвалидации кэша
@@ -98,6 +100,6 @@ class PrefilterAnalyzer:
             if c > best:
                 best_v, best = vertical, c
 
-        if best < settings.prefilter_min_sim:
+        if best < interest_weights().prefilter_min_sim:
             ctx.skip = True
             ctx.skip_reason = f"низкая близость к профилям: {best:.2f} (ближе всего {best_v})"

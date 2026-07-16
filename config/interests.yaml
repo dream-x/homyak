@@ -1,0 +1,156 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ЧТО МНЕ НРАВИТСЯ — единственное место, где это задаётся.
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Хочешь поменять ленту — меняешь ЗДЕСЬ. Больше нигде.
+#
+#  Три слоя, и между ними стена:
+#
+#    1. ДЕКЛАРАЦИЯ (этот файл)   — твои слова. В git, диффится, ревьюится.
+#    2. ВЫУЧЕННОЕ (БД)           — tag_affinity / source_affinity / taste.
+#                                  Копится из 👍/👎. В этот файл НЕ пишет никогда.
+#    3. ВЕСА (секция weights)    — сколько слой 2 вообще значит.
+#
+#  Почему так. Раньше мест было шесть, и главным выглядел config/profiles/*.yaml —
+#  но его читал только CLI, правка файла не меняла ничего. Живой профиль лежал в БД,
+#  и его молча переписывала кнопка 🔇, мьютя ПЕРВЫЙ тег статьи. Так в medical попало
+#  `medical: mute` и тихо убило 21% вертикали (273 айтема, включая score 2.36).
+#
+#  Как применить:
+#    uv run homyak-interests diff    — что здесь отличается от живого профиля в БД
+#    uv run homyak-interests apply   — применить (в БД новая версия, история для аудита)
+#
+#  verticals/*/description  читает LLM-судья ДОСЛОВНО — это главный рычаг, пиши прозой.
+#  verticals/*/topics       polarity: love (0.8) · like (0.5) · meh (0) · dislike (-0.5) · mute (вон)
+#  watch/                   темы под наблюдением: всегда проходят гейт, 👁 в ленте, панель на дашборде
+#  weights/                 подкручивай, только если понимаешь, что делаешь
+#
+#  Файл смонтирован в контейнеры (volume, ro) и перечитывается по mtime — watch и weights
+#  подхватываются на лету, verticals требуют `apply` (профиль версионируется в БД).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+verticals:
+
+  business:
+    description: >
+      Рынки и экономика для трейдера и предпринимателя: макро, ставки ЦБ, инфляция, фондовый рынок,
+      сырьё и валюты, настроение рынка (risk-on/risk-off), крупные сделки M&A, отчётности компаний,
+      венчур и стартап-экономика, регуляции, геоэкономика — «куда катится мир» и что двигает деньги.
+      Не интересно: спорт, светская хроника, сугубо технические IT-детали без бизнес-эффекта.
+    topics:
+      - {name: markets,     polarity: love}
+      - {name: macro,       polarity: love}
+      - {name: economy,     polarity: love}
+      - {name: finance,     polarity: love}
+      - {name: stocks,      polarity: like}
+      - {name: crypto,      polarity: like}
+      - {name: startups,    polarity: like}
+      - {name: venture,     polarity: like}
+      - {name: earnings,    polarity: like}
+      - {name: geopolitics, polarity: like}
+      - {name: sports,      polarity: mute}
+
+  it:
+    description: >
+      Программирование в широком смысле и инженерная практика: Python, Go, Java, Rust, C++ —
+      без фаворитов. Системное и backend-программирование, распределённые системы, базы данных,
+      Kubernetes/DevOps, сети, производительность, dev-tools и инфраструктура. AI/LLM: агенты,
+      inference, локальный self-hosting, ML-research. Прикладной security. Заходят разборы
+      архитектуры, инженерные посты, новые инструменты и релизы.
+      Не интересно: крипта как спекуляция, политика, спорт, обзоры гаджетов, AI-хайп без сути.
+    topics:
+      - {name: python,       polarity: love}
+      - {name: golang,       polarity: love}
+      - {name: java,         polarity: like}
+      - {name: rust,         polarity: like}
+      - {name: cpp,          polarity: like}
+      - {name: systems,      polarity: love}
+      - {name: backend,      polarity: love}
+      - {name: distributed-systems, polarity: like}
+      - {name: databases,    polarity: like}
+      - {name: kubernetes,   polarity: like}
+      - {name: devops,       polarity: like}
+      - {name: devtools,     polarity: love}
+      - {name: performance,  polarity: like}
+      - {name: security,     polarity: like}
+      - {name: ai,           polarity: like}
+      - {name: llm,          polarity: love}
+      - {name: ai-agents,    polarity: love}
+      - {name: ml-research,  polarity: like}
+      - {name: politics,     polarity: mute}
+      - {name: sports,       polarity: mute}
+
+  medical:
+    description: >
+      Медицина и здравоохранение для специалиста: клинические исследования, новые препараты и терапии,
+      биотех и фарма, медтех и устройства, ИИ в медицине, эпидемиология и общественное здоровье,
+      геномика, нейронауки, онкология, регуляции (FDA/EMA), прорывы в диагностике и лечении.
+      Что реально происходит в мире медицины и куда движется отрасль.
+      Не интересно: реклама БАДов, поп-биохакинг без доказательной базы, спорт.
+    topics:
+      # NB: тега `medical` здесь нет и быть не должно — это тег самой вертикали,
+      # замьютив его, выключаешь вертикаль целиком. Ровно это и случилось 13.07.
+      - {name: clinical-research, polarity: love}
+      - {name: pharma,            polarity: love}
+      - {name: biotech,           polarity: love}
+      - {name: medtech,           polarity: like}
+      - {name: ai-in-medicine,    polarity: like}
+      - {name: genomics,          polarity: like}
+      - {name: public-health,     polarity: like}
+      - {name: neuroscience,      polarity: like}
+      - {name: oncology,          polarity: like}
+      - {name: regulation,        polarity: like}
+      - {name: sports,            polarity: mute}
+
+# ── Под пристальным вниманием ──────────────────────────────────────────────────
+# Матч по алиасам (RU+EN, регистронезависимо): короткий токен — по границе слова
+# (\bнефт → «нефть/нефтяной»), фраза с пробелом/слэшем — по вхождению.
+# boost: false — тему видим (👁, панель, всегда мимо гейта), но в ранге НЕ поднимаем.
+watch:
+  - name: ChatGPT
+    aliases: [chatgpt, "chat gpt", "gpt-4", "gpt-5", "gpt4o", "gpt-4o"]
+  - name: Claude
+    aliases: [claude, anthropic, "claude opus", "claude sonnet"]
+  - name: Iran
+    aliases: [iran, iranian, tehran, иран, иранск, тегеран]
+  - name: Trump
+    aliases: [trump, "donald trump", трамп]
+  - name: Нефть
+    aliases: [oil, "crude oil", crude, brent, wti, opec, petroleum, нефть, нефт, опек, баррел, barrel]
+  - name: Недоношенность
+    aliases: [preterm, "premature birth", "premature infant", prematurity, neonatal, preemie,
+              недоношен, "преждевременные роды", неонатал]
+  - name: RUB/USD
+    aliases: ["usd/rub", "rub/usd", "usd rub", ruble, rouble, рубль, рубл, "курс рубля", "ruble exchange"]
+  - name: Рынок России
+    aliases: [moex, "russian market", "russian stocks", "rts index", ммвб, мосбиржа,
+              "рынок россии", "российский рынок", "российских акци", "российского рынка"]
+  # Стихия: видеть отдельно хочу, а поднимать в ленте — нет (потому boost: false).
+  # Осторожно с алиасами: «град» поймал бы «градус/градостроительный», «стихи» — стихотворения.
+  - name: Природные явления
+    boost: false
+    aliases: [ураган, шторм, землетрясен, наводнен, паводок, паводк, засух, ливень, ливн,
+              смерч, торнадо, тайфун, цунами, циклон, метел, снегопад, заморозк, оползен,
+              стихийн, мчс, "лесные пожар", "лесной пожар", "аномальная жара",
+              hurricane, earthquake, flood, storm, wildfire, tsunami, typhoon, drought,
+              tornado, blizzard, heatwave, "heat wave", cyclone, landslide]
+
+# ── Сколько что весит ──────────────────────────────────────────────────────────
+# personal_score = llm·llm_relevance + taste·taste_cos·ramp + tag·tag_aff + source·source_aff + fresh·freshness
+#
+# Реальность на 2026-07-16: фидбеков всего 9, taste n_liked=1 при taste_ramp=20 → вклад вкуса ≈ 0.
+# То есть ленту сейчас определяет практически один llm — то есть твоя декларация выше.
+# Это не баг: на ОДНОМ пользователе обучение по поведению статистически мертво, а LLM
+# читает твой текст буквально. Веса ниже станут осмысленными, когда наберётся фидбек.
+weights:
+  llm: 0.50            # судья: насколько статья бьётся с description вертикали
+  taste: 0.20          # косинус к вектору вкуса (растёт с числом 👍, см. taste_ramp)
+  tag: 0.15            # средняя affinity тегов статьи
+  source: 0.10         # affinity источника/канала
+  fresh: 0.05          # свежесть
+
+  taste_ramp: 20       # при скольких 👍 вклад taste выходит на полную (сейчас n_liked=1)
+  watchlist_boost: 0.15 # прибавка к personal_score для тем из watch (кроме boost: false)
+  push_threshold: 0.55 # ниже этого — в ленту, но без пуша в телегу
+  prefilter_min_sim: 0.35 # гейт: max(cos) к профилям ниже → в отсев, до дорогих LLM-стадий
+                          # замер: мусор 0.29-0.31, пограничный бизнес 0.36-0.38, содержательное 0.49-0.60

@@ -1,4 +1,8 @@
-"""Вотчлист трендовых тем: матч айтема на темы по алиасам (RU+EN). Чистая логика, тестируется.
+"""Матчер трендовых тем: айтем → список тем, под которые он попал. Чистая логика, тестируется.
+
+Только сопоставление. Откуда берутся сами темы — дело core/interests.py (секция `watch`
+единственного файла интересов). Здесь нет ни settings, ни чтения файлов: матчер зовётся
+на каждый айтем, и его хочется гонять в тестах без конфига и без БД.
 
 Одиночный токен матчится префиксом по границе слова (\\bнефт → «нефть/нефтяной»); фраза со
 пробелом/слэшем — по вхождению. Регистронезависимо, Unicode (Cyrillic \\b работает в Python re).
@@ -7,15 +11,9 @@
 from __future__ import annotations
 
 import re
-from functools import lru_cache
-from pathlib import Path
-
-import yaml
-
-from homyak.core.config import settings
 
 # (name, [(is_phrase, needle_or_regex)]) — предкомпилировано
-_Topic = tuple[str, list[tuple[bool, object]]]
+CompiledTopic = tuple[str, list[tuple[bool, object]]]
 
 
 def _compile_alias(alias: str) -> tuple[bool, object]:
@@ -25,8 +23,8 @@ def _compile_alias(alias: str) -> tuple[bool, object]:
     return False, re.compile(r"\b" + re.escape(a), re.IGNORECASE | re.UNICODE)
 
 
-def compile_watchlist(topics: list[dict]) -> list[_Topic]:
-    out: list[_Topic] = []
+def compile_watchlist(topics: list[dict]) -> list[CompiledTopic]:
+    out: list[CompiledTopic] = []
     for t in topics or []:
         name = t.get("name")
         aliases = t.get("aliases") or []
@@ -35,7 +33,7 @@ def compile_watchlist(topics: list[dict]) -> list[_Topic]:
     return out
 
 
-def match(title: str | None, text: str | None, compiled: list[_Topic]) -> list[str]:
+def match(title: str | None, text: str | None, compiled: list[CompiledTopic]) -> list[str]:
     """Список имён тем, под которые попадает айтем."""
     hay = f"{title or ''} {text or ''}"[:4000].lower()
     hits: list[str] = []
@@ -45,33 +43,3 @@ def match(title: str | None, text: str | None, compiled: list[_Topic]) -> list[s
                 hits.append(name)
                 break
     return hits
-
-
-@lru_cache(maxsize=1)
-def load_watchlist(path: str | None = None) -> list[_Topic]:
-    p = Path(path or getattr(settings, "watchlist_path", "config/watchlist.yaml"))
-    if not p.exists():
-        return []
-    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    return compile_watchlist(data.get("watchlist") or [])
-
-
-def topic_names(path: str | None = None) -> list[str]:
-    return [name for name, _ in load_watchlist(path)]
-
-
-@lru_cache(maxsize=1)
-def no_boost_topics(path: str | None = None) -> frozenset[str]:
-    """Темы с `boost: false` — отслеживаем (панель, 👁, гейт пропускает), но в ранге НЕ поднимаем.
-
-    Пример: «Природные явления» — погоду видеть хочу, а наверх ленты тащить незачем.
-    """
-    p = Path(path or getattr(settings, "watchlist_path", "config/watchlist.yaml"))
-    if not p.exists():
-        return frozenset()
-    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    return frozenset(
-        t["name"]
-        for t in (data.get("watchlist") or [])
-        if t.get("name") and t.get("boost") is False
-    )

@@ -33,8 +33,9 @@ from homyak.core import telegraph
 from homyak.core.article import fetch_article
 from homyak.core.config import settings
 from homyak.core.events import SUBJECT_PROCESSED, NatsBus
+from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import FeedQuery
-from homyak.core.scoring import freshness, weights_from_settings
+from homyak.core.scoring import freshness, weights_from_interests
 from homyak.core.textutils import hashtags, strip_html
 from homyak.core.verticals import LABELS, VERTICALS
 from homyak.storage.db import SessionFactory
@@ -358,7 +359,7 @@ async def cmd_why(m: Message, command: CommandObject) -> None:
     tag_aff = sum(tag_affs.values()) / len(tag_affs) if tag_affs else 0.0
     src_aff = await _repo.get_source_affinity(vertical, item.source_type, item.feed_name or item.author)
     fr = freshness(item.published_at)
-    w = weights_from_settings()
+    w = weights_from_interests()
     llm = item.llm_relevance if item.llm_relevance is not None else 0.0
     ps = "— (mute)" if item.personal_score is None else f"{item.personal_score:.3f}"
     parts = (
@@ -373,7 +374,7 @@ async def cmd_why(m: Message, command: CommandObject) -> None:
 async def cmd_threshold(m: Message, command: CommandObject) -> None:
     if not command.args:
         cur = await _repo.get_cursor(THRESHOLD_KEY)
-        await m.answer(f"Порог пуша: {cur or settings.push_threshold}")
+        await m.answer(f"Порог пуша: {cur or interest_weights().push_threshold}")
         return
     try:
         v = float(command.args.strip())
@@ -501,7 +502,7 @@ async def _push_scope_text() -> str:
     cur = await _repo.get_cursor(PUSH_VERTICALS_KEY)
     scope = ", ".join(LABELS.get(v, v) for v in cur.split(",")) if cur else "все вертикали 🌐"
     thr = await _repo.get_cursor(THRESHOLD_KEY)
-    threshold = thr or settings.push_threshold
+    threshold = thr or interest_weights().push_threshold
     pnote = ""
     paused = await _repo.get_cursor(PAUSED_KEY)
     if paused and time.time() < float(paused):
@@ -532,9 +533,9 @@ async def on_push(cq: CallbackQuery) -> None:
         await cq.answer("▶️ Пауза снята")
     elif action == "thr":
         cur = await _repo.get_cursor(THRESHOLD_KEY)
-        val = float(cur) if cur else settings.push_threshold
+        val = float(cur) if cur else interest_weights().push_threshold
         op = parts[2] if len(parts) > 2 else "reset"
-        val = settings.push_threshold if op == "reset" else val + (0.05 if op == "up" else -0.05)
+        val = interest_weights().push_threshold if op == "reset" else val + (0.05 if op == "up" else -0.05)
         val = max(0.0, min(1.0, round(val, 2)))
         await _repo.save_cursor(THRESHOLD_KEY, str(val))
         await cq.answer(f"Порог: {val}")
@@ -632,16 +633,38 @@ async def on_feedback(cq: CallbackQuery) -> None:
         await cq.answer("bad")
         return
 
-    label = {"up": "👍", "down": "👎", "save": "⭐", "mute": "🔇"}.get(sig, "?")
-    signal = "mute_topic" if sig == "mute" else sig
-    topic = None
     if sig == "mute":
+        # Раньше здесь молча мьютился meta[2][0] — ПЕРВЫЙ тег статьи. А первый тег самый
+        # широкий: у медицинской статьи это `medical`, и одно нажатие выключило вертикаль
+        # целиком (273 айтема, 21%). Теперь спрашиваем, ЧТО именно мьютить.
         meta = await _repo.get_item_meta(item_id)
-        topic = meta[2][0] if meta and meta[2] else None
+        tags = list(meta[2] or []) if meta else []
+        if not tags:
+            await cq.answer("у статьи нет тегов — мьютить нечего")
+            return
+        rows = [
+            [InlineKeyboardButton(text=f"🔇 {t}", callback_data=f"mt:{item_id}:{i}")]
+            for i, t in enumerate(tags[:6])
+        ]
+        # Кнопку-ссылку тащим в пикер: второй шаг ищет url именно в этой клавиатуре, и без
+        # переноса «🔗 Источник» терялся бы навсегда — и на отмене, и после выбора тега.
+        tail = [InlineKeyboardButton(text="✕ отмена", callback_data=f"mt:{item_id}:-1")]
+        for row in (cq.message.reply_markup.inline_keyboard if cq.message and cq.message.reply_markup else []):
+            for b in row:
+                if b.url:
+                    tail.append(b)
+        rows.append(tail)
+        await cq.answer("что мьютим?")
+        with suppress(Exception):
+            await cq.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+            )
+        return
 
-    result = await _repo.record_feedback(item_id, signal, topic)
+    label = {"up": "👍", "down": "👎", "save": "⭐"}.get(sig, "?")
+    result, _ = await _repo.record_feedback(item_id, sig, None)
     if _bus is not None:
-        await _bus.publish_feedback(item_id, signal, topic, action=result)
+        await _bus.publish_feedback(item_id, sig, None, action=result)
     status = f"{label} учтено" if result == "added" else f"{label} отменено"
     await cq.answer(status)
 
@@ -656,6 +679,51 @@ async def on_feedback(cq: CallbackQuery) -> None:
     tail = [InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}")]
     if open_btn is not None:
         tail.append(open_btn)
+    rows.append(tail)
+    with suppress(Exception):
+        await cq.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@dp.callback_query(F.data.startswith("mt:"))
+async def on_mute_pick(cq: CallbackQuery) -> None:
+    """Второй шаг 🔇: пользователь выбрал КОНКРЕТНЫЙ тег (или отменил)."""
+    try:
+        _, sid, sidx = cq.data.split(":")
+        item_id, idx = int(sid), int(sidx)
+    except (ValueError, AttributeError):
+        await cq.answer("bad")
+        return
+
+    meta = await _repo.get_item_meta(item_id)
+    url = None
+    if cq.message and cq.message.reply_markup:  # ссылку на оригинал вернём из старой клавиатуры
+        for row in cq.message.reply_markup.inline_keyboard:
+            for b in row:
+                if b.url:
+                    url = b.url
+
+    if idx < 0:  # отмена → возвращаем обычные кнопки
+        await cq.answer("отменено")
+        with suppress(Exception):
+            await cq.message.edit_reply_markup(reply_markup=_kb(item_id, url))
+        return
+
+    tags = list(meta[2] or []) if meta else []
+    if idx >= len(tags):
+        await cq.answer("тег пропал — открой карточку заново")
+        return
+    topic = tags[idx]
+
+    result, _ = await _repo.record_feedback(item_id, "mute_topic", topic)
+    if _bus is not None:
+        await _bus.publish_feedback(item_id, "mute_topic", topic, action=result)
+    status = f"🔇 «{topic}» " + ("замьючено" if result == "added" else "снято")
+    await cq.answer(status)
+
+    rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
+    tail = [InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}")]
+    if url:
+        tail.append(InlineKeyboardButton(text="🔗 Источник", url=url))
     rows.append(tail)
     with suppress(Exception):
         await cq.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -737,7 +805,7 @@ async def _maybe_push(item_id: int) -> None:
     if allow and (item.vertical or "") not in set(allow.split(",")):
         return
     thr = await _repo.get_cursor(THRESHOLD_KEY)
-    threshold = float(thr) if thr else settings.push_threshold
+    threshold = float(thr) if thr else interest_weights().push_threshold
     if item.personal_score < threshold:
         return
     await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))

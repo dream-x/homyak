@@ -19,8 +19,10 @@ class Settings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     nats_url: str = Field(default="nats://localhost:4222", alias="NATS_URL")
     sources_config_path: str = Field(default="config/sources.yaml", alias="SOURCES_CONFIG_PATH")
-    watchlist_path: str = Field(default="config/watchlist.yaml", alias="WATCHLIST_PATH")
-    watchlist_boost: float = Field(default=0.15, alias="WATCHLIST_BOOST")  # буст personal_score
+    # «Что мне нравится» — ЕДИНСТВЕННОЕ место: вертикали, watch и веса свёртки.
+    # Сюда же уехали PERSONALIZE_*_WEIGHT / TASTE_RAMP / PUSH_THRESHOLD / WATCHLIST_BOOST /
+    # PREFILTER_MIN_SIM: интересы не должны задаваться в шести местах (см. core/interests.py).
+    interests_path: str = Field(default="config/interests.yaml", alias="INTERESTS_PATH")
 
     # Окно ингеста = max(interval * factor, min_window). Курсор и так даёт «только новое»;
     # окно — лишь страховка от залпа истории при первом контакте и долгов после простоя.
@@ -67,19 +69,11 @@ class Settings(BaseSettings):
     summary_fallback_model: str | None = Field(default=None, alias="SUMMARY_FALLBACK_MODEL")
 
     # Гейт предобработки: отсекает шум до дорогих LLM-стадий (теггер+судья).
-    # Порог 0.35 из живого замера: мусор (SEC-филинги 0.29, ДТП/погода 0.31) режется,
-    # пограничный бизнес (ЦБ 0.36, логистика 0.38) проходит, содержательное 0.49-0.60.
+    # Выключатель — тут, а порог (prefilter_min_sim) — в config/interests.yaml: это настройка
+    # «что мне интересно», а не эксплуатации.
     prefilter_enabled: bool = Field(default=True, alias="PREFILTER_ENABLED")
-    prefilter_min_sim: float = Field(default=0.35, alias="PREFILTER_MIN_SIM")
 
-    # Phase 6: персонализация (веса свёртки personal_score)
-    personalize_llm_weight: float = Field(default=0.50, alias="PERSONALIZE_LLM_WEIGHT")
-    personalize_taste_weight: float = Field(default=0.20, alias="PERSONALIZE_TASTE_WEIGHT")
-    personalize_tag_weight: float = Field(default=0.15, alias="PERSONALIZE_TAG_WEIGHT")
-    personalize_source_weight: float = Field(default=0.10, alias="PERSONALIZE_SOURCE_WEIGHT")
-    personalize_fresh_weight: float = Field(default=0.05, alias="PERSONALIZE_FRESH_WEIGHT")
-    taste_ramp: int = Field(default=20, alias="TASTE_RAMP")
-    push_threshold: float = Field(default=0.55, alias="PUSH_THRESHOLD")  # cold-start: taste=0
+    # Phase 6: обучение (слой 2). Веса свёртки personal_score — НЕ здесь, а в interests.yaml.
     feedback_lr: float = Field(default=0.10, alias="FEEDBACK_LR")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     profile_refine_every: int = Field(default=10, alias="PROFILE_REFINE_EVERY")

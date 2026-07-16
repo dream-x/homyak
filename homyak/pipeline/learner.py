@@ -1,8 +1,8 @@
 """Обучатель: consumer на feedback.recorded — двигает taste-вектор и веса тегов/источников.
 
 👍/⭐ → tag/source affinity вверх + item в центроид «вкуса»; 👎 → affinity вниз (центроид не трогаем,
-он = среднее лайков); 🔇 → мьют темы (новая версия профиля). action=removed откатывает (toggle).
-Идемпотентность реального фидбека — UNIQUE(news_item_id, signal) в PG.
+он = среднее лайков); 🔇 → тег в muted_tags (профиль НЕ трогаем — это декларация пользователя).
+action=removed откатывает (toggle). Идемпотентность — UNIQUE(news_item_id, signal, topic) в PG.
 """
 
 from __future__ import annotations
@@ -79,9 +79,15 @@ def make_handler(repo: NewsRepo, qdrant: QdrantStore, bus: NatsBus, llm: OllamaL
             return
 
         if sig == "mute_topic":
-            if action == "added" and data.get("topic"):
-                version = await repo.mute_topic(vertical, data["topic"])
-                log.info("muted_topic", vertical=vertical, topic=data["topic"], profile_version=version)
+            topic = data.get("topic")
+            if topic:
+                # record_feedback — toggle, поэтому action="removed" (повторное 🔇) обязан снимать
+                # мьют. Раньше эта ветка молча игнорировалась: отменить мьют было нельзя вообще.
+                if action == "added":
+                    await repo.mute_topic(vertical, topic)
+                else:
+                    await repo.unmute_topic(vertical, topic)
+                log.info("mute_topic", vertical=vertical, topic=topic, action=action)
             return
 
         base = _SIGN.get(sig)

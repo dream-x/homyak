@@ -100,7 +100,7 @@ The feed is split into **3 independent topics** — a like in IT doesn't affect 
 | 🩺 **Medical** | clinicians — clinical, pharma, biotech | STAT, Lancet, Nature Medicine, Fierce, WHO… |
 
 The vertical is decided by the **LLM tagger from content** (not by source). Each has its own profile
-(`config/profiles/*.yaml`), its own taste vector and its own learning.
+(the `verticals` section of `config/interests.yaml`), its own taste vector and its own learning.
 
 ---
 
@@ -152,7 +152,7 @@ cp .env.example .env
 podman compose up -d        # postgres, qdrant, nats + 7 app services
 
 # 4. vertical profiles
-podman compose run --rm api homyak-profile-set
+podman compose run --rm api homyak-interests apply
 
 # 5. in Telegram → /start → /business /it /medical
 ```
@@ -180,7 +180,10 @@ Under each post: **👍 👎 ⭐ 🔇 · 📄 text · 🔗** — reactions train
 ## ⚙️ Configuration
 
 - **Sources** — `config/sources.yaml` (RSS: url, interval, weight; Miniflux).
-- **Profiles** — `config/profiles/{business,it,medical}.yaml` (description + topics with polarity: love/like/mute).
+- **What I like** — `config/interests.yaml`, the SINGLE place: `verticals` (description + topics with
+  polarity: love/like/mute), `watch` (trending topics), `weights` (blend weights, push threshold, gate).
+  Apply with `homyak-interests apply` (the profile is versioned in the DB); `diff` shows file/DB drift.
+  Learned state (👍/👎 → affinity, 🔇 mutes) lives in the DB and never writes back — the wall is one-way.
 - **Secrets** — `.env` only (never committed): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, scoring weights, thresholds.
 
 ### 📡 Telegram via tscrapper
@@ -204,7 +207,7 @@ consumes it → the normal pipeline. tscrapper runs on the host and reaches the 
 | `tgbot` | Telegram bot (push, reactions, commands) |
 | `api` | FastAPI: `/feed`, `/feed.rss`, `/feed.json`, `/feed/stream` (SSE), `/healthz` |
 
-CLI: `homyak-cli` (feed in the terminal), `homyak-profile-set`, `homyak-reembed`.
+CLI: `homyak-cli` (feed in the terminal), `homyak-interests` (show/diff/apply/backfill), `homyak-reembed`.
 
 ---
 
@@ -220,9 +223,9 @@ homyak/
                llm_tagger · llm_summarizer · scorer · llm_relevance · personalizer
     outputs/   api · tg_bot · cli · rss_out · json_feed · sse
   pipeline/    ingest_poll · telegram_ingest · processor · learner · sweeper · serve
-  cli/         reembed · profile
+  cli/         reembed · interests
 alembic/       migrations 0001–0007
-config/        sources.yaml · profiles/*.yaml
+config/        sources.yaml · interests.yaml
 docs/          architecture.md · phase-*.md
 ```
 
