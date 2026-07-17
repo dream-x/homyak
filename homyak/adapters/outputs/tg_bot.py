@@ -14,7 +14,7 @@ from contextlib import suppress
 from datetime import datetime
 
 import structlog
-from aiogram import Bot, Dispatcher, F
+from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandObject
@@ -829,10 +829,50 @@ async def push_loop() -> None:
             await _maybe_push(data["news_item_id"])
 
 
+def _parse_allowed(raw: str) -> frozenset[int]:
+    ids: set[int] = set()
+    for part in (raw or "").replace(" ", "").split(","):
+        if not part:
+            continue
+        try:
+            ids.add(int(part))
+        except ValueError:
+            log.warning("tg_bad_allowed_id", value=part)
+    return frozenset(ids)
+
+
+class AllowlistMiddleware(BaseMiddleware):
+    """Гейт: пропускает апдейты только от разрешённых user id, остальное молча роняет.
+
+    Приватный бот. Без гейта любой, кто знает @username, читает твои ленты, портит обучение
+    и /start'ом перезаписывает chat_id пушей на себя. Fail-closed: пустой allowlist = никого.
+    Молчим намеренно — не подтверждаем чужому, что бот вообще существует.
+    """
+
+    def __init__(self, allowed: frozenset[int]) -> None:
+        self._allowed = allowed
+
+    async def __call__(self, handler, event, data):
+        user = data.get("event_from_user")
+        if user is None or user.id not in self._allowed:
+            log.warning(
+                "tg_unauthorized",
+                user_id=(user.id if user else None),
+                username=(user.username if user else None),
+            )
+            return None  # хендлер не вызываем — апдейт отброшен
+        return await handler(event, data)
+
+
 async def main_async() -> None:
     global _bus, _bot
     if not settings.telegram_bot_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN не задан в .env")
+    allowed = _parse_allowed(settings.telegram_allowed_ids)
+    if not allowed:
+        log.error("tg_allowlist_empty", effect="бот никого не пустит (fail-closed) — задай TELEGRAM_ALLOWED_IDS")
+    dp.update.outer_middleware(AllowlistMiddleware(allowed))
+    log.info("tg_allowlist", allowed=sorted(allowed))
     _bot = Bot(
         settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),

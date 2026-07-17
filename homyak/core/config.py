@@ -82,6 +82,10 @@ class Settings(BaseSettings):
 
     # Telegram-бот
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    # Кому МОЖНО писать боту (Telegram user id, через запятую). Бот приватный: без allowlist
+    # любой, кто знает @username, читает твои ленты, портит обучение и /start'ом угоняет пуши
+    # себе. Пусто → бот НИКОГО не пускает (fail-closed), а не всех.
+    telegram_allowed_ids: str = Field(default="", alias="TELEGRAM_ALLOWED_IDS")
     telegram_outbox_path: str = Field(
         default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
     )
