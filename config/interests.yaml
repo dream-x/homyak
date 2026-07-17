@@ -52,12 +52,17 @@ verticals:
 
   it:
     description: >
-      Программирование в широком смысле и инженерная практика: Python, Go, Java, Rust, C++ —
-      без фаворитов. Системное и backend-программирование, распределённые системы, базы данных,
-      Kubernetes/DevOps, сети, производительность, dev-tools и инфраструктура. AI/LLM: агенты,
-      inference, локальный self-hosting, ML-research. Прикладной security. Заходят разборы
-      архитектуры, инженерные посты, новые инструменты и релизы.
-      Не интересно: крипта как спекуляция, политика, спорт, обзоры гаджетов, AI-хайп без сути.
+      Инженер-практик senior-уровня. В центре — системное и низкоуровневое программирование,
+      производительность и прикладная кибербезопасность. Go, Python, Java, Rust, C++ без
+      фаворитов; распределённые системы, Kubernetes, service mesh, сети, инфраструктура,
+      базы данных. AI/LLM интересен как инженерия, а не хайп: архитектура мультиагентных
+      систем, orchestrator-routing, inference (vLLM/ASR), realtime, локальный self-hosting,
+      MLOps — и именно в контексте реальной интеграции с ОС и инфраструктурой. Отдельно ценит
+      dev-инструменты, поднимающие продуктивность: CLI, агенты, автоматизация, тесты. Заходят
+      разборы архитектуры, инженерные посты, релизы инструментов — всё, что двигает
+      производительность и безопасность систем.
+      Не интересно: абстрактные библиотеки без прикладного применения, маркетинговый шум и
+      AI-хайп без сути, этические дебаты об ИИ, крипта как спекуляция, политика, спорт, гаджеты.
     topics:
       - {name: python,       polarity: love}
       - {name: golang,       polarity: love}
@@ -71,8 +76,8 @@ verticals:
       - {name: kubernetes,   polarity: like}
       - {name: devops,       polarity: like}
       - {name: devtools,     polarity: love}
-      - {name: performance,  polarity: like}
-      - {name: security,     polarity: like}
+      - {name: performance,  polarity: love}
+      - {name: security,     polarity: love}
       - {name: ai,           polarity: like}
       - {name: llm,          polarity: love}
       - {name: ai-agents,    polarity: love}
