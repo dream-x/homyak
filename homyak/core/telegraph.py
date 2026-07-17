@@ -33,7 +33,13 @@ def _to_nodes(text: str) -> list[dict]:
     nodes: list[dict] = []
     for line in text.split("\n"):
         line = line.strip()
-        if line:
+        if not line:
+            continue
+        # строка целиком в **…** → заголовок секции (для разбора: «Технологии», «Поинты»).
+        # Статьи-читалки такой разметки не содержат, поэтому on_text не затрагивается.
+        if len(line) > 4 and line.startswith("**") and line.endswith("**"):
+            nodes.append({"tag": "h4", "children": [line[2:-2].strip()]})
+        else:
             nodes.append({"tag": "p", "children": [line]})
     return nodes or [{"tag": "p", "children": [text[:200] or "—"]}]
 

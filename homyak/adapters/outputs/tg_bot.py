@@ -35,6 +35,7 @@ from homyak.core.config import settings
 from homyak.core.events import SUBJECT_PROCESSED, NatsBus
 from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import FeedQuery
+from homyak.core.llm import OllamaLLM
 from homyak.core.scoring import freshness, weights_from_interests
 from homyak.core.textutils import hashtags, strip_html
 from homyak.core.verticals import LABELS, VERTICALS
@@ -159,12 +160,13 @@ def _kb(item_id: int, url: str | None) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="⭐", callback_data=f"fb:save:{item_id}"),
     ]
     row2 = [
-        InlineKeyboardButton(text="🔇", callback_data=f"fb:mute:{item_id}"),
+        InlineKeyboardButton(text="📝 Разбор", callback_data=f"rz:{item_id}"),
         InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}"),
     ]
+    row3 = [InlineKeyboardButton(text="🔇", callback_data=f"fb:mute:{item_id}")]
     if url:
-        row2.append(InlineKeyboardButton(text="🔗 Источник", url=url))
-    return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+        row3.append(InlineKeyboardButton(text="🔗 Источник", url=url))
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2, row3])
 
 
 def _chunks(s: str, n: int = 4000):
@@ -577,6 +579,27 @@ async def on_noop(cq: CallbackQuery) -> None:
     await cq.answer("уже учтено")
 
 
+async def _article_text(item, item_id: int) -> str:
+    """Полный текст статьи: чистим item.text, а если огрызок — качаем по URL и сохраняем."""
+    text = strip_html(item.text) or ""  # защитно чистим HTML/junk («Comments»)
+    if len(text) < 400 and item.url and item.source_type != "telegram":
+        fetched = await fetch_article(item.url)
+        if fetched and len(fetched) > len(text):
+            text = fetched
+            await _repo.set_item_text(item_id, fetched)
+    return text
+
+
+async def _telegraph_page(title: str | None, text: str, author, url) -> str | None:
+    """Публикует текст как telegra.ph-страницу (Instant View), переиспользуя аккаунт-токен."""
+    token = await _repo.get_cursor("telegraph:token")
+    if not token:
+        token = await telegraph.create_account()
+        if token:
+            await _repo.save_cursor("telegraph:token", token)
+    return await telegraph.create_page(token, title, text, author, url) if token else None
+
+
 @dp.callback_query(F.data.startswith("txt:"))
 async def on_text(cq: CallbackQuery) -> None:
     try:
@@ -589,38 +612,72 @@ async def on_text(cq: CallbackQuery) -> None:
         await cq.answer("нет такой статьи")
         return
 
-    text = strip_html(item.text) or ""  # защитно чистим HTML/junk («Comments»)
-    # текста нет/огрызок → качаем статью по требованию
-    if len(text) < 400 and item.url and item.source_type != "telegram":
-        await cq.answer("Скачиваю статью…")
-        fetched = await fetch_article(item.url)
-        if fetched and len(fetched) > len(text):
-            text = fetched
-            await _repo.set_item_text(item_id, fetched)
-    else:
-        await cq.answer("Открываю…")
-
+    await cq.answer("Открываю…")
+    text = await _article_text(item, item_id)
     if not text:
         await cq.message.answer("Полного текста нет — жми 🔗 (ссылка на оригинал).")
         return
 
-    # Telegraph-читалка (Instant View прямо в Telegram)
-    token = await _repo.get_cursor("telegraph:token")
-    if not token:
-        token = await telegraph.create_account()
-        if token:
-            await _repo.save_cursor("telegraph:token", token)
-    page = (
-        await telegraph.create_page(token, item.title, text, item.author, item.url)
-        if token
-        else None
-    )
+    page = await _telegraph_page(item.title, text, item.author, item.url)
     if page:
         await cq.message.answer(
             f"📄 <a href=\"{page}\">{_esc(item.title or 'Статья')}</a> — читалка"
         )
     else:  # fallback — текстом частями
         for chunk in _chunks(f"📄 <b>{_esc(item.title or '')}</b>\n\n{_esc(text)}", 4000):
+            await cq.message.answer(chunk)
+
+
+_RAZBOR_SYSTEM = (
+    "Ты — технический редактор для senior-инженера. По тексту новости сделай сжатый разбор "
+    "на русском. Формат СТРОГО такой:\n\n"
+    "<2–3 предложения сути: что произошло и почему это важно инженеру>\n\n"
+    "**Технологии**\n"
+    "Языки, фреймворки, инструменты, протоколы, продукты, упомянутые в тексте — через запятую. "
+    "Если явных технологий нет — напиши «не указаны».\n\n"
+    "**Основные поинты**\n"
+    "• 3–6 пунктов с ключевыми фактами, решениями и выводами (каждый с новой строки, начинай с «• »).\n\n"
+    "Только то, что реально есть в тексте: без воды, маркетинга и домыслов. Ничего не выдумывай."
+)
+
+
+@dp.callback_query(F.data.startswith("rz:"))
+async def on_razbor(cq: CallbackQuery) -> None:
+    """📝 Разбор: структурированное саммари на русском (суть + технологии + поинты) как telegra.ph."""
+    try:
+        item_id = int(cq.data.split(":")[1])
+    except (ValueError, IndexError):
+        await cq.answer("bad")
+        return
+    item = await _repo.get_by_id(item_id)
+    if item is None:
+        await cq.answer("нет такой статьи")
+        return
+
+    await cq.answer("Разбираю…")
+    text = await _article_text(item, item_id)
+    if not text:
+        await cq.message.answer("Полного текста нет — разбирать нечего, жми 🔗 (оригинал).")
+        return
+
+    llm = OllamaLLM(model=settings.summary_model, fallback=settings.summary_fallback_model)
+    try:
+        # think=False: разбор — не reasoning-задача, а thinking у qwen3 раздувает время в разы.
+        body = await llm.chat_text(
+            _RAZBOR_SYSTEM, f"Заголовок: {item.title or ''}\n\n{text[:8000]}", think=False
+        )
+    except Exception as e:
+        log.warning("razbor_failed", news_item_id=item_id, error=str(e)[:120])
+        await cq.message.answer("Не смог сделать разбор (LLM недоступна). Попробуй позже.")
+        return
+
+    page = await _telegraph_page(f"Разбор: {item.title or 'новость'}", body, "Homyak", item.url)
+    if page:
+        await cq.message.answer(
+            f"📝 <a href=\"{page}\">Разбор: {_esc(item.title or 'новость')}</a>"
+        )
+    else:  # telegra.ph недоступен → отдаём текстом
+        for chunk in _chunks(f"📝 <b>Разбор</b>\n\n{_esc(body)}", 4000):
             await cq.message.answer(chunk)
 
 
@@ -676,7 +733,10 @@ async def on_feedback(cq: CallbackQuery) -> None:
                 if b.url:
                     open_btn = b
     rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
-    tail = [InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}")]
+    tail = [
+        InlineKeyboardButton(text="📝 Разбор", callback_data=f"rz:{item_id}"),
+        InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}"),
+    ]
     if open_btn is not None:
         tail.append(open_btn)
     rows.append(tail)
@@ -721,7 +781,10 @@ async def on_mute_pick(cq: CallbackQuery) -> None:
     await cq.answer(status)
 
     rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
-    tail = [InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}")]
+    tail = [
+        InlineKeyboardButton(text="📝 Разбор", callback_data=f"rz:{item_id}"),
+        InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}"),
+    ]
     if url:
         tail.append(InlineKeyboardButton(text="🔗 Источник", url=url))
     rows.append(tail)
