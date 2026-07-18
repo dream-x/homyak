@@ -849,11 +849,15 @@ async def _maybe_push(item_id: int) -> None:
     item = await _repo.get_by_id(item_id)
     if item is None or item.personal_score is None or item.pushed_at is not None:
         return
+    is_tweet = (item.feed_name or "").startswith("tw_")
+    # Twitter уважает pushonly-скоуп (при pushonly=it — только IT-твиты), но со СВОИМ пониженным
+    # порогом: больше именно IT-твитов, а не всего подряд из business/medical.
     allow = await _repo.get_cursor(PUSH_VERTICALS_KEY)  # скоуп вертикалей (пусто = все)
     if allow and (item.vertical or "") not in set(allow.split(",")):
         return
     thr = await _repo.get_cursor(THRESHOLD_KEY)
-    threshold = float(thr) if thr else interest_weights().push_threshold
+    base = float(thr) if thr else interest_weights().push_threshold
+    threshold = min(base, settings.twitter_push_threshold) if is_tweet else base
     if item.personal_score < threshold:
         return
     await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))

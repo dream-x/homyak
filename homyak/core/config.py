@@ -75,6 +75,9 @@ class Settings(BaseSettings):
 
     # Phase 6: обучение (слой 2). Веса свёртки personal_score — НЕ здесь, а в interests.yaml.
     feedback_lr: float = Field(default=0.10, alias="FEEDBACK_LR")
+    # Twitter в пушах — отдельная история: свой (пониженный) порог + обход pushonly-скоупа.
+    # Иначе tw-инсайды из business/medical (их большинство) не долетают, а порог вертикалей высок.
+    twitter_push_threshold: float = Field(default=0.50, alias="TWITTER_PUSH_THRESHOLD")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     profile_refine_every: int = Field(default=10, alias="PROFILE_REFINE_EVERY")
     max_push_per_hour: int = Field(default=8, alias="MAX_PUSH_PER_HOUR")
