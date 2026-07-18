@@ -12,7 +12,7 @@ import nats
 import structlog
 from fastapi import Request
 from nats.js.api import ConsumerConfig, DeliverPolicy
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sse_starlette.sse import EventSourceResponse
 
 from homyak.core.config import settings
@@ -317,6 +317,86 @@ async def item_detail(item_id: int) -> dict:
     }
 
 
+async def feed_snapshot(kind: str = "all", limit: int = 50) -> dict:
+    """Персистентная лента «что получаем» + текущий фидбек по каждому айтему (для 👍/👎).
+
+    Сортировка по СВЕЖЕСТИ, а не personal_score: иначе 45% твитов без вертикали
+    (personal_score=NULL) тонут и их не видно. kind: all|twitter|business|it|medical|watch.
+    """
+    conds = ["processed_at is not null", "skip_reason is null"]
+    params: dict = {"lim": max(1, min(limit, 200))}
+    if kind == "twitter":
+        conds.append("feed_name like 'tw_%'")
+    elif kind in ("business", "it", "medical"):
+        conds.append("vertical = :v")
+        params["v"] = kind
+    elif kind == "watch":
+        conds.append("cardinality(watch_topics) > 0")
+    where = " and ".join(conds)
+    async with SessionFactory() as s:
+        rows = (
+            await s.execute(
+                text(
+                    "select id, title, source_type, feed_name, vertical, personal_score,"
+                    " tags, watch_topics, url,"
+                    " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
+                    f" from news_items where {where}"
+                    " order by coalesce(published_at, fetched_at) desc limit :lim"
+                ),
+                params,
+            )
+        ).all()
+        ids = [r.id for r in rows]
+        fb: dict[int, list[str]] = {}
+        if ids:
+            frows = (
+                await s.execute(
+                    text("select news_item_id, signal from feedback where news_item_id in :ids")
+                    .bindparams(bindparam("ids", value=ids, expanding=True))
+                )
+            ).all()
+            for iid, sig in frows:
+                fb.setdefault(iid, []).append(sig)
+    return {
+        "kind": kind,
+        "items": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "bucket": _bucket(r.source_type, r.feed_name),
+                "feed": r.feed_name,
+                "vertical": r.vertical,
+                "score": r.personal_score,
+                "tags": list(r.tags or [])[:4],
+                "watch": list(r.watch_topics or []),
+                "age_s": r.age_s,
+                "feedback": fb.get(r.id, []),
+            }
+            for r in rows
+        ],
+    }
+
+
+async def razbor_snapshot(item_id: int, repo) -> dict:
+    """📝 Разбор для модалки дашборда — та же логика, что кнопка бота (общий core.razbor)."""
+    from homyak.core.article import fetch_article
+    from homyak.core.razbor import build_razbor
+    from homyak.core.textutils import strip_html
+
+    item = await repo.get_by_id(item_id)
+    if item is None:
+        return {"error": "нет такой статьи"}
+    body_text = strip_html(item.text) or ""
+    if len(body_text) < 400 and item.url and item.source_type != "telegram":
+        fetched = await fetch_article(item.url)
+        if fetched and len(fetched) > len(body_text):
+            body_text = fetched
+            await repo.set_item_text(item_id, fetched)
+    if not body_text:
+        return {"error": "нет текста для разбора"}
+    return {"title": item.title, "url": item.url, "body": await build_razbor(item.title, body_text)}
+
+
 async def stream_events(request: Request) -> EventSourceResponse:
     async def gen():
         nc = await nats.connect(settings.nats_url)
@@ -449,6 +529,20 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 .wlwrap>h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);margin:0 0 10px}
 .wlgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
 .wlcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px;min-width:0}
+/* Персистентная лента с фидбеком: видно всё (включая твиты), 👍/👎 обучают систему. */
+.feedwrap{margin:14px 18px}
+.feedwrap h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);margin:0 0 10px}
+.ftabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.ftab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 11px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+.ftab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.frow{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 11px;margin-bottom:6px;min-width:0}
+.frow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:var(--txt)}
+.frow .ttl:hover{color:var(--accent)}
+.frow .sc{color:var(--dim);font-size:12px;white-space:nowrap}
+.vbtn{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:3px 8px;cursor:pointer;font-size:13px;line-height:1;user-select:none}
+.vbtn.up.on{background:#1c3a24;border-color:#2f7d4a}
+.vbtn.down.on{background:#3a1c1c;border-color:#7d2f2f}
+.vbtn.save.on{background:#3a331c;border-color:#7d6a2f}
 /* Панель «Что мне нравится»: слои разделены визуально — в этом весь смысл панели. */
 .ilayer{margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
 .ivert{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px}
@@ -511,6 +605,12 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
       <div class="legend"><span>📥 inflow <b id="s-in">0</b></span><span>⚙️ processed <b id="s-proc">0</b></span></div>
     </div>
   </aside>
+</div>
+
+<div class="feedwrap">
+  <h2>🗂 Лента — что получаем · 👍/👎 обучают систему</h2>
+  <div class="ftabs" id="ftabs"></div>
+  <div id="feedlist"><div class="muted">…</div></div>
 </div>
 
 <div class="wlwrap">
@@ -597,6 +697,49 @@ async function pollWatchlist(){try{
   }).join('')||'<div class="muted">вотчлист пуст</div>';
 }catch(e){}}
 pollWatchlist();setInterval(pollWatchlist,15000);
+
+// --- Лента с фидбеком ---
+const FTABS=[['all','Все'],['twitter','🐦 Twitter'],['business','💼'],['it','💻'],['medical','🩺'],['watch','👁']];
+let feedKind='all';
+function renderFtabs(){$('ftabs').innerHTML=FTABS.map(([k,l])=>`<span class="ftab ${k===feedKind?'on':''}" onclick="setFeedKind('${k}')">${l}</span>`).join('');}
+function setFeedKind(k){feedKind=k;renderFtabs();loadFeed();}
+async function loadFeed(){try{
+  const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&limit=60')).json();
+  $('feedlist').innerHTML=(d.items||[]).map(it=>{
+    const [bc,be]=BADGE[it.bucket]||BADGE.other;
+    const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket);
+    const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
+    const fb=it.feedback||[];const on=s=>fb.includes(s)?'on':'';
+    return `<div class="frow">
+      <span class="badge ${bc}">${be} ${esc(nm)}</span>
+      <span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span>
+      <span class="sc">🎯 ${sc}</span>
+      <span class="vbtn up ${on('up')}" onclick="vote(${it.id},'up',this)">👍</span>
+      <span class="vbtn down ${on('down')}" onclick="vote(${it.id},'down',this)">👎</span>
+      <span class="vbtn save ${on('save')}" onclick="vote(${it.id},'save',this)">⭐</span>
+    </div>`;
+  }).join('')||'<div class="muted">пусто</div>';
+}catch(e){}}
+async function vote(id,signal,el){
+  const was=el.classList.contains('on');
+  el.classList.toggle('on');  // оптимистично
+  try{
+    const r=await (await fetch('/dashboard/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:id,signal})})).json();
+    el.classList.toggle('on', r.action==='added');  // сервер — источник истины
+  }catch(e){el.classList.toggle('on', was);}  // откат при ошибке
+}
+async function openRazbor(id){
+  const box=$('razbor-'+id); if(!box)return;
+  box.innerHTML='<div class="muted">Разбираю… (~7с)</div>';
+  try{
+    const d=await (await fetch('/dashboard/razbor/'+id)).json();
+    if(d.error){box.innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}
+    const html=(d.body||'').split('\n').map(l=>{l=l.trim();if(!l)return '';
+      return (l.startsWith('**')&&l.endsWith('**'))?'<div class="mlbl">'+esc(l.slice(2,-2))+'</div>':'<div>'+esc(l)+'</div>';}).join('');
+    box.innerHTML='<div class="mtext">'+html+'</div>';
+  }catch(e){box.innerHTML='<div class="muted">ошибка разбора</div>';}
+}
+renderFtabs();loadFeed();setInterval(loadFeed,20000);
 
 let mStack=[];
 function mHide(){$('modal').classList.remove('on');mStack=[];}
@@ -693,6 +836,7 @@ async function openItem(id,fromQueue){try{
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
   if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
+  h+=`<div style="margin:12px 0 4px"><span class="vbtn" onclick="openRazbor(${it.id})">📝 Разбор</span></div><div id="razbor-${it.id}"></div>`;
   const u=safeUrl(it.url);
   if(u)h+=`<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent)">🔗 Открыть оригинал</a>`;
   $('mbody').innerHTML=h;

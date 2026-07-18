@@ -35,7 +35,7 @@ from homyak.core.config import settings
 from homyak.core.events import SUBJECT_PROCESSED, NatsBus
 from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import FeedQuery
-from homyak.core.llm import OllamaLLM
+from homyak.core.razbor import build_razbor
 from homyak.core.scoring import freshness, weights_from_interests
 from homyak.core.textutils import hashtags, strip_html
 from homyak.core.verticals import LABELS, VERTICALS
@@ -281,13 +281,15 @@ async def _send_insights(m: Message, n: int = 10) -> None:
 #     await _send_insights(m, 10)
 
 
-async def _send_twitter(m: Message, n: int = 10) -> None:
-    # Срез по всем твиттер-аккаунтам (feed_name tw_*), без привязки к вертикали.
-    result = await _repo.feed(FeedQuery(sort="personal", feed_prefix="tw_", limit=n))
+async def _send_twitter(m: Message, n: int = 15) -> None:
+    # Таймлайн по всем твиттер-аккаунтам (feed_name tw_*): по СВЕЖЕСТИ, без привязки к вертикали.
+    # sort=personal раньше топил 45% твитов без вертикали (personal_score=NULL) — их не было
+    # видно вообще. Здесь Twitter — отдельная история, а не гонка за слоты вертикальных пушей.
+    result = await _repo.feed(FeedQuery(sort="recent", feed_prefix="tw_", limit=n))
     if not result.items:
-        await m.answer("🐦 Twitter: пока пусто — твиты копятся/скорятся.")
+        await m.answer("🐦 Twitter: пока пусто — твиты копятся.")
         return
-    await m.answer("🐦 Twitter — топ по всем аккаунтам под твой профиль:")
+    await m.answer("🐦 Twitter — свежее по всем аккаунтам:")
     for it in result.items:
         await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
         await _repo.mark_pushed(it.id)
@@ -628,19 +630,6 @@ async def on_text(cq: CallbackQuery) -> None:
             await cq.message.answer(chunk)
 
 
-_RAZBOR_SYSTEM = (
-    "Ты — технический редактор для senior-инженера. По тексту новости сделай сжатый разбор "
-    "на русском. Формат СТРОГО такой:\n\n"
-    "<2–3 предложения сути: что произошло и почему это важно инженеру>\n\n"
-    "**Технологии**\n"
-    "Языки, фреймворки, инструменты, протоколы, продукты, упомянутые в тексте — через запятую. "
-    "Если явных технологий нет — напиши «не указаны».\n\n"
-    "**Основные поинты**\n"
-    "• 3–6 пунктов с ключевыми фактами, решениями и выводами (каждый с новой строки, начинай с «• »).\n\n"
-    "Только то, что реально есть в тексте: без воды, маркетинга и домыслов. Ничего не выдумывай."
-)
-
-
 @dp.callback_query(F.data.startswith("rz:"))
 async def on_razbor(cq: CallbackQuery) -> None:
     """📝 Разбор: структурированное саммари на русском (суть + технологии + поинты) как telegra.ph."""
@@ -660,12 +649,8 @@ async def on_razbor(cq: CallbackQuery) -> None:
         await cq.message.answer("Полного текста нет — разбирать нечего, жми 🔗 (оригинал).")
         return
 
-    llm = OllamaLLM(model=settings.summary_model, fallback=settings.summary_fallback_model)
     try:
-        # think=False: разбор — не reasoning-задача, а thinking у qwen3 раздувает время в разы.
-        body = await llm.chat_text(
-            _RAZBOR_SYSTEM, f"Заголовок: {item.title or ''}\n\n{text[:8000]}", think=False
-        )
+        body = await build_razbor(item.title, text)
     except Exception as e:
         log.warning("razbor_failed", news_item_id=item_id, error=str(e)[:120])
         await cq.message.answer("Не смог сделать разбор (LLM недоступна). Попробуй позже.")

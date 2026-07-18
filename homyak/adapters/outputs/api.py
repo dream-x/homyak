@@ -2,18 +2,41 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 from sqlalchemy import text
 
 from homyak.adapters.outputs import dashboard, json_feed, rss_out, sse
+from homyak.core.config import settings
+from homyak.core.events import NatsBus
 from homyak.core.interfaces import FeedQuery, NewsItemDTO
 from homyak.storage.db import SessionFactory, engine
 from homyak.storage.postgres import NewsRepo
 
-app = FastAPI(title="Homyak", version="0.1.0")
+_bus: NatsBus | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Шина нужна, чтобы 👍/👎 с дашборда обучали learner (publish_feedback). Если NATS недоступен,
+    # фидбек всё равно пишется в БД — просто learner не дёрнется в реальном времени.
+    global _bus
+    _bus = NatsBus(settings.nats_url)
+    try:
+        await _bus.connect()
+    except Exception:
+        _bus = None
+    yield
+    if _bus is not None:
+        with suppress(Exception):
+            await _bus.close()
+
+
+app = FastAPI(title="Homyak", version="0.1.0", lifespan=lifespan)
 repo = NewsRepo(SessionFactory)
 
 
@@ -69,6 +92,35 @@ async def dashboard_interests() -> dict:
 async def dashboard_watchlist() -> dict:
     """Панели по трендовым темам (счётчик + свежие айтемы на тему)."""
     return await dashboard.watchlist_snapshot()
+
+
+@app.get("/dashboard/feed")
+async def dashboard_feed(kind: str = "all", limit: int = 50) -> dict:
+    """Персистентная лента «что получаем» + фидбек по каждому (kind: all|twitter|верткаль|watch)."""
+    return await dashboard.feed_snapshot(kind, min(max(limit, 1), 200))
+
+
+class _FeedbackIn(BaseModel):
+    item_id: int
+    signal: str  # up | down | save
+
+
+@app.post("/dashboard/feedback")
+async def dashboard_feedback(fb: _FeedbackIn) -> dict:
+    """👍/👎/⭐ с дашборда: пишем фидбек и публикуем в NATS → learner обучается (как из бота)."""
+    if fb.signal not in ("up", "down", "save"):
+        raise HTTPException(status_code=400, detail="signal must be up|down|save")
+    action, _ = await repo.record_feedback(fb.item_id, fb.signal, None)
+    if _bus is not None:
+        with suppress(Exception):
+            await _bus.publish_feedback(fb.item_id, fb.signal, None, action=action)
+    return {"action": action}
+
+
+@app.get("/dashboard/razbor/{item_id}")
+async def dashboard_razbor(item_id: int) -> dict:
+    """📝 Разбор айтема для модалки дашборда (структурированное саммари на русском)."""
+    return await dashboard.razbor_snapshot(item_id, repo)
 
 
 def _item_json(it: NewsItemDTO) -> dict:
