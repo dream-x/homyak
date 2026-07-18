@@ -878,6 +878,9 @@ async def _publish_channel(item_id: int) -> None:
         return
     if item.personal_score < settings.channel_min_score:
         return
+    scope = settings.channel_verticals  # напр. "it" — только IT (IT RSS + IT-твиты)
+    if scope and (item.vertical or "") not in {v.strip() for v in scope.split(",") if v.strip()}:
+        return
     chan = settings.feed_channel_id
     target = int(chan) if chan.lstrip("-").isdigit() else chan  # -100… (id) или @username
     try:

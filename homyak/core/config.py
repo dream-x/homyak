@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     feed_channel_id: str = Field(default="", alias="FEED_CHANNEL_ID")
     # 0.60 ≈ 350 постов/сутки (~15/час). Ниже — гуще (0.50 ≈ 815), выше — реже (0.65 ≈ 183).
     channel_min_score: float = Field(default=0.60, alias="CHANNEL_MIN_SCORE")
+    # Скоуп вертикалей канала (csv, напр. "it"). Пусто = все. IT-твиты сюда входят —
+    # они тоже vertical=it. Безвертикальный шум не проходит в любом случае (нет score).
+    channel_verticals: str = Field(default="", alias="CHANNEL_VERTICALS")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     profile_refine_every: int = Field(default=10, alias="PROFILE_REFINE_EVERY")
     max_push_per_hour: int = Field(default=8, alias="MAX_PUSH_PER_HOUR")
