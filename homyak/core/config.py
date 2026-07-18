@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     # Twitter в пушах — отдельная история: свой (пониженный) порог + обход pushonly-скоупа.
     # Иначе tw-инсайды из business/medical (их большинство) не долетают, а порог вертикалей высок.
     twitter_push_threshold: float = Field(default=0.50, alias="TWITTER_PUSH_THRESHOLD")
+    # Лента-канал: бот публикует общую ленту (ВСЕ вертикали, не завязан на личный pushonly)
+    # в отдельный TG-канал. Пусто = выключено. Бот должен быть админом канала.
+    # ID канала (-100…) или @username. Порог — свой, независимый от личного пуша.
+    feed_channel_id: str = Field(default="", alias="FEED_CHANNEL_ID")
+    # 0.60 ≈ 350 постов/сутки (~15/час). Ниже — гуще (0.50 ≈ 815), выше — реже (0.65 ≈ 183).
+    channel_min_score: float = Field(default=0.60, alias="CHANNEL_MIN_SCORE")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     profile_refine_every: int = Field(default=10, alias="PROFILE_REFINE_EVERY")
     max_push_per_hour: int = Field(default=8, alias="MAX_PUSH_PER_HOUR")

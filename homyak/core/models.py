@@ -82,6 +82,7 @@ class NewsItem(Base):
     skip_reason: Mapped[str | None] = mapped_column(Text)  # отсеян гейтом → почему
     scored_profile_version: Mapped[int | None] = mapped_column(Integer)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    channel_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     search_tsv: Mapped[str | None] = mapped_column(
         TSVECTOR,

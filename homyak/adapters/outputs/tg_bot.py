@@ -865,11 +865,34 @@ async def _maybe_push(item_id: int) -> None:
     log.info("pushed", item=item.id, score=round(item.personal_score, 3))
 
 
+async def _publish_channel(item_id: int) -> None:
+    """Публикация в общий канал-ленту: ВСЕ вертикали, свой порог, независимо от личного pushonly.
+
+    Заголовок в _fmt уже кликабельная ссылка на оригинал, поэтому кнопки не вешаем — чистый
+    броадкаст. Дедуп по channel_posted_at (personal_score=NULL → безвертикальный шум мимо).
+    """
+    if not settings.feed_channel_id or _bot is None:
+        return
+    item = await _repo.get_by_id(item_id)
+    if item is None or item.personal_score is None or item.channel_posted_at is not None:
+        return
+    if item.personal_score < settings.channel_min_score:
+        return
+    chan = settings.feed_channel_id
+    target = int(chan) if chan.lstrip("-").isdigit() else chan  # -100… (id) или @username
+    try:
+        await _bot.send_message(target, _fmt(item))
+        await _repo.mark_channel_posted(item.id)
+        log.info("channel_posted", item=item.id, score=round(item.personal_score, 3))
+    except Exception as e:
+        log.warning("channel_publish_failed", item=item_id, error=str(e)[:120])
+
+
 async def push_loop() -> None:
     sub = await _bus.js.subscribe(
         SUBJECT_PROCESSED, config=ConsumerConfig(deliver_policy=DeliverPolicy.NEW)
     )
-    log.info("push_loop_started")
+    log.info("push_loop_started", channel=settings.feed_channel_id or "off")
     while True:
         try:
             msg = await sub.next_msg(timeout=30)
@@ -878,7 +901,8 @@ async def push_loop() -> None:
         with suppress(Exception):
             await msg.ack()
             data = json.loads(msg.data)
-            await _maybe_push(data["news_item_id"])
+            await _maybe_push(data["news_item_id"])  # личный пуш в DM (pushonly/порог)
+            await _publish_channel(data["news_item_id"])  # общая лента в канал (все вертикали)
 
 
 def _parse_allowed(raw: str) -> frozenset[int]:

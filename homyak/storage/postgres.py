@@ -464,6 +464,15 @@ class NewsRepo:
             )
             await s.commit()
 
+    async def mark_channel_posted(self, news_item_id: int) -> None:
+        async with self._sf() as s:
+            await s.execute(
+                update(NewsItem)
+                .where(NewsItem.id == news_item_id)
+                .values(channel_posted_at=func.now())
+            )
+            await s.commit()
+
     async def count_pushed_since(self, minutes: int) -> int:
         cutoff = func.now() - sa.literal(int(minutes)) * sa.text("interval '1 minute'")
         async with self._sf() as s:
