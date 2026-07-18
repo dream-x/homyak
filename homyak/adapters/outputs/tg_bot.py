@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import re
 import time
 from contextlib import suppress
 from datetime import datetime
@@ -96,6 +97,7 @@ BOT_COMMANDS = [
     BotCommand(command="twitter", description="🐦 Только твиттер (все аккаунты)"),
     BotCommand(command="profile", description="👤 Мои профили (3 вертикали)"),
     BotCommand(command="stats", description="📊 Статистика обучения"),
+    BotCommand(command="ask", description="🧭 Выжимка по ленте: /ask <вопрос>"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
     BotCommand(command="sources", description="📡 Источники в ленте"),
     BotCommand(command="mute", description="🔇 Замьютить тему: /mute <тема>"),
@@ -112,6 +114,15 @@ BOT_COMMANDS = [
 
 def _esc(s: str | None) -> str:
     return html.escape(s or "")
+
+
+def _md_html(s: str) -> str:
+    """Лёгкий markdown → Telegram HTML: **жирный**, буллеты. Сначала экранируем (защита от
+    инъекций из заголовков в тексте), потом размечаем — esc не трогает * и _."""
+    s = _esc(s)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"(?m)^\s*[\*\-]\s+", "• ", s)
+    return s
 
 
 _TG_LIMIT = 4096
@@ -372,6 +383,30 @@ async def cmd_why(m: Message, command: CommandObject) -> None:
     )
     reason = f"\n💡 {_esc(item.llm_reason)}" if item.llm_reason else ""
     await m.answer(f"<b>{_esc(item.title or '')}</b>\npersonal_score = {ps}\n{parts}{reason}")
+
+
+@dp.message(Command("ask"))
+async def cmd_ask(m: Message, command: CommandObject) -> None:
+    """🧭 Выжимка по накопленной ленте: /ask <вопрос> → RAG-поиск + анализ LLM."""
+    q = (command.args or "").strip()
+    if not q:
+        await m.answer("Спроси по накопленной ленте, напр.:\n<code>/ask что с нефтью в мире</code>")
+        return
+    await m.answer("🔎 Собираю выжимку по ленте…")
+    from homyak.core.ask import answer_question
+
+    try:
+        res = await answer_question(q)
+    except Exception as e:
+        log.warning("ask_failed", error=str(e)[:150])
+        await m.answer("Не смог собрать выжимку (поиск/LLM недоступны). Попробуй позже.")
+        return
+    if not res["answer"]:
+        await m.answer("По этому вопросу в ленте мало релевантных новостей.")
+        return
+    head = f"🧭 <b>{_esc(q)}</b>\n<i>по {res['n']} новостям из ленты</i>\n\n"
+    for chunk in _chunks(head + _md_html(res["answer"]), 4000):
+        await m.answer(chunk)
 
 
 @dp.message(Command("threshold"))
