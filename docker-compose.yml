@@ -27,6 +27,7 @@ x-app: &app
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped  # инфра без политики не переживала рестарт docker-демона/ребут
     environment:
       POSTGRES_USER: homyak
       POSTGRES_PASSWORD: homyak
@@ -43,6 +44,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -51,6 +53,7 @@ services:
 
   nats:
     image: nats:2.10-alpine
+    restart: unless-stopped
     command: ["-js", "-sd", "/data", "-m", "8222"]
     ports:
       - "4222:4222"
