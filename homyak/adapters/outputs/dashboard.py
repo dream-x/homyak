@@ -566,6 +566,7 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
   <h1>🐹 Homyak · Live Pipeline</h1>
   <span class="pulse" id="pulse"></span>
   <div class="spacer"></div>
+  <a href="/lenta" style="color:var(--accent);font-weight:600;font-size:14px;margin-right:18px;padding:5px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)">🗂 Лента</a>
   <div class="clock" id="clock"></div>
 </header>
 
@@ -607,11 +608,6 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
   </aside>
 </div>
 
-<div class="feedwrap">
-  <h2>🗂 Лента — что получаем · 👍/👎 обучают систему</h2>
-  <div class="ftabs" id="ftabs"></div>
-  <div id="lentafeed"><div class="muted">…</div></div>
-</div>
 
 <div class="wlwrap">
   <h2>👁 Watchlist · трендовые темы под пристальным вниманием</h2>
@@ -739,7 +735,7 @@ async function openRazbor(id){
     box.innerHTML='<div class="mtext">'+html+'</div>';
   }catch(e){box.innerHTML='<div class="muted">ошибка разбора</div>';}
 }
-renderFtabs();loadFeed();setInterval(loadFeed,20000);
+// Лента вынесена на отдельную страницу /lenta
 
 let mStack=[];
 function mHide(){$('modal').classList.remove('on');mStack=[];}
@@ -860,4 +856,87 @@ function connect(){
 connect();
 </script>
 </body></html>
+"""
+
+
+# Отдельная страница Ленты (чтобы не громоздить 60 строк с 👍/👎 в операционный дашборд).
+LENTA_PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🗂 Лента — Homyak</title>
+<style>
+:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}
+.top{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5;flex-wrap:wrap}
+.top h1{font-size:16px;margin:0}
+.top span{color:var(--dim);font-size:13px}
+.wrap{max-width:1080px;margin:0 auto;padding:16px 20px}
+.ftabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.ftab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 13px;font-size:13px;color:var(--dim);cursor:pointer;user-select:none}
+.ftab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
+.frow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 13px;margin-bottom:7px;min-width:0}
+.badge{flex:none;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.b-tw{background:#12303a;color:#7fd4ea}.b-rss{background:#2a2320;color:#e0b48a}.b-tg{background:#1c2740;color:#8fb2f0}.b-other{background:#232a38;color:#9aa6b8}
+.frow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.frow .ttl:hover{color:var(--accent)}
+.frow .sc{color:var(--dim);font-size:12px;white-space:nowrap}
+.vbtn{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:4px 9px;cursor:pointer;font-size:14px;line-height:1;user-select:none}
+.vbtn.up.on{background:#1c3a24;border-color:#2f7d4a}.vbtn.down.on{background:#3a1c1c;border-color:#7d2f2f}.vbtn.save.on{background:#3a331c;border-color:#7d6a2f}
+.muted{color:var(--dim);padding:20px;text-align:center}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;z-index:20;padding:18px}
+.modal.on{display:flex}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;max-height:86vh;overflow:auto;padding:22px;position:relative}
+.mbox h3{margin:0 0 8px}
+.mmeta{color:var(--dim);font-size:12px;display:flex;gap:12px;flex-wrap:wrap;margin:4px 0}
+.mtext{white-space:pre-wrap;word-break:break-word;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:12px;margin:10px 0;font-size:13px;line-height:1.55}
+.mlbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-top:8px}
+.mclose{position:absolute;top:12px;right:14px;cursor:pointer;color:var(--dim);font-size:20px}
+</style>
+<div class="top"><h1>🗂 Лента — что получаем</h1><span>👍/👎 обучают систему</span><span><a href="/dashboard">← дашборд</a></span></div>
+<div class="wrap">
+  <div class="ftabs" id="ftabs"></div>
+  <div id="lentafeed"><div class="muted">Загрузка…</div></div>
+</div>
+<div class="modal" id="modal"><div class="mbox" id="mbox"><span class="mclose" id="mclose">✕</span><div id="mbody"></div></div></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
+const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
+const VLABEL={business:'💼 Business',it:'💻 IT',medical:'🩺 Medical'};
+const FTABS=[['all','Все'],['twitter','🐦 Twitter'],['business','💼 Business'],['it','💻 IT'],['medical','🩺 Medical'],['watch','👁 Watch']];
+let feedKind='all';
+function renderFtabs(){$('ftabs').innerHTML=FTABS.map(([k,l])=>`<span class="ftab ${k===feedKind?'on':''}" onclick="setFeedKind('${k}')">${esc(l)}</span>`).join('');}
+function setFeedKind(k){feedKind=k;renderFtabs();loadFeed();}
+async function loadFeed(){try{
+  const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&limit=80')).json();
+  $('lentafeed').innerHTML=(d.items||[]).map(it=>{
+    const [bc,be]=BADGE[it.bucket]||BADGE.other;
+    const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket);
+    const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
+    const fb=it.feedback||[];const on=s=>fb.includes(s)?'on':'';
+    return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span><span class="sc">🎯 ${sc}</span><span class="vbtn up ${on('up')}" onclick="vote(${it.id},'up',this)">👍</span><span class="vbtn down ${on('down')}" onclick="vote(${it.id},'down',this)">👎</span><span class="vbtn save ${on('save')}" onclick="vote(${it.id},'save',this)">⭐</span></div>`;
+  }).join('')||'<div class="muted">пусто</div>';
+}catch(e){$('lentafeed').innerHTML='<div class="muted">ошибка загрузки</div>';}}
+async function vote(id,signal,el){const was=el.classList.contains('on');el.classList.toggle('on');try{const r=await (await fetch('/dashboard/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:id,signal})})).json();el.classList.toggle('on',r.action==='added');}catch(e){el.classList.toggle('on',was);}}
+function mHide(){$('modal').classList.remove('on');}
+async function openItem(id){try{
+  const it=await (await fetch('/dashboard/item/'+id)).json();
+  if(!it.id)return;
+  const src=it.feed&&it.feed.startsWith('tw_')?'🐦 @'+it.feed.slice(3):(it.feed||it.source_type||'?');
+  const meta=[src,it.vertical?VLABEL[it.vertical]:'',(it.watch&&it.watch.length)?'👁 '+it.watch.join(', '):'',it.score!=null?'🎯 '+Math.round(it.score*100)+'%':''].filter(Boolean);
+  let h=`<h3>${esc(it.title||'(без заголовка)')}</h3><div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
+  if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
+  h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
+  if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
+  h+=`<div style="margin:12px 0 4px"><span class="vbtn" onclick="openRazbor(${it.id})">📝 Разбор</span></div><div id="razbor-${it.id}"></div>`;
+  const u=safeUrl(it.url);if(u)h+=`<a href="${esc(u)}" target="_blank" rel="noopener">🔗 Открыть оригинал</a>`;
+  $('mbody').innerHTML=h;$('modal').classList.add('on');
+}catch(e){}}
+async function openRazbor(id){const box=$('razbor-'+id);if(!box)return;box.innerHTML='<div class="muted">Разбираю… (~7с)</div>';try{const d=await (await fetch('/dashboard/razbor/'+id)).json();if(d.error){box.innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}const html=(d.body||'').split('\n').map(l=>{l=l.trim();if(!l)return '';return (l.startsWith('**')&&l.endsWith('**'))?'<div class="mlbl">'+esc(l.slice(2,-2))+'</div>':'<div>'+esc(l)+'</div>';}).join('');box.innerHTML='<div class="mtext">'+html+'</div>';}catch(e){box.innerHTML='<div class="muted">ошибка разбора</div>';}}
+$('mclose').onclick=mHide;$('modal').onclick=e=>{if(e.target.id==='modal')mHide();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')mHide();});
+renderFtabs();loadFeed();setInterval(loadFeed,20000);
+</script>
 """

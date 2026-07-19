@@ -52,6 +52,12 @@ async def dashboard_page() -> str:
     return dashboard.PAGE
 
 
+@app.get("/lenta", response_class=HTMLResponse)
+async def lenta_page() -> str:
+    """Отдельная страница Ленты (фид + 👍/👎 + Разбор), вынесена из операционного дашборда."""
+    return dashboard.LENTA_PAGE
+
+
 @app.get("/dashboard/stream")
 async def dashboard_stream(request: Request):
     """SSE-поток событий пайплайна для дашборда (ingested + processed)."""
