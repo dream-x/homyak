@@ -17,6 +17,7 @@ from datetime import datetime
 import structlog
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
@@ -987,8 +988,11 @@ async def main_async() -> None:
         log.error("tg_allowlist_empty", effect="бот никого не пустит (fail-closed) — задай TELEGRAM_ALLOWED_IDS")
     dp.update.outer_middleware(AllowlistMiddleware(allowed))
     log.info("tg_allowlist", allowed=sorted(allowed))
+    # На VM за роутером к api.telegram.org напрямую не пробиться → гоним Bot API через HTTP-прокси.
+    session = AiohttpSession(proxy=settings.telegram_bot_proxy) if settings.telegram_bot_proxy else None
     _bot = Bot(
         settings.telegram_bot_token,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     await _bot.set_my_commands(BOT_COMMANDS)

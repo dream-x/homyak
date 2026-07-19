@@ -27,6 +27,7 @@ dependencies = [
     # Phase 6.1+
     "aiogram>=3.0",
     "trafilatura>=1.12",
+    "aiohttp-socks>=0.11.0",
 ]
 
 [project.scripts]

@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     # любой, кто знает @username, читает твои ленты, портит обучение и /start'ом угоняет пуши
     # себе. Пусто → бот НИКОГО не пускает (fail-closed), а не всех.
     telegram_allowed_ids: str = Field(default="", alias="TELEGRAM_ALLOWED_IDS")
+    # HTTP-прокси для Bot API (api.telegram.org). Нужен на хостах без прямого доступа к
+    # Telegram (VM за роутером). Bot API проходит через обычный HTTP-прокси (в отличие от
+    # MTProto-DC у tscrapper). Пусто = напрямую.
+    telegram_bot_proxy: str = Field(default="", alias="TELEGRAM_BOT_PROXY")
     telegram_outbox_path: str = Field(
         default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
     )
