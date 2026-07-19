@@ -610,7 +610,7 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
 <div class="feedwrap">
   <h2>🗂 Лента — что получаем · 👍/👎 обучают систему</h2>
   <div class="ftabs" id="ftabs"></div>
-  <div id="feedlist"><div class="muted">…</div></div>
+  <div id="lentafeed"><div class="muted">…</div></div>
 </div>
 
 <div class="wlwrap">
@@ -705,7 +705,7 @@ function renderFtabs(){$('ftabs').innerHTML=FTABS.map(([k,l])=>`<span class="fta
 function setFeedKind(k){feedKind=k;renderFtabs();loadFeed();}
 async function loadFeed(){try{
   const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&limit=60')).json();
-  $('feedlist').innerHTML=(d.items||[]).map(it=>{
+  $('lentafeed').innerHTML=(d.items||[]).map(it=>{
     const [bc,be]=BADGE[it.bucket]||BADGE.other;
     const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket);
     const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
