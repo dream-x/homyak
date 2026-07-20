@@ -30,28 +30,34 @@ event-driven (NATS JetStream) архитектура. Флагманская ф�
 - Skill `homyak-run` — поднять инфру, запустить процессы, прогнать acceptance (+ fallback без docker).
 - Agent `homyak-reviewer` — архитектурный ревью диффа перед коммитом.
 
-## Окружение и запуск (Podman)
-Весь стек — в **Podman** (`podman compose`, machine running). Одна команда:
-```
-podman compose up -d      # postgres, qdrant, nats + migrate + 7 app-сервисов
-podman compose ps         # статус ; podman logs homyak-<service>-1 — логи
-podman compose down       # стоп (volumes сохраняются)
-```
-- **Ollama — на хосте** (нативно, Metal): контейнеры смотрят на `host.containers.internal:11434`.
-  Модели `bge-m3` (эмбеддинги), `qwen2.5:14b` (судья/теги), `qwen3:32b` (саммари).
-- Postgres/Qdrant/NATS — контейнеры (volumes `homyak_pgdata`/`homyak_qdrant_storage`/`homyak_nats_data`).
-  Postgres на host:5432 (пароль homyak), `homyak` + `homyak_test`. Образ — один на все сервисы (Dockerfile).
-- **tscrapper** — на хосте (свой Telegram-session), публикует в NATS `homyak.telegram.raw` (порт 4222 проброшен).
-- Тесты: `uv run pytest` с хоста против контейнерного postgres (нужна БД `homyak_test`).
+## Окружение и запуск
+**ПРОД — VM `homyak` (Proxmox, 192.168.140.20, `ssh maks@192.168.140.20`, ключ `~/.ssh/homelab`)**,
+работает 24/7 (Mac ночью спит — поэтому переехали). Там docker compose в `~/homyak`: весь стек
+(postgres/qdrant/nats + migrate + 7 сервисов) + gost-прокси (`TELEGRAM_BOT_PROXY` для Bot API) +
+tscrapper-контейнер (`~/tscrapper`, MTProto через `TG_PROXY`) + мониторинг + RSSHub.
+- **Деплой на VM**: у VM нет кредов к GitHub → `git push` с Мака, затем на VM `git pull` не работает;
+  проверенный путь — `git bundle create b.bundle <vm-head>..master` → scp → на VM `git pull /tmp/b.bundle
+  master` → `docker compose up -d --build <сервис>`.
+- **Telegram-сессия tscrapper живёт ТОЛЬКО на VM.** Запуск копии с Мака = Telegram отзывает ключ
+  («used under two different IP addresses», уже дважды). Релогин — `login.py` на VM (см. его докстринг).
+- LLM: основной — 5090-бокс `white` (192.168.100.235:11434, qwen3.6:27b), фолбэк на Mac Metal
+  (qwen3.5:9b) — только у локального стека, через `.env`.
 
-## Состояние (2026-07-12)
-Реализованы Phase 1-4 + Phase 6.0/6.1/6.2. Пайплайн (8 стадий): url_dedup → embedder → similarity_dedup
-→ llm_tagger → llm_summarizer → scorer → llm_relevance (судья) → personalizer. Процессы:
+**Локально (Mac) — только dev**: тот же compose через **Podman** (`podman compose up -d / down`).
+⚠️ Локальный tgbot конфликтует с VM-ботом за getUpdates (один токен!) — не поднимай полный стек,
+только нужные сервисы (`podman compose up -d api`). Тесты: `uv run pytest` с хоста против
+контейнерного postgres (нужна БД `homyak_test`).
+
+## Состояние (2026-07-20)
+Реализованы Phase 1-4 + Phase 6.0-6.3 (флагман закрыт). Пайплайн (8 стадий): url_dedup → embedder →
+similarity_dedup → llm_tagger → llm_summarizer → scorer → llm_relevance (судья) → personalizer. Процессы:
 `homyak-ingest-poll` (RSS), `homyak-telegram-ingest` (TG из tscrapper через NATS `homyak.telegram.raw`),
 `homyak-processor`, `homyak-learner` (обучение на 👍/👎), `homyak-sweeper`, `homyak-tgbot`, `homyak-api`.
 CLI: `homyak-cli`, `homyak-interests` (show/diff/apply/backfill), `homyak-reembed`.
+Сверх фаз: дашборд `/dashboard` + лента `/lenta` (👍/👎, Разбор, сортировка свежесть/скоринг),
+публикация ленты в TG-канал (`CHANNEL_VERTICALS`), `/ask` RAG-дайджест, HN/Lobsters-источники.
 **Интересы — только `config/interests.yaml`** (verticals + watch + weights), применять `homyak-interests
-apply`. Выученное (affinity/taste/muted_tags) в БД и в файл не пишет. Осталось Phase 6.3.
+apply`. Выученное (affinity/taste/muted_tags) в БД и в файл не пишет.
 Токен бота — в `.env` (gitignored). Telegram-каналы задаются в config.yaml tscrapper'а.
 
 ## Порядок работ
