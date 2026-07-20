@@ -317,11 +317,12 @@ async def item_detail(item_id: int) -> dict:
     }
 
 
-async def feed_snapshot(kind: str = "all", limit: int = 50) -> dict:
+async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time") -> dict:
     """Персистентная лента «что получаем» + текущий фидбек по каждому айтему (для 👍/👎).
 
-    Сортировка по СВЕЖЕСТИ, а не personal_score: иначе 45% твитов без вертикали
-    (personal_score=NULL) тонут и их не видно. kind: all|twitter|business|it|medical|watch.
+    По умолчанию сортировка по СВЕЖЕСТИ, а не personal_score: иначе 45% твитов без
+    вертикали (personal_score=NULL) тонут и их не видно. sort=score — по скорингу,
+    NULL уходят в конец. kind: all|twitter|business|it|medical|watch.
     """
     conds = ["processed_at is not null", "skip_reason is null"]
     params: dict = {"lim": max(1, min(limit, 200))}
@@ -333,6 +334,11 @@ async def feed_snapshot(kind: str = "all", limit: int = 50) -> dict:
     elif kind == "watch":
         conds.append("cardinality(watch_topics) > 0")
     where = " and ".join(conds)
+    order = (
+        "personal_score desc nulls last, coalesce(published_at, fetched_at) desc"
+        if sort == "score"
+        else "coalesce(published_at, fetched_at) desc"
+    )
     async with SessionFactory() as s:
         rows = (
             await s.execute(
@@ -341,7 +347,7 @@ async def feed_snapshot(kind: str = "all", limit: int = 50) -> dict:
                     " tags, watch_topics, url,"
                     " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     f" from news_items where {where}"
-                    " order by coalesce(published_at, fetched_at) desc limit :lim"
+                    f" order by {order} limit :lim"
                 ),
                 params,
             )
@@ -359,6 +365,7 @@ async def feed_snapshot(kind: str = "all", limit: int = 50) -> dict:
                 fb.setdefault(iid, []).append(sig)
     return {
         "kind": kind,
+        "sort": sort,
         "items": [
             {
                 "id": r.id,
@@ -896,6 +903,7 @@ a{color:var(--accent);text-decoration:none}
 <div class="top"><h1>🗂 Лента — что получаем</h1><span>👍/👎 обучают систему</span><span><a href="/dashboard">← дашборд</a></span></div>
 <div class="wrap">
   <div class="ftabs" id="ftabs"></div>
+  <div class="ftabs" id="stabs"></div>
   <div id="lentafeed"><div class="muted">Загрузка…</div></div>
 </div>
 <div class="modal" id="modal"><div class="mbox" id="mbox"><span class="mclose" id="mclose">✕</span><div id="mbody"></div></div></div>
@@ -906,11 +914,14 @@ const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
 const VLABEL={business:'💼 Business',it:'💻 IT',medical:'🩺 Medical'};
 const FTABS=[['all','Все'],['twitter','🐦 Twitter'],['business','💼 Business'],['it','💻 IT'],['medical','🩺 Medical'],['watch','👁 Watch']];
-let feedKind='all';
+const STABS=[['time','🕒 Свежее'],['score','🎯 Скоринг']];
+let feedKind='all',feedSort='time';
 function renderFtabs(){$('ftabs').innerHTML=FTABS.map(([k,l])=>`<span class="ftab ${k===feedKind?'on':''}" onclick="setFeedKind('${k}')">${esc(l)}</span>`).join('');}
 function setFeedKind(k){feedKind=k;renderFtabs();loadFeed();}
+function renderStabs(){$('stabs').innerHTML=STABS.map(([k,l])=>`<span class="ftab ${k===feedSort?'on':''}" onclick="setFeedSort('${k}')">${esc(l)}</span>`).join('');}
+function setFeedSort(k){feedSort=k;renderStabs();loadFeed();}
 async function loadFeed(){try{
-  const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&limit=80')).json();
+  const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&sort='+feedSort+'&limit=80')).json();
   $('lentafeed').innerHTML=(d.items||[]).map(it=>{
     const [bc,be]=BADGE[it.bucket]||BADGE.other;
     const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket);
@@ -937,6 +948,6 @@ async function openItem(id){try{
 async function openRazbor(id){const box=$('razbor-'+id);if(!box)return;box.innerHTML='<div class="muted">Разбираю… (~7с)</div>';try{const d=await (await fetch('/dashboard/razbor/'+id)).json();if(d.error){box.innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}const html=(d.body||'').split('\n').map(l=>{l=l.trim();if(!l)return '';return (l.startsWith('**')&&l.endsWith('**'))?'<div class="mlbl">'+esc(l.slice(2,-2))+'</div>':'<div>'+esc(l)+'</div>';}).join('');box.innerHTML='<div class="mtext">'+html+'</div>';}catch(e){box.innerHTML='<div class="muted">ошибка разбора</div>';}}
 $('mclose').onclick=mHide;$('modal').onclick=e=>{if(e.target.id==='modal')mHide();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')mHide();});
-renderFtabs();loadFeed();setInterval(loadFeed,20000);
+renderFtabs();renderStabs();loadFeed();setInterval(loadFeed,20000);
 </script>
 """
