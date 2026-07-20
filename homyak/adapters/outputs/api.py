@@ -101,11 +101,11 @@ async def dashboard_watchlist() -> dict:
 
 
 @app.get("/dashboard/feed")
-async def dashboard_feed(kind: str = "all", limit: int = 50, sort: str = "time") -> dict:
+async def dashboard_feed(kind: str = "all", limit: int = 50, sort: str = "time", hours: int = 0) -> dict:
     """Персистентная лента «что получаем» + фидбек по каждому (kind: all|twitter|верткаль|watch,
-    sort: time|score)."""
+    sort: time|score, hours: 0=всё | N=за последние N часов)."""
     sort = sort if sort in ("time", "score") else "time"
-    return await dashboard.feed_snapshot(kind, min(max(limit, 1), 200), sort)
+    return await dashboard.feed_snapshot(kind, min(max(limit, 1), 200), sort, min(max(hours, 0), 720))
 
 
 class _FeedbackIn(BaseModel):

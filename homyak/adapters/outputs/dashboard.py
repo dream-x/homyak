@@ -314,18 +314,25 @@ async def item_detail(item_id: int) -> dict:
         "score": it.personal_score,
         "insight": it.insight_score,
         "processed": it.processed_at is not None,
+        "published": (it.published_at or it.fetched_at).isoformat()
+        if (it.published_at or it.fetched_at)
+        else None,
     }
 
 
-async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time") -> dict:
+async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time", hours: int = 0) -> dict:
     """Персистентная лента «что получаем» + текущий фидбек по каждому айтему (для 👍/👎).
 
     По умолчанию сортировка по СВЕЖЕСТИ, а не personal_score: иначе 45% твитов без
     вертикали (personal_score=NULL) тонут и их не видно. sort=score — по скорингу,
-    NULL уходят в конец. kind: all|twitter|business|it|medical|watch.
+    NULL уходят в конец. hours>0 — только события за последние N часов (фильтр периода).
+    kind: all|twitter|business|it|medical|watch.
     """
     conds = ["processed_at is not null", "skip_reason is null"]
     params: dict = {"lim": max(1, min(limit, 200))}
+    if hours > 0:
+        conds.append("coalesce(published_at, fetched_at) > now() - make_interval(hours => :hrs)")
+        params["hrs"] = hours
     if kind == "twitter":
         conds.append("feed_name like 'tw_%'")
     elif kind in ("business", "it", "medical"):
@@ -366,6 +373,7 @@ async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time") 
     return {
         "kind": kind,
         "sort": sort,
+        "hours": hours,
         "items": [
             {
                 "id": r.id,
@@ -888,6 +896,7 @@ a{color:var(--accent);text-decoration:none}
 .frow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
 .frow .ttl:hover{color:var(--accent)}
 .frow .sc{color:var(--dim);font-size:12px;white-space:nowrap}
+.frow .tm{color:var(--dim);font-size:12px;white-space:nowrap;min-width:38px;text-align:right}
 .vbtn{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:4px 9px;cursor:pointer;font-size:14px;line-height:1;user-select:none}
 .vbtn.up.on{background:#1c3a24;border-color:#2f7d4a}.vbtn.down.on{background:#3a1c1c;border-color:#7d2f2f}.vbtn.save.on{background:#3a331c;border-color:#7d6a2f}
 .muted{color:var(--dim);padding:20px;text-align:center}
@@ -904,6 +913,7 @@ a{color:var(--accent);text-decoration:none}
 <div class="wrap">
   <div class="ftabs" id="ftabs"></div>
   <div class="ftabs" id="stabs"></div>
+  <div class="ftabs" id="ptabs"></div>
   <div id="lentafeed"><div class="muted">Загрузка…</div></div>
 </div>
 <div class="modal" id="modal"><div class="mbox" id="mbox"><span class="mclose" id="mclose">✕</span><div id="mbody"></div></div></div>
@@ -915,19 +925,24 @@ const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈�
 const VLABEL={business:'💼 Business',it:'💻 IT',medical:'🩺 Medical'};
 const FTABS=[['all','Все'],['twitter','🐦 Twitter'],['business','💼 Business'],['it','💻 IT'],['medical','🩺 Medical'],['watch','👁 Watch']];
 const STABS=[['time','🕒 Свежее'],['score','🎯 Скоринг']];
-let feedKind='all',feedSort='time';
+const PTABS=[[0,'Всё'],[6,'6 часов'],[24,'Сутки'],[168,'Неделя']];
+let feedKind='all',feedSort='time',feedHours=0;
+const fmtAge=s=>{if(s==null)return '';const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';return Math.floor(h/24)+'д';};
+const fmtAbs=s=>s==null?'':new Date(Date.now()-s*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
 function renderFtabs(){$('ftabs').innerHTML=FTABS.map(([k,l])=>`<span class="ftab ${k===feedKind?'on':''}" onclick="setFeedKind('${k}')">${esc(l)}</span>`).join('');}
 function setFeedKind(k){feedKind=k;renderFtabs();loadFeed();}
 function renderStabs(){$('stabs').innerHTML=STABS.map(([k,l])=>`<span class="ftab ${k===feedSort?'on':''}" onclick="setFeedSort('${k}')">${esc(l)}</span>`).join('');}
 function setFeedSort(k){feedSort=k;renderStabs();loadFeed();}
+function renderPtabs(){$('ptabs').innerHTML=PTABS.map(([k,l])=>`<span class="ftab ${k===feedHours?'on':''}" onclick="setFeedHours(${k})">${esc(l)}</span>`).join('');}
+function setFeedHours(k){feedHours=k;renderPtabs();loadFeed();}
 async function loadFeed(){try{
-  const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&sort='+feedSort+'&limit=80')).json();
+  const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&sort='+feedSort+'&hours='+feedHours+'&limit=80')).json();
   $('lentafeed').innerHTML=(d.items||[]).map(it=>{
     const [bc,be]=BADGE[it.bucket]||BADGE.other;
     const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket);
     const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
     const fb=it.feedback||[];const on=s=>fb.includes(s)?'on':'';
-    return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span><span class="sc">🎯 ${sc}</span><span class="vbtn up ${on('up')}" onclick="vote(${it.id},'up',this)">👍</span><span class="vbtn down ${on('down')}" onclick="vote(${it.id},'down',this)">👎</span><span class="vbtn save ${on('save')}" onclick="vote(${it.id},'save',this)">⭐</span></div>`;
+    return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span><span class="tm" title="${esc(fmtAbs(it.age_s))}">${fmtAge(it.age_s)}</span><span class="sc">🎯 ${sc}</span><span class="vbtn up ${on('up')}" onclick="vote(${it.id},'up',this)">👍</span><span class="vbtn down ${on('down')}" onclick="vote(${it.id},'down',this)">👎</span><span class="vbtn save ${on('save')}" onclick="vote(${it.id},'save',this)">⭐</span></div>`;
   }).join('')||'<div class="muted">пусто</div>';
 }catch(e){$('lentafeed').innerHTML='<div class="muted">ошибка загрузки</div>';}}
 async function vote(id,signal,el){const was=el.classList.contains('on');el.classList.toggle('on');try{const r=await (await fetch('/dashboard/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:id,signal})})).json();el.classList.toggle('on',r.action==='added');}catch(e){el.classList.toggle('on',was);}}
@@ -936,7 +951,8 @@ async function openItem(id){try{
   const it=await (await fetch('/dashboard/item/'+id)).json();
   if(!it.id)return;
   const src=it.feed&&it.feed.startsWith('tw_')?'🐦 @'+it.feed.slice(3):(it.feed||it.source_type||'?');
-  const meta=[src,it.vertical?VLABEL[it.vertical]:'',(it.watch&&it.watch.length)?'👁 '+it.watch.join(', '):'',it.score!=null?'🎯 '+Math.round(it.score*100)+'%':''].filter(Boolean);
+  const when=it.published?'🕒 '+new Date(it.published).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  const meta=[src,when,it.vertical?VLABEL[it.vertical]:'',(it.watch&&it.watch.length)?'👁 '+it.watch.join(', '):'',it.score!=null?'🎯 '+Math.round(it.score*100)+'%':''].filter(Boolean);
   let h=`<h3>${esc(it.title||'(без заголовка)')}</h3><div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
@@ -948,6 +964,6 @@ async function openItem(id){try{
 async function openRazbor(id){const box=$('razbor-'+id);if(!box)return;box.innerHTML='<div class="muted">Разбираю… (~7с)</div>';try{const d=await (await fetch('/dashboard/razbor/'+id)).json();if(d.error){box.innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}const html=(d.body||'').split('\n').map(l=>{l=l.trim();if(!l)return '';return (l.startsWith('**')&&l.endsWith('**'))?'<div class="mlbl">'+esc(l.slice(2,-2))+'</div>':'<div>'+esc(l)+'</div>';}).join('');box.innerHTML='<div class="mtext">'+html+'</div>';}catch(e){box.innerHTML='<div class="muted">ошибка разбора</div>';}}
 $('mclose').onclick=mHide;$('modal').onclick=e=>{if(e.target.id==='modal')mHide();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')mHide();});
-renderFtabs();renderStabs();loadFeed();setInterval(loadFeed,20000);
+renderFtabs();renderStabs();renderPtabs();loadFeed();setInterval(loadFeed,20000);
 </script>
 """
