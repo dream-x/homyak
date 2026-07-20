@@ -13,8 +13,10 @@ x-app: &app
     QDRANT_URL: http://qdrant:6333
     # Основной — 5090-бокс (white, storage-apps LAN); запасной — локальная Ollama на Metal.
     # У хостов РАЗНЫЕ модели: на боксе qwen3.6:27b, на Mac qwen3.5:9b (см. core/ollama.py).
+    # Фолбэк задаётся через .env (на Mac — host.containers.internal); на VM homyak его нет,
+    # пустой дефолт = без фолбэка, а не мёртвый хост.
     OLLAMA_URL: ${OLLAMA_URL:-http://192.168.100.235:11434}
-    OLLAMA_URL_FALLBACK: ${OLLAMA_URL_FALLBACK:-http://host.containers.internal:11434}
+    OLLAMA_URL_FALLBACK: ${OLLAMA_URL_FALLBACK:-}
     LLM_MODEL: ${LLM_MODEL:-qwen3.6:27b}
     LLM_MODEL_FALLBACK: ${LLM_MODEL_FALLBACK:-qwen3.5:9b}
     SUMMARY_MODEL: ${SUMMARY_MODEL:-qwen3.6:27b}
