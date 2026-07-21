@@ -48,9 +48,10 @@ def build_analyzers(
         analyzers.append(EmbedderAnalyzer(qdrant))
         analyzers.append(SimilarityDedupAnalyzer(qdrant))
         analyzers.append(PrefilterAnalyzer(qdrant))  # гейт: режет шум до LLM
-        analyzers.append(TitleGenAnalyzer())  # заголовок из текста, если источник его не дал
+        llm = OllamaLLM() if with_llm else None
+        # заголовок из текста, если источник его не дал: генерит модель (или эвристика без LLM)
+        analyzers.append(TitleGenAnalyzer(llm))
         if with_llm:
-            llm = OllamaLLM()
             analyzers.append(LlmTaggerAnalyzer(llm))
             analyzers.append(LlmSummarizerAnalyzer())  # своя модель (SUMMARY_MODEL, побольше)
         analyzers.append(ScorerAnalyzer())

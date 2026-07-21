@@ -1,3 +1,6 @@
+import pytest
+
+from homyak.adapters.analyzers.title_gen import make_title
 from homyak.core.titles import MAX_LEN, derive_title
 
 
@@ -47,3 +50,55 @@ def test_long_line_without_sentence_cut_at_word_with_ellipsis():
 
 def test_media_only_falls_back():
     assert derive_title("", fallback="Запись @cgevent") == "Запись @cgevent"
+
+
+# --- make_title (LLM-генерация с фолбэком на эвристику) ---
+
+LONG = "Разработчики выкатили новый инструмент. " * 4  # >80 симв → пойдёт в LLM
+
+
+class _FakeLLM:
+    def __init__(self, reply=None, boom=False):
+        self.reply, self.boom, self.calls = reply, boom, 0
+
+    async def chat_text(self, system, user, think=None):
+        self.calls += 1
+        if self.boom:
+            raise RuntimeError("llm down")
+        return self.reply
+
+
+@pytest.mark.asyncio
+async def test_make_title_uses_llm_and_cleans_output():
+    llm = _FakeLLM(reply='  "Новый CLI для агентов".  ')
+    got = await make_title(llm, LONG, "@ch")
+    assert got == "Новый CLI для агентов"  # кавычки, точка и пробелы убраны
+    assert llm.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_make_title_strips_think_leak():
+    llm = _FakeLLM(reply="<think>надо покороче</think>\nDoorDash запустил dd-cli")
+    assert await make_title(llm, LONG, "@ch") == "DoorDash запустил dd-cli"
+
+
+@pytest.mark.asyncio
+async def test_make_title_falls_back_to_heuristic_on_llm_error():
+    llm = _FakeLLM(boom=True)
+    text = "Первая строка как заголовок\n\nдальше тело поста подлиннее чем восемьдесят символов ровно"
+    assert await make_title(llm, text, "@ch") == "Первая строка как заголовок"
+
+
+@pytest.mark.asyncio
+async def test_make_title_skips_llm_for_short_text():
+    llm = _FakeLLM(reply="не должно вызваться")
+    got = await make_title(llm, "Короткий пост", "@ch")
+    assert got == "Короткий пост"  # эвристика, а не LLM
+    assert llm.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_make_title_no_text_returns_fallback_without_llm():
+    llm = _FakeLLM(reply="x")
+    assert await make_title(llm, "", "@cgevent") == "Запись @cgevent"
+    assert llm.calls == 0
