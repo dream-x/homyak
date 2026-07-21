@@ -1,13 +1,15 @@
-"""Backfill: проставить заголовок обработанным items без него (Telegram/твиты/RSS-огрызки).
+"""Backfill: заголовок обработанным items без него (Telegram/твиты/RSS-огрызки).
 
-Та же чистая логика, что у стадии title_gen (core.titles.derive_title) — прогоняем её по
-уже накопленным безымянным items. Идемпотентно: с заголовком не трогаем. Запуск после
-деплоя title_gen, разово.
+Та же генерация, что у стадии title_gen (make_title: LLM + фолбэк-эвристика). Прогон разовый.
+По умолчанию трогает только пустые заголовки. С `--regen` заодно ПЕРЕгенерирует заголовки
+у источников, которые title вообще не дают (telegram, твиты) — там текущий заголовок всё
+равно наш, и его можно улучшить моделью (например после апгрейда эвристики на LLM).
 """
 
 from __future__ import annotations
 
 import asyncio
+import sys
 
 from rich.console import Console
 from sqlalchemy import func, or_, select, update
@@ -20,19 +22,23 @@ from homyak.storage.db import SessionFactory
 console = Console()
 
 
-async def main_async() -> None:
+async def main_async(regen: bool = False) -> None:
     llm = OllamaLLM()  # та же генерация, что у стадии title_gen
+    empty = or_(NewsItem.title.is_(None), func.btrim(NewsItem.title) == "")
+    # источники без собственного title: их заголовок всегда сгенерён нами → можно перегенерить
+    sourceless = or_(NewsItem.source_type == "telegram", NewsItem.feed_name.like("tw_%"))
+    where = or_(empty, sourceless) if regen else empty
     async with SessionFactory() as s:
         rows = list(
             (
                 await s.execute(
                     select(NewsItem.id, NewsItem.text, NewsItem.feed_name).where(
-                        NewsItem.processed_at.isnot(None),
-                        or_(NewsItem.title.is_(None), func.btrim(NewsItem.title) == ""),
+                        NewsItem.processed_at.isnot(None), where
                     )
                 )
             ).all()
         )
+    console.print(f"[dim]режим: {'regen (пустые + telegram/твиты)' if regen else 'только пустые'}[/dim]")
 
     console.print(f"[bold]Безымянных обработанных: {len(rows)}[/bold]")
     fixed = still_empty = 0
@@ -52,7 +58,7 @@ async def main_async() -> None:
 
 
 def main() -> None:
-    asyncio.run(main_async())
+    asyncio.run(main_async(regen="--regen" in sys.argv))
 
 
 if __name__ == "__main__":
