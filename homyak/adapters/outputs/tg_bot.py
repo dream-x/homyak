@@ -885,6 +885,11 @@ async def _maybe_push(item_id: int) -> None:
     item = await _repo.get_by_id(item_id)
     if item is None or item.personal_score is None or item.pushed_at is not None:
         return
+    # Дедуп по кластеру: near-дубль этой истории уже пушился — молчим (не шлём то же дважды).
+    if item.cluster_id is not None and await _repo.cluster_already_sent(
+        item.cluster_id, "pushed_at", item.id
+    ):
+        return
     is_tweet = (item.feed_name or "").startswith("tw_")
     # Twitter уважает pushonly-скоуп (при pushonly=it — только IT-твиты), но со СВОИМ пониженным
     # порогом: больше именно IT-твитов, а не всего подряд из business/medical.
@@ -913,6 +918,11 @@ async def _publish_channel(item_id: int) -> None:
     if item is None or item.personal_score is None or item.channel_posted_at is not None:
         return
     if item.personal_score < settings.channel_min_score:
+        return
+    # Дедуп по кластеру: та же история из другого источника уже в канале — не дублируем.
+    if item.cluster_id is not None and await _repo.cluster_already_sent(
+        item.cluster_id, "channel_posted_at", item.id
+    ):
         return
     scope = settings.channel_verticals  # напр. "it" — только IT (IT RSS + IT-твиты)
     if scope and (item.vertical or "") not in {v.strip() for v in scope.split(",") if v.strip()}:

@@ -346,19 +346,32 @@ async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time", 
         if sort == "score"
         else "coalesce(published_at, fetched_at) desc"
     )
+    # Берём окно втрое шире и коллапсим кластеры в Python: near-дубли (одна история из
+    # HN+Lobsters+RSS+TG) склеены в один cluster_id — показываем только первый (по order).
+    params["win"] = params["lim"] * 3
     async with SessionFactory() as s:
-        rows = (
+        raw = (
             await s.execute(
                 text(
                     "select id, title, source_type, feed_name, vertical, personal_score,"
-                    " tags, watch_topics, url,"
+                    " tags, watch_topics, url, cluster_id,"
                     " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     f" from news_items where {where}"
-                    f" order by {order} limit :lim"
+                    f" order by {order} limit :win"
                 ),
                 params,
             )
         ).all()
+        seen: set[int] = set()
+        rows = []
+        for r in raw:
+            key = r.cluster_id or -r.id  # без кластера — сам себе ключ (никогда не столкнётся)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(r)
+            if len(rows) >= params["lim"]:
+                break
         ids = [r.id for r in rows]
         fb: dict[int, list[str]] = {}
         if ids:

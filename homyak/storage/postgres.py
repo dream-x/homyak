@@ -473,6 +473,29 @@ class NewsRepo:
             )
             await s.commit()
 
+    async def cluster_already_sent(self, cluster_id: int, field: str, exclude_id: int) -> bool:
+        """Есть ли в кластере ДРУГОЙ item с уже проставленным pushed_at/channel_posted_at.
+
+        Дедуп на уровне кластера: near-дубли (одна история из HN+Lobsters+RSS+TG склеены
+        similarity_dedup'ом в один кластер) не должны улетать в пуш/канал по второму разу.
+        field — строго pushed_at | channel_posted_at (не подставляем произвольное в getattr).
+        """
+        if field not in ("pushed_at", "channel_posted_at"):
+            raise ValueError(f"cluster_already_sent: недопустимое поле {field!r}")
+        col = getattr(NewsItem, field)
+        async with self._sf() as s:
+            return bool(
+                await s.scalar(
+                    select(NewsItem.id)
+                    .where(
+                        NewsItem.cluster_id == cluster_id,
+                        NewsItem.id != exclude_id,
+                        col.isnot(None),
+                    )
+                    .limit(1)
+                )
+            )
+
     async def count_pushed_since(self, minutes: int) -> int:
         cutoff = func.now() - sa.literal(int(minutes)) * sa.text("interval '1 minute'")
         async with self._sf() as s:
