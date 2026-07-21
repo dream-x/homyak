@@ -14,6 +14,7 @@ from homyak.adapters.analyzers.personalizer import PersonalizerAnalyzer
 from homyak.adapters.analyzers.prefilter import PrefilterAnalyzer
 from homyak.adapters.analyzers.scorer import ScorerAnalyzer
 from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
+from homyak.adapters.analyzers.title_gen import TitleGenAnalyzer
 from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
 from homyak.adapters.analyzers.watchlist_matcher import WatchlistAnalyzer
 from homyak.adapters.sources.miniflux import MinifluxSource
@@ -47,6 +48,7 @@ def build_analyzers(
         analyzers.append(EmbedderAnalyzer(qdrant))
         analyzers.append(SimilarityDedupAnalyzer(qdrant))
         analyzers.append(PrefilterAnalyzer(qdrant))  # гейт: режет шум до LLM
+        analyzers.append(TitleGenAnalyzer())  # заголовок из текста, если источник его не дал
         if with_llm:
             llm = OllamaLLM()
             analyzers.append(LlmTaggerAnalyzer(llm))
