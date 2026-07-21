@@ -1,7 +1,7 @@
 import pytest
 
 from homyak.adapters.analyzers.title_gen import make_title
-from homyak.core.titles import MAX_LEN, derive_title
+from homyak.core.titles import MAX_LEN, derive_title, title_from_url
 
 
 def test_none_and_empty():
@@ -102,3 +102,35 @@ async def test_make_title_no_text_returns_fallback_without_llm():
     llm = _FakeLLM(reply="x")
     assert await make_title(llm, "", "@cgevent") == "Запись @cgevent"
     assert llm.calls == 0
+
+
+# --- title_from_url (голые ссылки) ---
+
+
+def test_title_from_url_slug():
+    assert (
+        title_from_url("https://www.group-ib.com/blog/clicklock-stealer-macos-malware/")
+        == "Clicklock stealer macos malware"
+    )
+    assert title_from_url("https://github.com/xai-org/grok-build") == "Grok build"
+    assert title_from_url("https://example.com/2026/07/my_post.html") == "My post"
+
+
+def test_title_from_url_root_or_junk_is_none():
+    assert title_from_url("https://example.com/") is None
+    assert title_from_url("https://example.com/blog/12345") is None  # id + stop-сегмент
+    assert title_from_url("not a url") is None
+    assert title_from_url(None) is None
+
+
+@pytest.mark.asyncio
+async def test_make_title_bare_link_uses_url_slug():
+    # пост — только ссылка: заголовок из слага, а не «Запись @…»
+    got = await make_title(None, "https://www.group-ib.com/blog/clicklock-stealer-macos-malware/", "@ch")
+    assert got == "Clicklock stealer macos malware"
+
+
+@pytest.mark.asyncio
+async def test_make_title_link_with_no_slug_falls_back_to_channel():
+    got = await make_title(None, "https://example.com/", "@cgevent")
+    assert got == "Запись @cgevent"

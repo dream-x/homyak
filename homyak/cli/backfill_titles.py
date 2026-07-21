@@ -22,12 +22,17 @@ from homyak.storage.db import SessionFactory
 console = Console()
 
 
-async def main_async(regen: bool = False) -> None:
+async def main_async(regen: bool = False, fallbacks: bool = False) -> None:
     llm = OllamaLLM()  # та же генерация, что у стадии title_gen
     empty = or_(NewsItem.title.is_(None), func.btrim(NewsItem.title) == "")
     # источники без собственного title: их заголовок всегда сгенерён нами → можно перегенерить
     sourceless = or_(NewsItem.source_type == "telegram", NewsItem.feed_name.like("tw_%"))
-    where = or_(empty, sourceless) if regen else empty
+    if fallbacks:  # только фолбэк-заголовки «Запись @…» (дёшево: чинит голые ссылки)
+        where, mode = NewsItem.title.like("Запись @%"), "fallbacks (Запись @…)"
+    elif regen:
+        where, mode = or_(empty, sourceless), "regen (пустые + telegram/твиты)"
+    else:
+        where, mode = empty, "только пустые"
     async with SessionFactory() as s:
         rows = list(
             (
@@ -38,7 +43,7 @@ async def main_async(regen: bool = False) -> None:
                 )
             ).all()
         )
-    console.print(f"[dim]режим: {'regen (пустые + telegram/твиты)' if regen else 'только пустые'}[/dim]")
+    console.print(f"[dim]режим: {mode}[/dim]")
 
     console.print(f"[bold]Безымянных обработанных: {len(rows)}[/bold]")
     fixed = still_empty = 0
@@ -58,7 +63,7 @@ async def main_async(regen: bool = False) -> None:
 
 
 def main() -> None:
-    asyncio.run(main_async(regen="--regen" in sys.argv))
+    asyncio.run(main_async(regen="--regen" in sys.argv, fallbacks="--fallbacks" in sys.argv))
 
 
 if __name__ == "__main__":

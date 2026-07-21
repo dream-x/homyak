@@ -15,7 +15,7 @@ import structlog
 
 from homyak.core.interfaces import AnalyzerContext
 from homyak.core.llm import OllamaLLM
-from homyak.core.titles import derive_title
+from homyak.core.titles import _URL, derive_title, title_from_url
 
 log = structlog.get_logger(__name__)
 
@@ -53,7 +53,16 @@ async def make_title(llm: OllamaLLM | None, text: str | None, feed_name: str | N
         except Exception as e:  # best-effort — ниже эвристика
             log.warning("title_gen_llm_failed", error=str(e)[:120])
 
-    return derive_title(body, fallback=fallback)
+    heuristic = derive_title(body)
+    if heuristic:
+        return heuristic
+    # текста нет (пост — голая ссылка): заголовок из слага URL, иначе фолбэк по каналу
+    m = _URL.search(body)
+    if m:
+        slug = title_from_url(m.group(0))
+        if slug:
+            return slug
+    return fallback
 
 
 class TitleGenAnalyzer:
