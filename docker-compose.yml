@@ -63,8 +63,9 @@ services:
     volumes:
       - nats_data:/data
 
-  # RSS-мост для Twitter/X: аккаунты доступны как RSS на http://rsshub:1200/twitter/user/<handle>
-  # Нужен TWITTER_AUTH_TOKEN (auth_token cookie из твоего X-аккаунта) в .env.
+  # RSS-мост. Twitter/X: http://rsshub:1200/twitter/user/<handle> (нужен TWITTER_AUTH_TOKEN).
+  # GitHub: search/repos/starred_repos работают без токена; trending требует GITHUB_ACCESS_TOKEN
+  # (PAT classic, без скоупов достаточно для чтения публичного) — задать в .env, иначе trending 503.
   rsshub:
     image: diygod/rsshub:latest
     ports:
@@ -73,6 +74,7 @@ services:
       NODE_ENV: production
       CACHE_TYPE: memory
       TWITTER_AUTH_TOKEN: ${TWITTER_AUTH_TOKEN:-}
+      GITHUB_ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN:-}
     restart: unless-stopped
 
   migrate:

@@ -68,6 +68,33 @@ rss:
   - {name: selfhst,        url: "https://selfh.st/rss/",                               category: tech,     interval_seconds: 3600, weight: 0.9}
   - {name: selfhst_weekly, url: "https://selfh.st/weekly/rss/",                        category: tech,     interval_seconds: 86400, weight: 1.0}
 
+  # === GitHub via RSSHub — интересные проекты + кто что публикует/звёздит (вертикаль решает теггер) ===
+  # Идёт в общую IT-ленту (category tech). url_dedup склеивает один репозиторий, попавший в
+  # несколько фидов (trending + чьи-то звёзды + чьи-то репы) → один пост. Ники/темы правь под себя.
+  # -- поиск свежих проектов по темам (работает БЕЗ токена) --
+  - {name: gh_search_llm,      url: "http://rsshub:1200/github/search/topic%3Allm%20stars%3A%3E150/updated/desc",       category: tech, interval_seconds: 10800, weight: 0.9}
+  - {name: gh_search_agents,   url: "http://rsshub:1200/github/search/topic%3Aai-agents%20stars%3A%3E80/updated/desc",  category: tech, interval_seconds: 10800, weight: 0.9}
+  - {name: gh_search_devtools, url: "http://rsshub:1200/github/search/topic%3Acli%20stars%3A%3E200/updated/desc",       category: tech, interval_seconds: 14400, weight: 0.8}
+  - {name: gh_search_rust,     url: "http://rsshub:1200/github/search/language%3Arust%20stars%3A%3E200/updated/desc",   category: tech, interval_seconds: 14400, weight: 0.8}
+  # -- что публикуют люди/орги (новые репозитории) --
+  - {name: gh_repos_simonw,        url: "http://rsshub:1200/github/repos/simonw",        category: tech, interval_seconds: 10800, weight: 0.9}
+  - {name: gh_repos_ggerganov,     url: "http://rsshub:1200/github/repos/ggerganov",     category: tech, interval_seconds: 10800, weight: 0.9}
+  - {name: gh_repos_karpathy,      url: "http://rsshub:1200/github/repos/karpathy",      category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_repos_antirez,       url: "http://rsshub:1200/github/repos/antirez",       category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_repos_burntsushi,    url: "http://rsshub:1200/github/repos/BurntSushi",    category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_repos_charmbracelet, url: "http://rsshub:1200/github/repos/charmbracelet", category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_repos_jart,          url: "http://rsshub:1200/github/repos/jart",          category: tech, interval_seconds: 21600, weight: 0.9}
+  # -- что звёздят люди (высокий сигнал «нашли интересное») --
+  - {name: gh_stars_simonw,    url: "http://rsshub:1200/github/starred_repos/simonw",    category: tech, interval_seconds: 10800, weight: 0.9}
+  - {name: gh_stars_ggerganov, url: "http://rsshub:1200/github/starred_repos/ggerganov", category: tech, interval_seconds: 14400, weight: 0.9}
+  - {name: gh_stars_karpathy,  url: "http://rsshub:1200/github/starred_repos/karpathy",  category: tech, interval_seconds: 21600, weight: 0.9}
+  # -- trending: включится, когда задашь GITHUB_ACCESS_TOKEN в .env (без токена RSSHub отдаёт 503) --
+  - {name: gh_trend_daily,     url: "http://rsshub:1200/github/trending/daily/any/en",   category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_trend_weekly,    url: "http://rsshub:1200/github/trending/weekly/any/en",  category: tech, interval_seconds: 43200, weight: 1.0}
+  - {name: gh_trend_python,    url: "http://rsshub:1200/github/trending/weekly/python/en", category: tech, interval_seconds: 43200, weight: 0.9}
+  - {name: gh_trend_rust,      url: "http://rsshub:1200/github/trending/weekly/rust/en", category: tech, interval_seconds: 43200, weight: 0.9}
+  - {name: gh_trend_go,        url: "http://rsshub:1200/github/trending/weekly/go/en",   category: tech, interval_seconds: 43200, weight: 0.9}
+
   # --- 🇷🇺 русские источники (вертикаль определяет теггер) ---
   # Закрывают провал по watchlist-темам «Рынок России» и «RUB/USD» — англоязычные их почти не пишут.
   # РБК и Интерфакс убраны: общие новостные ленты (ДТП, суды, погода) — гейт резал 40-52%,
