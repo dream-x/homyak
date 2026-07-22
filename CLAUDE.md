@@ -48,14 +48,23 @@ tscrapper-контейнер (`~/tscrapper`, MTProto через `TG_PROXY`) + м
 только нужные сервисы (`podman compose up -d api`). Тесты: `uv run pytest` с хоста против
 контейнерного postgres (нужна БД `homyak_test`).
 
-## Состояние (2026-07-20)
-Реализованы Phase 1-4 + Phase 6.0-6.3 (флагман закрыт). Пайплайн (8 стадий): url_dedup → embedder →
-similarity_dedup → llm_tagger → llm_summarizer → scorer → llm_relevance (судья) → personalizer. Процессы:
+## Состояние (2026-07-23)
+Реализованы Phase 1-4 + Phase 6.0-6.3 (флагман закрыт). Пайплайн: url_dedup → embedder →
+similarity_dedup → prefilter → **title_gen** (LLM-заголовок, если источник не дал) → llm_tagger →
+llm_summarizer → scorer → llm_relevance (судья) → personalizer. Процессы:
 `homyak-ingest-poll` (RSS), `homyak-telegram-ingest` (TG из tscrapper через NATS `homyak.telegram.raw`),
-`homyak-processor`, `homyak-learner` (обучение на 👍/👎), `homyak-sweeper`, `homyak-tgbot`, `homyak-api`.
-CLI: `homyak-cli`, `homyak-interests` (show/diff/apply/backfill), `homyak-reembed`.
-Сверх фаз: дашборд `/dashboard` + лента `/lenta` (👍/👎, Разбор, сортировка свежесть/скоринг),
-публикация ленты в TG-канал (`CHANNEL_VERTICALS`), `/ask` RAG-дайджест, HN/Lobsters-источники.
+`homyak-processor`, `homyak-learner` (обучение на 👍/👎), `homyak-sweeper`, `homyak-tgbot`, `homyak-api`,
+**`homyak-wiki`** (LLM-вика из ⭐/👍). CLI: `homyak-cli`, `homyak-interests` (show/diff/apply/backfill),
+`homyak-reembed`, `homyak-backfill-titles`, `homyak-resummarize`, `homyak-wiki-backfill`.
+Сверх фаз: дашборд `/dashboard` + лента `/lenta` (👍/👎, Разбор, сортировка свежесть/скоринг, период),
+публикация ленты в TG-канал (`CHANNEL_VERTICALS`), `/ask` RAG-дайджест, HN/Lobsters + **GitHub-источники**
+(RSSHub: trending/search/repos/starred — trending требует `GITHUB_ACCESS_TOKEN`).
+**Поиск `/search` + бот `/find`**: гибрид (Postgres FTS `search_tsv` × Qdrant bge-m3, слито RRF, схлоп
+кластеров) + кнопка «Ответить» (сперва вика, иначе RAG по ленте).
+**LLM-вика (по Karpathy)** — сервис `homyak-wiki` консюмит `homyak.feedback.recorded` (up/save) и
+компаундит markdown-базу (concepts/entities/sources + index/log/lint) в volume `./wiki` (смотрится в
+Obsidian). НЕ RAG: LLM ведёт связанные страницы; query читает синтезированные страницы. Язык саммари/
+заголовка жёстко по тексту (RU→RU, иначе EN, см. `core/textutils.detect_lang`).
 **Интересы — только `config/interests.yaml`** (verticals + watch + weights), применять `homyak-interests
 apply`. Выученное (affinity/taste/muted_tags) в БД и в файл не пишет.
 Токен бота — в `.env` (gitignored). Telegram-каналы задаются в config.yaml tscrapper'а.

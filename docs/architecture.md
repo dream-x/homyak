@@ -176,15 +176,47 @@ rebuild. Ollama stays on the host (Metal).
 
 | Service | Role |
 |---|---|
-| `ingest-poll` | poll RSS/Miniflux |
+| `ingest-poll` | poll RSS/Miniflux (+ GitHub/Twitter via RSSHub) |
 | `telegram-ingest` | consume `homyak.telegram.raw` (tscrapper) |
-| `processor` | 9-stage pipeline |
+| `processor` | pipeline (url_dedup … title_gen … personalizer) |
 | `learner` | learning + profile refinement |
 | `sweeper` | re-publish stuck items |
 | `tgbot` | Telegram bot |
-| `api` | FastAPI (`/feed`, `/feed.rss`, `/feed.json`, `/feed/stream`, `/healthz`) |
+| `api` | FastAPI (`/feed*`, `/lenta`, `/search`, `/ask`, `/dashboard`) |
+| `wiki` | LLM knowledge base from ⭐/👍 (below) |
 
-Secrets live only in `.env` (gitignored): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, scoring weights, thresholds.
+Secrets live only in `.env` (gitignored): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, scoring weights, thresholds,
+`GITHUB_ACCESS_TOKEN` (RSSHub GitHub trending).
+
+## Search (`/search` + bot `/find`)
+
+Hybrid retrieval over the whole corpus, `core/search.py`:
+- **Lexical** — Postgres FTS on the persisted `search_tsv` (`websearch_to_tsquery('simple', …)`, GIN index).
+- **Semantic** — query embedded with bge-m3, Qdrant `search_similar`.
+- **Fusion** — Reciprocal Rank Fusion (`reciprocal_rank_fusion`, pure/tested) merges the two ranks, then
+  cluster-collapse (one story per cluster). Filters: vertical, period, ⭐-saved-only.
+
+The **Ответить** button (`POST /search/answer`) asks the wiki first (`wiki_query.answer_from_wiki`); if the
+wiki has nothing, it falls back to feed RAG (`core/ask.py`).
+
+## LLM Wiki (`homyak-wiki` service, `core/wiki*.py`)
+
+Adaptation of Karpathy's "LLM Wiki" (Apr 2026): **not RAG** — instead of retrieving raw fragments per query,
+an LLM compiles saved items into a compounding, interlinked markdown base. Scoped to the user's curation
+(⭐ save + 👍 like) rather than the firehose, so it stays small and dense.
+
+- **Storage** — markdown files in the `./wiki` volume (Obsidian-viewable): `concepts/`, `entities/`,
+  `sources/`, `index.md`, `log.md`, `lint.md`. `slugify` is pure/tested.
+- **Ingest** (`wiki_ingest.ingest_item`) — the service consumes `homyak.feedback.recorded` (durable `wiki`,
+  `signal in {up,save}`, `action=added`): writes a source page, an LLM extracts concepts/entities with a
+  one-line takeaway, each merged into its page as a dated bullet with a `[[source]]` wikilink (idempotent by
+  source-ref). Best-effort: an LLM failure still writes the source page + log.
+- **Query** (`wiki_query.answer_from_wiki`) — reads the *synthesized* concept/entity/source pages most
+  relevant to the question (keyword overlap; no embeddings needed at wiki scale) → LLM answer with citations.
+- **Lint** (`wiki.run_lint`, periodic `WIKI_LINT_EVERY_HOURS`) — deterministic audit of weakly-linked pages
+  → `lint.md`.
+- **Backfill** — `homyak-wiki-backfill` builds the wiki from the full ⭐/👍 history in the `feedback` table
+  (the service alone only sees new/retained feedback).
 
 ---
 
@@ -198,10 +230,17 @@ Secrets live only in `.env` (gitignored): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, 
 | Consumer zombie | JetStream `ack_wait` redelivers to another instance. |
 | Duplicate on ingest | `ON CONFLICT DO UPDATE`, publish only when `was_new=true`. |
 | Qdrant out of sync with PG | `homyak-reembed` re-embeds `WHERE embedding_version < current`. |
+| Wiki LLM down on ingest | best-effort — source page + log still written; concept/entity extraction skipped. |
+| Wiki behind on history | `homyak-wiki-backfill` replays all ⭐/👍 from the `feedback` table (idempotent). |
 
 ---
 
 ## Key decisions
+
+- **Wiki is not RAG** — an LLM compiles ⭐/👍 into a compounding markdown base; the human curates, the LLM
+  keeps the bookkeeping. Firehose + hybrid search = discovery; the ⭐-wiki = the distilled second brain.
+- **Hybrid search fused by RRF** — lexical (FTS) catches exact terms/names, semantic (Qdrant) catches meaning;
+  RRF needs no score calibration between the two.
 
 - **uv, not poetry** — speed, single binary, modern resolver. PEP 621 `pyproject.toml`, `uv.lock` in git.
 - **NATS JetStream, not Kafka/Redis** — minimal infra, single binary, has durability/ack/replay.
