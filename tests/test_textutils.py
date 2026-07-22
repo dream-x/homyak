@@ -53,3 +53,17 @@ def test_hashtags_limit():
     from homyak.core.textutils import hashtags
 
     assert hashtags(["a", "b", "c", "d", "e", "f"], limit=3) == "#a #b #c"
+
+
+def test_detect_lang():
+    from homyak.core.textutils import detect_lang
+
+    assert detect_lang("Разработчики выкатили новый фреймворк на Rust") == "ru"
+    assert detect_lang("A team released a new Rust framework") == "en"
+    # русская статья с кодом/терминами латиницей — всё равно ru
+    assert detect_lang("Переписали планировщик: continuous batching и paged attention, throughput вырос") == "ru"
+    # прочие языки (латиница/пусто) → en
+    assert detect_lang("Ein neues Framework für maschinelles Lernen") == "en"
+    assert detect_lang("") == "en"
+    assert detect_lang(None) == "en"
+    assert detect_lang("12345 !!!") == "en"
