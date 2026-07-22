@@ -99,6 +99,7 @@ BOT_COMMANDS = [
     BotCommand(command="profile", description="👤 Мои профили (3 вертикали)"),
     BotCommand(command="stats", description="📊 Статистика обучения"),
     BotCommand(command="ask", description="🧭 Выжимка по ленте: /ask <вопрос>"),
+    BotCommand(command="find", description="🔎 Найти в базе: /find <запрос>"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
     BotCommand(command="sources", description="📡 Источники в ленте"),
     BotCommand(command="mute", description="🔇 Замьютить тему: /mute <тема>"),
@@ -408,6 +409,36 @@ async def cmd_ask(m: Message, command: CommandObject) -> None:
     head = f"🧭 <b>{_esc(q)}</b>\n<i>по {res['n']} новостям из ленты</i>\n\n"
     for chunk in _chunks(head + _md_html(res["answer"]), 4000):
         await m.answer(chunk)
+
+
+@dp.message(Command("find"))
+async def cmd_find(m: Message, command: CommandObject) -> None:
+    """🔎 Гибридный поиск по базе знаний: /find <запрос> → топ-результаты ссылками."""
+    q = (command.args or "").strip()
+    if not q:
+        await m.answer("Найти по базе, напр.:\n<code>/find инференс LLM на Rust</code>")
+        return
+    from homyak.core.search import hybrid_search
+
+    try:
+        items = await hybrid_search(q, limit=10)
+    except Exception as e:
+        log.warning("find_failed", error=str(e)[:150])
+        await m.answer("Поиск недоступен (Qdrant/БД). Попробуй позже.")
+        return
+    if not items:
+        await m.answer("Ничего не нашёл по этому запросу.")
+        return
+    lines = [f"🔎 <b>{_esc(q)}</b>\n"]
+    for it in items:
+        nm = "@" + it["feed"][3:] if (it.get("feed") or "").startswith("tw_") else (it.get("feed") or it.get("vertical") or "")
+        sc = f"{round(it['score'] * 100)}%" if it.get("score") is not None else "—"
+        url = it.get("url")
+        title = _esc(it.get("title") or "—")
+        head = f'<a href="{_esc(url)}">{title}</a>' if url else title
+        lines.append(f"🎯 {sc} · {_esc(nm)}\n{head}")
+    for chunk in _chunks("\n\n".join(lines), 4000):
+        await m.answer(chunk, disable_web_page_preview=True)
 
 
 @dp.message(Command("threshold"))

@@ -58,6 +58,46 @@ async def lenta_page() -> str:
     return dashboard.LENTA_PAGE
 
 
+@app.get("/search", response_class=HTMLResponse)
+async def search_page() -> str:
+    """Гибридный поиск по базе знаний (FTS+вектор) + кнопка «Ответить» (RAG/вики)."""
+    return dashboard.SEARCH_PAGE
+
+
+@app.get("/search/api")
+async def search_api(
+    q: str,
+    kind: str = "all",
+    hours: int = 0,
+    saved: bool = False,
+    limit: int = 40,
+) -> dict:
+    """Гибридный поиск: q → ранжированный список записей (лексика+семантика, RRF, схлоп кластеров)."""
+    from homyak.core.search import hybrid_search
+
+    items = await hybrid_search(
+        q, kind=kind, hours=min(max(hours, 0), 8760), saved=saved, limit=min(max(limit, 1), 100)
+    )
+    return {"q": q, "kind": kind, "hours": hours, "saved": saved, "items": items}
+
+
+class _AnswerIn(BaseModel):
+    q: str
+
+
+@app.post("/search/answer")
+async def search_answer(inp: _AnswerIn) -> dict:
+    """Кнопка «Ответить»: выжимка по вопросу. Сперва вики (если есть страницы), иначе RAG по ленте."""
+    from homyak.core.ask import answer_question
+    from homyak.core.wiki_query import answer_from_wiki
+
+    wiki = await answer_from_wiki(inp.q)
+    if wiki and wiki.get("answer"):
+        return {**wiki, "source": "wiki"}
+    res = await answer_question(inp.q)
+    return {**res, "source": "feed"}
+
+
 @app.get("/dashboard/stream")
 async def dashboard_stream(request: Request):
     """SSE-поток событий пайплайна для дашборда (ingested + processed)."""

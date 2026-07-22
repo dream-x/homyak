@@ -44,6 +44,7 @@ homyak-cli = "homyak.adapters.outputs.cli:main"
 homyak-interests = "homyak.cli.interests:main"
 homyak-tgbot = "homyak.adapters.outputs.tg_bot:main"
 homyak-learner = "homyak.pipeline.learner:main"
+homyak-wiki = "homyak.pipeline.wiki:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -24,6 +24,7 @@ x-app: &app
     TZ: ${TZ:-Europe/Moscow}
   volumes:
     - ./config:/app/config:ro  # источники/профили — живьём, без пересборки
+    - ./wiki:/app/wiki         # LLM-вика: сервис homyak-wiki пишет, остальные читают; смотрится в Obsidian
   restart: unless-stopped
 
 services:
@@ -114,6 +115,11 @@ services:
   sweeper:
     <<: *app
     command: ["homyak-sweeper"]
+    depends_on: *after_migrate
+
+  wiki:
+    <<: *app
+    command: ["homyak-wiki"]
     depends_on: *after_migrate
 
   tgbot:

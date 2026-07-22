@@ -980,3 +980,92 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')mHide();});
 renderFtabs();renderStabs();renderPtabs();loadFeed();setInterval(loadFeed,20000);
 </script>
 """
+
+
+# Страница гибридного поиска по базе знаний (FTS+вектор) + кнопка «Ответить» (вики/RAG).
+SEARCH_PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🔎 Поиск — Homyak</title>
+<style>
+:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}
+.top{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.top h1{font-size:16px;margin:0}.top span{color:var(--dim);font-size:13px}
+.wrap{max-width:1080px;margin:0 auto;padding:16px 20px}
+.qbar{display:flex;gap:8px;margin-bottom:12px}
+.qbar input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 14px;color:var(--txt);font-size:15px}
+.qbar button{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:0 16px;color:var(--txt);cursor:pointer;font-size:14px}
+.qbar button.go{background:var(--accent);border-color:var(--accent);color:#06202a;font-weight:600}
+.ftabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.ftab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;color:var(--dim);cursor:pointer;user-select:none}
+.ftab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
+.answer{background:var(--panel);border:1px solid #2f5d6a;border-radius:11px;padding:14px 16px;margin:12px 0;white-space:pre-wrap;line-height:1.6;display:none}
+.answer.on{display:block}
+.answer .src{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.frow{display:flex;align-items:flex-start;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:7px}
+.frow .bd{flex:1;min-width:0}
+.frow .ttl{font-weight:600;cursor:pointer}.frow .ttl:hover{color:var(--accent)}
+.frow .sm{color:var(--dim);font-size:13px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.frow .mt{color:var(--dim);font-size:11px;margin-top:4px}
+.badge{flex:none;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.b-tw{background:#12303a;color:#7fd4ea}.b-rss{background:#2a2320;color:#e0b48a}.b-tg{background:#1c2740;color:#8fb2f0}.b-other{background:#232a38;color:#9aa6b8}
+.muted{color:var(--dim);padding:20px;text-align:center}
+</style>
+<div class="top"><h1>🔎 Поиск по базе знаний</h1><span>лексика + смысл (RRF)</span><span><a href="/lenta">🗂 Лента</a> · <a href="/dashboard">← дашборд</a></span></div>
+<div class="wrap">
+  <div class="qbar">
+    <input id="q" placeholder="что искать… напр. инференс LLM на Rust" autofocus>
+    <button class="go" id="go">Найти</button>
+    <button id="ans">💬 Ответить</button>
+  </div>
+  <div class="ftabs" id="ktabs"></div>
+  <div class="ftabs" id="ptabs"></div>
+  <div class="ftabs" id="stabs"></div>
+  <div class="answer" id="answer"></div>
+  <div id="results"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
+const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
+const KTABS=[['all','Все'],['it','💻 IT'],['business','💼 Business'],['medical','🩺 Medical'],['twitter','🐦 Twitter'],['watch','👁 Watch']];
+const PTABS=[[0,'Всё время'],[24,'Сутки'],[168,'Неделя'],[720,'Месяц']];
+const STABS=[[0,'Везде'],[1,'⭐ Сохранённое']];
+let kind='all',hours=0,saved=0;
+function chips(el,arr,cur,cb){el.innerHTML=arr.map(([k,l])=>`<span class="ftab ${k===cur?'on':''}" data-k="${k}">${esc(l)}</span>`).join('');[...el.children].forEach(c=>c.onclick=()=>cb(c.dataset.k));}
+function render(){
+  chips($('ktabs'),KTABS,kind,k=>{kind=k;render();search();});
+  chips($('ptabs'),PTABS,hours,k=>{hours=+k;render();search();});
+  chips($('stabs'),STABS,saved,k=>{saved=+k;render();search();});
+}
+function nm(it){return it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket||'');}
+async function search(){
+  const q=$('q').value.trim();if(!q){$('results').innerHTML='';return;}
+  $('results').innerHTML='<div class="muted">Ищу…</div>';
+  try{
+    const d=await(await fetch(`/search/api?q=${encodeURIComponent(q)}&kind=${kind}&hours=${hours}&saved=${saved?'true':'false'}&limit=40`)).json();
+    $('results').innerHTML=(d.items||[]).map(it=>{
+      const [bc,be]=BADGE[it.bucket]||BADGE.other;
+      const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
+      const u=safeUrl(it.url);
+      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''}>${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+    }).join('')||'<div class="muted">ничего не найдено</div>';
+  }catch(e){$('results').innerHTML='<div class="muted">ошибка поиска</div>';}
+}
+async function answer(){
+  const q=$('q').value.trim();if(!q)return;
+  const box=$('answer');box.className='answer on';box.innerHTML='<div class="src">думаю…</div>';
+  try{
+    const d=await(await fetch('/search/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})})).json();
+    const src=d.source==='wiki'?'из вики (⭐/👍)':'по ленте';
+    box.innerHTML=`<div class="src">💬 ответ · ${src} · ${d.n||0} источн.</div>${esc(d.answer||'мало данных по этому вопросу')}`;
+  }catch(e){box.innerHTML='<div class="src">ошибка</div>';}
+}
+$('go').onclick=search;$('ans').onclick=answer;
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
+render();
+</script>
+"""

@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     channel_verticals: str = Field(default="", alias="CHANNEL_VERTICALS")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     profile_refine_every: int = Field(default=10, alias="PROFILE_REFINE_EVERY")
+    # LLM-вика (сервис homyak-wiki): каталог markdown-страниц, компаундится из ⭐/👍.
+    # Смонтирован volume'ом → смотрится в Obsidian, рендерится на /search. lint_every_hours=0 = выкл.
+    wiki_dir: str = Field(default="/app/wiki", alias="WIKI_DIR")
+    wiki_lint_every_hours: int = Field(default=24, alias="WIKI_LINT_EVERY_HOURS")
     max_push_per_hour: int = Field(default=8, alias="MAX_PUSH_PER_HOUR")
     quiet_hours: str = Field(default="0-8", alias="QUIET_HOURS")  # локальные часы, "start-end"
 
