@@ -76,6 +76,10 @@ services:
       CACHE_TYPE: memory
       TWITTER_AUTH_TOKEN: ${TWITTER_AUTH_TOKEN:-}
       GITHUB_ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN:-}
+      # x.com напрямую с VM недостижим → гоним ТОЛЬКО twitter/x через gost-прокси (тот же :8118,
+      # что TELEGRAM_BOT_PROXY). GitHub и прочее — напрямую (PROXY_URL_REGEX ограничивает).
+      PROXY_URI: ${RSSHUB_PROXY:-http://192.168.140.20:8118}
+      PROXY_URL_REGEX: ".*(twitter|x)\\.com.*"
     restart: unless-stopped
 
   migrate:

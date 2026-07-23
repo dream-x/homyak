@@ -496,6 +496,19 @@ class NewsRepo:
                 )
             )
 
+    async def count_recent_by_feed_prefix(self, prefix: str, hours: int) -> int:
+        """Сколько записей с feed_name LIKE prefix% пришло за последние N часов (мониторинг мостов)."""
+        async with self._sf() as s:
+            return (
+                await s.scalar(
+                    sa.text(
+                        "select count(*) from news_items where feed_name like :p"
+                        " and fetched_at > now() - make_interval(hours => :h)"
+                    ),
+                    {"p": prefix + "%", "h": int(hours)},
+                )
+            ) or 0
+
     async def count_pushed_since(self, minutes: int) -> int:
         cutoff = func.now() - sa.literal(int(minutes)) * sa.text("interval '1 minute'")
         async with self._sf() as s:

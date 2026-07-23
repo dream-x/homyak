@@ -1020,6 +1020,34 @@ class AllowlistMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+TWITTER_STALE_HOURS = 6  # твиты со ~180 аккаунтов идут постоянно; тишина 6ч = мост/кука сломаны
+
+
+async def twitter_health_loop() -> None:
+    """Мониторинг куки/Twitter-моста: если tw_* молчат TWITTER_STALE_HOURS — алерт в личку.
+
+    Прямой сигнал «кука протухла» — отсутствие твитов: RSSHub при невалидном auth_token отдаёт
+    503 и в БД ничего не капает. Алерт разовый (до восстановления), чтобы не спамить.
+    """
+    alerted = False
+    while True:
+        await asyncio.sleep(3600)
+        with suppress(Exception):
+            fresh = await _repo.count_recent_by_feed_prefix("tw_", TWITTER_STALE_HOURS)
+            chat = await _repo.get_cursor(CHAT_KEY)
+            if fresh == 0 and not alerted and chat:
+                await _bot.send_message(
+                    int(chat),
+                    f"⚠️ Twitter-мост молчит ≥{TWITTER_STALE_HOURS}ч — вероятно протух "
+                    f"<code>TWITTER_AUTH_TOKEN</code> (auth_token cookie).\n\nОбнови куку в "
+                    f"<code>~/homyak/.env</code> и перезапусти:\n<code>docker compose up -d rsshub</code>",
+                )
+                alerted = True
+                log.warning("twitter_bridge_stale", hours=TWITTER_STALE_HOURS)
+            elif fresh > 0:
+                alerted = False  # мост ожил — сбрасываем, чтобы поймать следующий обрыв
+
+
 async def main_async() -> None:
     global _bus, _bot
     if not settings.telegram_bot_token:
@@ -1041,15 +1069,18 @@ async def main_async() -> None:
     await _bus.connect()
     push_task = asyncio.create_task(push_loop())
     suggest_task = asyncio.create_task(_bus.consume_profile_suggestion(handle_suggestion))
+    health_task = asyncio.create_task(twitter_health_loop())
     log.info("tgbot_started")
     try:
         await dp.start_polling(_bot)
     finally:
         push_task.cancel()
         suggest_task.cancel()
+        health_task.cancel()
         with suppress(asyncio.CancelledError):
             await push_task
             await suggest_task
+            await health_task
         await _bus.close()
         await _bot.session.close()
 
