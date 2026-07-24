@@ -105,14 +105,20 @@ async def search_api(
     hours: int = 0,
     saved: bool = False,
     limit: int = 40,
+    rerank: bool = True,
 ) -> dict:
-    """Гибридный поиск: q → ранжированный список записей (лексика+семантика, RRF, схлоп кластеров)."""
-    from homyak.core.search import hybrid_search
+    """Гибридный поиск: q → ранжированный список (лексика OR + семантика, RRF + бусты намерений),
+    затем LLM-переранжирование под точный смысл (rerank=false — быстрый режим без LLM)."""
+    from homyak.core import search as search_mod
 
-    items = await hybrid_search(
+    items = await search_mod.hybrid_search(
         q, kind=kind, hours=min(max(hours, 0), 8760), saved=saved, limit=min(max(limit, 1), 100)
     )
-    return {"q": q, "kind": kind, "hours": hours, "saved": saved, "items": items}
+    reranked = False
+    if rerank and len(items) > 1:
+        items = await search_mod.rerank(q, items)
+        reranked = True
+    return {"q": q, "kind": kind, "hours": hours, "saved": saved, "reranked": reranked, "items": items}
 
 
 class _AnswerIn(BaseModel):
