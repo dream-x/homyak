@@ -1069,3 +1069,93 @@ $('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
 render();
 </script>
 """
+
+
+# Браузер LLM-вики: концепты/сущности/источники + рендер markdown с кликабельными [[ссылками]].
+WIKI_PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>📚 Вика — Homyak</title>
+<style>
+:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.top{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.top h1{font-size:16px;margin:0}.top .st{color:var(--dim);font-size:13px}
+.top .nav{margin-left:auto;font-size:13px}
+.cols{display:flex;height:calc(100vh - 51px)}
+.side{width:320px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:6px;padding:10px;flex-wrap:wrap}
+.tab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 11px;font-size:13px;color:var(--dim);cursor:pointer;user-select:none}
+.tab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
+.filter{margin:0 10px 8px}.filter input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 11px;color:var(--txt);font-size:13px}
+.list{overflow:auto;flex:1;padding:0 6px 10px}
+.pill{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.pill:hover{background:var(--panel)}.pill.on{background:var(--panel2)}
+.pill .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill .n{color:var(--dim);font-size:11px;background:var(--panel2);border-radius:10px;padding:1px 7px;flex:none}
+.pill.on .n{background:var(--bg)}
+.main{flex:1;overflow:auto;padding:24px 30px;min-width:0}
+.main h2{margin:0 0 6px;font-size:22px}.main h3{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.6px;margin:18px 0 6px}
+.main p{margin:8px 0;color:#d3d8e0}.main ul{margin:6px 0;padding-left:18px}.main li{margin:5px 0}
+.main .date{color:var(--dim);font-size:12px}
+.wl{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:1px 7px;cursor:pointer;font-size:12px;white-space:nowrap}
+.wl:hover{border-color:var(--accent)}
+.muted{color:var(--dim);padding:20px}
+</style>
+<div class="top"><h1>📚 База знаний</h1><span class="st" id="st"></span><span class="nav"><a href="/search">🔎 Поиск</a> · <a href="/lenta">🗂 Лента</a> · <a href="/dashboard">← дашборд</a></span></div>
+<div class="cols">
+  <div class="side">
+    <div class="tabs" id="tabs"></div>
+    <div class="filter"><input id="q" placeholder="фильтр по названию…"></div>
+    <div class="list" id="list"><div class="muted">Загрузка…</div></div>
+  </div>
+  <div class="main" id="main"><div class="muted">Выбери страницу слева. Клик по [[ссылке]] — переход.</div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const KINDS=[['concepts','🧩 Концепты'],['entities','👤 Сущности'],['sources','📄 Источники']];
+let kind='concepts',pages=[],cur=null;
+async function loadStats(){try{const s=await(await fetch('/wiki/api/stats')).json();$('st').textContent=`${s.concepts} концептов · ${s.entities} сущностей · ${s.sources} источников`;}catch(e){}}
+function renderTabs(){$('tabs').innerHTML=KINDS.map(([k,l])=>`<span class="tab ${k===kind?'on':''}" data-k="${k}">${esc(l)}</span>`).join('');[...$('tabs').children].forEach(c=>c.onclick=()=>{kind=c.dataset.k;renderTabs();loadList();});}
+async function loadList(){$('list').innerHTML='<div class="muted">…</div>';try{
+  const d=await(await fetch('/wiki/api/list?kind='+kind)).json();pages=d.pages||[];renderList();
+}catch(e){$('list').innerHTML='<div class="muted">ошибка</div>';}}
+function renderList(){
+  const f=$('q').value.trim().toLowerCase();
+  const items=pages.filter(p=>!f||p.title.toLowerCase().includes(f));
+  $('list').innerHTML=items.map(p=>`<div class="pill ${cur&&cur.kind===kind&&cur.slug===p.slug?'on':''}" data-s="${esc(p.slug)}"><span class="t">${esc(p.title)}</span>${p.mentions>1?`<span class="n">${p.mentions}</span>`:''}</div>`).join('')||'<div class="muted">пусто</div>';
+  [...$('list').children].forEach(c=>{if(c.dataset.s)c.onclick=()=>openPage(kind,c.dataset.s);});
+}
+function mdRender(md){
+  const out=[];let inUl=false;
+  const wl=t=>esc(t).replace(/\[\[([a-z]+)\/([^\]]+)\]\]/g,(m,k,s)=>`<span class="wl" data-k="${k}" data-s="${esc(s)}">${esc(s.replace(/^[0-9]+-/,'').replace(/-/g,' ').slice(0,40))}</span>`);
+  const linkify=t=>t.replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+  (md||'').split('\n').forEach(line=>{
+    const l=line.trim();
+    if(l.startsWith('# ')){if(inUl){out.push('</ul>');inUl=false;}out.push('<h2>'+esc(l.slice(2))+'</h2>');return;}
+    if(l.startsWith('## ')){if(inUl){out.push('</ul>');inUl=false;}out.push('<h3>'+esc(l.slice(3))+'</h3>');return;}
+    if(l.startsWith('- ')){if(!inUl){out.push('<ul>');inUl=true;}
+      let b=l.slice(2);const dm=b.match(/^\[(\d{4}-\d{2}-\d{2})\]\s*/);let date='';
+      if(dm){date=`<span class="date">${dm[1]}</span> `;b=b.slice(dm[0].length);}
+      out.push('<li>'+date+linkify(wl(b))+'</li>');return;}
+    if(inUl){out.push('</ul>');inUl=false;}
+    if(l)out.push('<p>'+linkify(wl(l))+'</p>');
+  });
+  if(inUl)out.push('</ul>');
+  return out.join('');
+}
+async function openPage(k,slug){
+  cur={kind:k,slug};if(k!==kind){kind=k;renderTabs();loadList();}else renderList();
+  $('main').innerHTML='<div class="muted">…</div>';
+  try{const d=await(await fetch(`/wiki/api/page?kind=${k}&slug=${encodeURIComponent(slug)}`)).json();
+    $('main').innerHTML=mdRender(d.markdown);
+    [...$('main').querySelectorAll('.wl')].forEach(w=>w.onclick=()=>openPage(w.dataset.k,w.dataset.s));
+    $('main').scrollTop=0;
+  }catch(e){$('main').innerHTML='<div class="muted">не удалось открыть</div>';}
+}
+$('q').addEventListener('input',renderList);
+loadStats();renderTabs();loadList();
+</script>
+"""

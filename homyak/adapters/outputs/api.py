@@ -64,6 +64,40 @@ async def search_page() -> str:
     return dashboard.SEARCH_PAGE
 
 
+@app.get("/wiki", response_class=HTMLResponse)
+async def wiki_page() -> str:
+    """Браузер LLM-вики: концепты/сущности/источники, клик по [[ссылкам]]."""
+    return dashboard.WIKI_PAGE
+
+
+@app.get("/wiki/api/stats")
+async def wiki_stats() -> dict:
+    from homyak.core import wiki
+
+    return wiki.stats()
+
+
+@app.get("/wiki/api/list")
+async def wiki_list(kind: str = "concepts") -> dict:
+    from homyak.core import wiki
+
+    if kind not in wiki.KINDS:
+        raise HTTPException(status_code=400, detail="kind must be concepts|entities|sources")
+    return {"kind": kind, "pages": wiki.list_with_meta(kind)}
+
+
+@app.get("/wiki/api/page")
+async def wiki_get_page(kind: str, slug: str) -> dict:
+    from homyak.core import wiki
+
+    if kind not in wiki.KINDS:
+        raise HTTPException(status_code=400, detail="bad kind")
+    body = wiki.read_page(kind, slug)
+    if body is None:
+        raise HTTPException(status_code=404, detail="page not found")
+    return {"kind": kind, "slug": slug, "markdown": body}
+
+
 @app.get("/search/api")
 async def search_api(
     q: str,

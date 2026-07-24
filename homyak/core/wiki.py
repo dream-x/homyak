@@ -80,6 +80,25 @@ def stats() -> dict[str, int]:
     return {k: len(list_pages(k)) for k in KINDS}
 
 
+def page_meta(kind: str, slug: str) -> dict:
+    """Заголовок (первый '# ') + число упоминаний — для листинга в браузере вики."""
+    body = read_page(kind, slug) or ""
+    title = slug
+    for line in body.splitlines():
+        if line.startswith("# "):
+            title = line[2:].strip()
+            break
+    return {"slug": slug, "title": title, "mentions": body.count("\n- [")}
+
+
+def list_with_meta(kind: str) -> list[dict]:
+    """Страницы типа с заголовком/упоминаниями, по убыванию связности (самые связанные сверху)."""
+    return sorted(
+        (page_meta(kind, s) for s in list_pages(kind)),
+        key=lambda m: (-m["mentions"], m["title"].lower()),
+    )
+
+
 def run_lint() -> dict:
     """Детерминированный аудит: считает слабо-связанные концепт/сущность-страницы (одно упоминание)
     и пишет отчёт в lint.md. Без LLM — дёшево, можно гонять хоть каждый час."""
