@@ -369,8 +369,44 @@ Analyzer'ы выполняются последовательно в `processor`
 
 ---
 
+## Поиск (`/search` + бот `/find`)
+
+Гибридный retrieval по всему корпусу, `core/search.py`:
+- **Лексика** — полнотекст Postgres по persisted `search_tsv` (`websearch_to_tsquery('simple', …)`, GIN-индекс).
+- **Смысл** — запрос эмбеддится bge-m3, `search_similar` в Qdrant.
+- **Слияние** — Reciprocal Rank Fusion (`reciprocal_rank_fusion`, чистая/тестируемая) объединяет два ранга,
+  затем схлоп кластеров (одна история на кластер). Фильтры: вертикаль, период, только ⭐-сохранённое.
+
+Кнопка **Ответить** (`POST /search/answer`) сперва спрашивает вику (`wiki_query.answer_from_wiki`); если в вике
+пусто — фолбэк на RAG по ленте (`core/ask.py`).
+
+## LLM-вика (сервис `homyak-wiki`, `core/wiki*.py`)
+
+Адаптация «LLM Wiki» Карпатого (апр 2026): **не RAG** — вместо выемки сырых кусков на запрос LLM компилирует
+сохранённое в компаундящуюся связанную markdown-базу. Скоуп — курирование пользователя (⭐ save + 👍 like), а не
+firehose, поэтому база мала и плотна.
+
+- **Хранилище** — markdown-файлы в volume `./wiki` (смотрится в Obsidian): `concepts/`, `entities/`, `sources/`,
+  `index.md`, `log.md`, `lint.md`. `slugify` — чистая/тестируемая.
+- **Ingest** (`wiki_ingest.ingest_item`) — сервис консюмит `homyak.feedback.recorded` (durable `wiki`,
+  `signal in {up,save}`, `action=added`): пишет source-страницу, LLM извлекает концепты/сущности с однострочным
+  тейкэвеем, каждый мерджится в свою страницу датированным буллетом с `[[source]]` (идемпотентно по source-ref).
+  Best-effort: сбой LLM всё равно пишет source + log.
+- **Query** (`wiki_query.answer_from_wiki`) — читает *синтезированные* страницы, релевантные вопросу (по
+  совпадению слов; на масштабе вики эмбеддинги не нужны) → ответ LLM с цитатами.
+- **Lint** (`wiki.run_lint`, периодически `WIKI_LINT_EVERY_HOURS`) — детерминированный аудит слабо-связанных
+  страниц → `lint.md`.
+- **Backfill** — `homyak-wiki-backfill` строит вику из всей истории ⭐/👍 в таблице `feedback` (сервис в одиночку
+  видит только новый/сохранённый в JetStream фидбек).
+
+---
+
 ## Key decisions
 
+- **Вика — не RAG** — LLM компилирует ⭐/👍 в компаундящуюся markdown-базу; человек курирует, LLM ведёт
+  бухгалтерию. Firehose + гибридный поиск = дискавери; ⭐-вика = выжатый второй мозг.
+- **Гибридный поиск слит RRF** — лексика (FTS) ловит точные термины/имена, семантика (Qdrant) — смысл; RRF не
+  требует калибровки очков между дорожками.
 - **uv, не poetry** — скорость, single binary, современный resolver. `pyproject.toml` PEP 621, `uv.lock` в git.
 - **NATS JetStream, не Kafka/Redis** — минимум инфры, всё нужное есть, single binary.
 - **Postgres + Qdrant (не pgvector)** — заложились на рост и payload-фильтры Qdrant'а.
@@ -393,6 +429,9 @@ Analyzer'ы выполняются последовательно в `processor`
 | Consumer zombie | JetStream `AckWait=2m` возвращает сообщение другому инстансу. |
 | Дубль при ingest | `ON CONFLICT DO UPDATE`, publish только при `was_new=true`. |
 | Qdrant не соответствует PG | Backfill command: идёт по `news_items WHERE embedding_version < current`. |
+| LLM упал на ingest вики | best-effort — source-страница + log всё равно пишутся; извлечение концептов пропускается. |
+| Вика отстала от истории | `homyak-wiki-backfill` переигрывает все ⭐/👍 из таблицы `feedback` (идемпотентно). |
+| Twitter-мост молчит ≥6ч | Бот шлёт разовый алерт — вероятно протух `TWITTER_AUTH_TOKEN` (x.com через прокси, кука в `.env`). |
 
 ---
 

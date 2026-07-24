@@ -232,6 +232,7 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
 | Qdrant out of sync with PG | `homyak-reembed` re-embeds `WHERE embedding_version < current`. |
 | Wiki LLM down on ingest | best-effort — source page + log still written; concept/entity extraction skipped. |
 | Wiki behind on history | `homyak-wiki-backfill` replays all ⭐/👍 from the `feedback` table (idempotent). |
+| Twitter bridge silent ≥6h | bot sends a one-off alert — `TWITTER_AUTH_TOKEN` likely expired (x.com via proxy, cookie in `.env`). |
 
 ---
 

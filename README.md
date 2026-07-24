@@ -2,10 +2,11 @@
 
 # 🐹 Homyak
 
-**A personal news aggregator with AI ranking tuned to your interests**
+**A personal news aggregator with AI ranking — and a knowledge base that builds itself**
 
-Pulls heterogeneous sources into one deduplicated feed, scores every story with an LLM judge
-against your profile, and learns from your 👍/👎 — right inside Telegram.
+Pulls dozens of heterogeneous sources into one deduplicated feed, scores every story with an LLM judge
+against your profile, learns from your 👍/👎 in Telegram — and compounds what you save into a self-maintaining
+**LLM wiki** you can search and ask.
 
 **English** · [Русский](README.ru.md)
 
@@ -23,13 +24,14 @@ against your profile, and learns from your 👍/👎 — right inside Telegram.
 
 ## ✨ What it is
 
-Homyak turns the noise of dozens of RSS feeds and Telegram channels into a **personal feed** where what
-matters to *you* floats to the top. Three independent topic verticals, local LLMs, real-time learning, and
-a full-text article reader right in Telegram.
+Homyak turns the noise of dozens of RSS feeds, GitHub, Twitter/X and Telegram channels into a **personal feed**
+where what matters to *you* floats to the top — then lets you **search** everything it ever collected and grows
+a **compounding knowledge base** from the stories you keep.
 
-Two architectural pillars:
-- 🔌 **Plugin adapter system** — `sources` / `analyzers` / `outputs`. The core knows nothing about specifics.
+Three architectural pillars:
+- 🔌 **Plugin adapters** — `sources` / `analyzers` / `outputs`. The core knows nothing about specifics.
 - ⚡ **Event-driven on NATS JetStream** — near-realtime, no DB polling, no Kafka.
+- 🧠 **Local LLMs end to end** — tagging, judging, summarizing, the wiki — all on your own Ollama.
 
 ---
 
@@ -40,12 +42,15 @@ Two architectural pillars:
 | 🧠 **Hybrid personal ranker** | `personal_score = LLM judge + taste vector + tag/source affinity + freshness − hard-mute` |
 | 💼💻🩺 **3 independent verticals** | business / it / medical — each with its own profile, learning and feed |
 | 👍👎 **Learning from feedback** | reactions in the bot shift weights and the taste vector; each vertical learns separately |
-| 📰 **Full article text** | fetcher (trafilatura) downloads the article by URL even when RSS gives a stub |
-| 📄 **In-Telegram reader** | button → the article opens in a native Instant View (Telegraph) |
-| ✍️ **Engineer-grade summaries** | “what it is + what you'll take away”, senior-engineer voice, in the original language |
-| 🔀 **Semantic dedup** | the same story from RSS and Telegram merges into one cluster by embeddings |
+| 🔎 **Hybrid search** | `/search` + bot `/find` — Postgres FTS × Qdrant vectors fused by RRF, cluster-collapsed |
+| 📚 **Self-building LLM wiki** | ⭐/👍 compound into an interlinked markdown knowledge base (Karpathy-style), Obsidian-viewable |
+| 💬 **Ask your feed** | `/ask` and the search **Answer** button synthesize grounded digests with citations |
+| 🐙 **GitHub discovery** | trending, topic search, and *who publishes / stars what* — right in the IT feed |
+| 🔀 **Semantic dedup** | the same story from RSS, GitHub, Twitter and Telegram merges into one cluster |
+| ✍️ **Engineer-grade summaries** | technical voice, hard-locked to the article's language (RU→RU, else EN) |
+| 🏷 **Auto titles** | sourceless posts (Telegram, tweets, bare links) get an LLM-written headline |
 | 🤖 **Auto profile refinement** | every N reactions the bot proposes a profile tweak (with confirmation) |
-| 🐳 **One command** | the whole stack in Podman: `podman compose up -d` |
+| 🐳 **One command** | the whole stack in Podman/Docker compose |
 
 ---
 
@@ -54,68 +59,109 @@ Two architectural pillars:
 ```mermaid
 flowchart LR
     subgraph SRC["📥 Sources"]
-      RSS["RSS · 37 feeds"]
+      RSS["RSS · HN · Lobsters"]
+      GH["GitHub · RSSHub"]
+      TW["Twitter/X · RSSHub"]
       TG["Telegram · tscrapper"]
-      MF["Miniflux"]
     end
-    SRC -->|"NATS<br/>items.ingested"| PROC["⚙️ processor<br/>9 stages"]
-    PROC -->|"personal_score"| PG[("🗄 Postgres")]
-    PROC -->|"embeddings"| QD[("🧭 Qdrant")]
+    SRC -->|"NATS<br/>items.ingested"| PROC["⚙️ processor<br/>pipeline"]
+    PROC --> PG[("🗄 Postgres<br/>+ FTS")]
+    PROC --> QD[("🧭 Qdrant")]
     PROC -->|"items.processed"| BOT["🤖 Telegram bot"]
-    BOT -->|"👍/👎 · feedback"| LRN["🎓 learner"]
+    PROC --> CH["📣 Channel"]
+    BOT -->|"👍/⭐<br/>feedback"| LRN["🎓 learner"]
+    BOT -->|"⭐/👍"| WIKI["📚 wiki service"]
     LRN -->|"taste + weights"| PG
-    OLL["🧠 Ollama (host)<br/>bge-m3 · qwen2.5 · gpt-oss/gemma4"] -.-> PROC
-    PG --> OUT["REST · RSS · JSON · SSE · CLI"]
+    WIKI -->|"markdown"| WK[["🧠 LLM Wiki<br/>(Obsidian)"]]
+    PG --> SEARCH["🔎 /search · /find<br/>FTS × vectors (RRF)"]
+    QD --> SEARCH
+    OLL["🧠 Ollama · bge-m3 · Qwen3"] -.-> PROC
+    OLL -.-> WIKI
+    OLL -.-> SEARCH
 ```
 
-The internal bus is **NATS JetStream** (subjects: `items.*`, `feedback.recorded`, `telegram.raw`,
-`profile.suggestion`). Ollama runs on the host (Metal); containers reach it via `host.containers.internal`.
+Internal bus: **NATS JetStream** (`items.*`, `feedback.recorded`, `telegram.raw`, `profile.suggestion`).
+LLMs run on Ollama (a GPU box, with a local Metal fallback). Full architecture: [`docs/architecture.md`](docs/architecture.md).
 
 ---
 
-## 🧠 Processing pipeline (9 stages)
+## 🧠 Processing pipeline
 
 ```mermaid
 flowchart LR
-    A["0 · article_fetch<br/>full text"] --> B["1 · url_dedup"]
-    B --> C["2 · embedder<br/>bge-m3"] --> D["3 · similarity_dedup"]
-    D --> E["4 · llm_tagger<br/>tags + vertical"] --> F["5 · llm_summarizer<br/>gpt-oss/gemma4"]
-    F --> G["6 · scorer"] --> H["7 · llm_relevance<br/>judge vs profile"]
-    H --> I["8 · personalizer<br/>personal_score"]
+    A["article_fetch<br/>full text"] --> B["url_dedup"]
+    B --> C["embedder<br/>bge-m3"] --> D["similarity_dedup"]
+    D --> P["prefilter<br/>noise gate"] --> T["title_gen<br/>LLM headline"]
+    T --> E["llm_tagger<br/>tags + vertical"] --> F["llm_summarizer"]
+    F --> G["scorer"] --> H["llm_relevance<br/>judge vs profile"]
+    H --> I["personalizer<br/>personal_score"]
 ```
 
-Analyzers mutate a shared `AnalyzerContext`; the expensive `llm_relevance` is cached by profile version,
-lightweight components are recomputed on read. On failure — `nak` + exponential backoff, circuit breaker on Ollama.
+Analyzers mutate a shared `AnalyzerContext`, ordered by `stage`. The expensive `llm_relevance` is cached by
+profile version; lightweight components recompute on read. On failure — `nak` + exponential backoff, circuit
+breaker on Ollama.
+
+---
+
+## 🔎 Search & 📚 the LLM Wiki
+
+Two layers over everything Homyak has ever ingested:
+
+**Hybrid search** (`/search` page + bot `/find`) fuses two retrievers so you find things by exact term *and* by
+meaning:
+- **Lexical** — Postgres full-text on a persisted `tsvector` (names, acronyms, exact phrases).
+- **Semantic** — the query embedded with bge-m3, nearest neighbours in Qdrant.
+- **Fusion** — Reciprocal Rank Fusion merges the two ranks (no score calibration needed), then collapses
+  clusters so one story shows once. Filter by vertical, period, or ⭐-saved-only.
+
+**The LLM Wiki** (`homyak-wiki` service) is an adaptation of [Karpathy's LLM Wiki](https://x.com/karpathy) — and
+it is **not RAG**. Instead of retrieving raw fragments per query, an LLM compiles the items you **⭐ save / 👍
+like** into a compounding, interlinked markdown base:
+
+```
+wiki/
+  concepts/   ideas, technologies, frameworks
+  entities/   people, companies, tools
+  sources/    one page per saved item
+  index.md · log.md · lint.md
+```
+
+Every save triggers **ingest**: the LLM extracts concepts & entities, merges each into its page as a dated
+bullet with a `[[wikilink]]` back to the source (idempotent). **Query** reads the *synthesized* pages (not the
+raw firehose) to answer with citations — that's what the search **Answer** button calls first, falling back to
+feed RAG. A periodic **lint** flags weakly-linked pages. The `./wiki` folder is a plain Obsidian vault.
+
+> Firehose + search = discovery. The ⭐-wiki = your distilled second brain.
 
 ---
 
 ## 📊 Three verticals
 
-The feed is split into **3 independent topics** — a like in IT doesn't affect medical.
+The feed is split into **3 independent topics** — a like in IT never touches medical.
 
 | Vertical | Audience | Sources |
 |---|---|---|
-| 💼 **Business** | traders/founders — markets, macro, “where the world is heading” | WSJ, Economist, MarketWatch, NYT, SeekingAlpha… |
-| 💻 **IT** | engineers — languages, systems, AI/ML, infra | HN, arXiv, HuggingFace, lobsters, The Register… |
+| 💼 **Business** | traders/founders — markets, macro, "where the world is heading" | WSJ, Economist, MarketWatch, NYT, SeekingAlpha… |
+| 💻 **IT** | engineers — languages, systems, AI/ML, infra, GitHub projects | HN, Lobsters, GitHub, HuggingFace, The Register… |
 | 🩺 **Medical** | clinicians — clinical, pharma, biotech | STAT, Lancet, Nature Medicine, Fierce, WHO… |
 
-The vertical is decided by the **LLM tagger from content** (not by source). Each has its own profile
-(the `verticals` section of `config/interests.yaml`), its own taste vector and its own learning.
+The vertical is decided by the **LLM tagger from content** (not the source). Each has its own profile
+(`verticals` in `config/interests.yaml`), its own taste vector and its own learning.
 
 ---
 
 ## 🔄 How it learns
 
 ```
-push story matching profile  →  👍/👎/⭐/🔇 in the bot  →  learner:
-   👍 → tag/source ↑, embedding into the "taste vector"
-   👎 → tag/source ↓
-   🔇 → topic muted (hard filter)
+push story matching profile  →  👍/👎/⭐/🔇 in the bot  →
+   👍/⭐  → tag/source affinity ↑, embedding into the "taste vector", page in the wiki
+   👎     → tag/source affinity ↓
+   🔇     → topic muted (hard filter)
 every N reactions → LLM proposes a profile refinement (✅/❌)
 ```
 
-`tag_affinity` and `source_affinity` are EMA in `[-1..1]`; the taste vector is an incremental centroid of
-likes (reversible on toggle). Cold-start: the text profile works from day one, taste weight ramps up with likes.
+`tag_affinity`/`source_affinity` are EMA in `[-1..1]`; the taste vector is an incremental centroid of likes
+(reversible on toggle). Cold-start: the text profile works from day one, taste weight ramps up with likes.
 
 ---
 
@@ -125,39 +171,40 @@ likes (reversible on toggle). Cold-start: the text profile works from day one, t
 |---|---|
 | Language / packaging | Python 3.13, **uv** |
 | Web / ORM | FastAPI, SQLAlchemy 2.x (async), Alembic, asyncpg |
-| Storage | Postgres 17 (metadata + FTS), Qdrant (1024-dim vectors) |
+| Storage | Postgres 17 (metadata + full-text), Qdrant (1024-dim vectors) |
 | Bus | NATS 2.10 + JetStream |
-| LLM (Ollama, host) | `bge-m3` (embeddings), `qwen2.5:14b` (judge/tags), `gpt-oss:120b-cloud` → `gemma4` (summaries) |
+| LLM (Ollama) | `bge-m3` (embeddings), **Qwen3** (judge / tags / summaries / wiki) with a local fallback |
+| Bridges | **RSSHub** (GitHub, Twitter/X), tscrapper (Telegram) |
 | Extraction | feedparser, trafilatura, httpx |
 | Bot | aiogram 3.x + Telegraph |
-| Deploy | Dockerfile + Podman compose |
+| Deploy | Dockerfile + compose (Podman / Docker) |
 
 ---
 
 ## 🚀 Quick start
 
-**Requires:** Podman (`podman compose`), Ollama on the host with models.
+**Requires:** Podman or Docker (`compose`), an Ollama reachable with the models pulled.
 
 ```bash
-# 1. Ollama models (on the host — Metal acceleration)
+# 1. Ollama models
 ollama pull bge-m3
-ollama pull qwen2.5:14b
-ollama pull gemma4          # summary fallback
+ollama pull qwen3            # judge / tags / summaries / wiki (any capable Qwen3)
 
 # 2. secrets
 cp .env.example .env
-#   set TELEGRAM_BOT_TOKEN (from @BotFather)
+#   set TELEGRAM_BOT_TOKEN (from @BotFather), OLLAMA_URL
+#   optional: GITHUB_ACCESS_TOKEN (GitHub trending), TWITTER_AUTH_TOKEN (Twitter/X)
 
 # 3. the whole stack in one command
-podman compose up -d        # postgres, qdrant, nats + 7 app services
+podman compose up -d         # postgres, qdrant, nats + app services + RSSHub
 
 # 4. vertical profiles
 podman compose run --rm api homyak-interests apply
 
-# 5. in Telegram → /start → /business /it /medical
+# 5. in Telegram → /start → /it /business /medical
 ```
 
-`config/` is mounted as a volume — source/profile edits are picked up without rebuilding.
+`config/` and `./wiki` are mounted as volumes — source/profile edits and the wiki are live, no rebuild.
 
 ---
 
@@ -165,33 +212,35 @@ podman compose run --rm api homyak-interests apply
 
 | Command | Action |
 |---|---|
-| `/business` `/it` `/medical` | vertical feed (top matches for your profile) |
+| `/it` `/business` `/medical` | vertical feed (top matches for your profile) |
+| `/find <query>` | hybrid search over everything collected |
+| `/ask <question>` | grounded digest synthesized from the feed |
 | `/digest [N]` | top across all verticals |
-| `/profile` | my 3 profiles |
-| `/stats` | learning stats (👍/👎, taste) |
-| `/why <id>` | score breakdown for a story |
+| `/profile` · `/stats` · `/why <id>` | profiles / learning stats / score breakdown |
 | `/sources` · `/source <feed>` | sources / one feed's stream |
-| `/mute <topic>` · `/threshold` · `/pause` | mute / push threshold / pause |
+| `/mute <topic>` · `/threshold` · `/pushonly` · `/pause` | mute / push threshold / scope / pause |
 
-Under each post: **👍 👎 ⭐ 🔇 · 📄 text · 🔗** — reactions train the ranker, 📄 opens the reader.
+Under each post: **👍 👎 ⭐ 🔇 · 📝 Разбор · 🔗** — reactions train the ranker *and* feed the wiki.
+Web surfaces: **`/lenta`** (feed + reactions), **`/search`** (hybrid search + Answer), **`/dashboard`** (live pipeline).
 
 ---
 
 ## ⚙️ Configuration
 
-- **Sources** — `config/sources.yaml` (RSS: url, interval, weight; Miniflux).
+- **Sources** — `config/sources.yaml` (RSS/GitHub/Twitter: url, interval, weight). GitHub & Twitter go through
+  a self-hosted **RSSHub**.
 - **What I like** — `config/interests.yaml`, the SINGLE place: `verticals` (description + topics with
-  polarity: love/like/mute), `watch` (trending topics), `weights` (blend weights, push threshold, gate).
-  Apply with `homyak-interests apply` (the profile is versioned in the DB); `diff` shows file/DB drift.
-  Learned state (👍/👎 → affinity, 🔇 mutes) lives in the DB and never writes back — the wall is one-way.
-- **Secrets** — `.env` only (never committed): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, scoring weights, thresholds.
+  polarity love/like/mute), `watch` (trending topics), `weights` (blend, push threshold, gate). Apply with
+  `homyak-interests apply` (versioned in the DB); `diff` shows file/DB drift. Learned state (👍/👎 → affinity,
+  🔇 mutes) lives in the DB and never writes back — the wall is one-way.
+- **Secrets** — `.env` only (never committed): `TELEGRAM_BOT_TOKEN`, `OLLAMA_URL`, `DATABASE_URL`,
+  `GITHUB_ACCESS_TOKEN`, `TWITTER_AUTH_TOKEN`, scoring weights, thresholds.
 
 ### 📡 Telegram via tscrapper
 
-Telegram channels come from **[tscrapper](https://github.com/maks/tscrapper)** — a *separate service*
-(Telethon, its own Telegram session) that monitors ~50 channels. It was extended to publish every message to
-NATS (`homyak.telegram.raw`, best-effort, without breaking its forwarding); Homyak's `telegram-ingest`
-consumes it → the normal pipeline. tscrapper runs on the host and reaches the containerized NATS on `:4222`.
+Telegram channels come from **tscrapper** — a *separate service* (Telethon, its own session) that monitors
+~50 channels and publishes every message to NATS (`homyak.telegram.raw`, best-effort); Homyak's
+`telegram-ingest` consumes it → the normal pipeline.
 
 ---
 
@@ -199,15 +248,18 @@ consumes it → the normal pipeline. tscrapper runs on the host and reaches the 
 
 | Service | Role |
 |---|---|
-| `ingest-poll` | poll RSS/Miniflux on a schedule |
+| `ingest-poll` | poll RSS / GitHub / Twitter (via RSSHub) on a schedule |
 | `telegram-ingest` | consume Telegram messages from NATS (tscrapper) |
-| `processor` | the 9-stage processing pipeline |
+| `processor` | the analyzer pipeline (dedup → title → tag → summarize → judge → personalize) |
 | `learner` | learning from feedback + auto profile refinement |
+| `wiki` | compound the LLM wiki from ⭐/👍 |
 | `sweeper` | re-publish stuck items |
-| `tgbot` | Telegram bot (push, reactions, commands) |
-| `api` | FastAPI: `/feed`, `/feed.rss`, `/feed.json`, `/feed/stream` (SSE), `/healthz` |
+| `tgbot` | Telegram bot (push, reactions, commands, search) |
+| `api` | FastAPI: `/feed*`, `/lenta`, `/search`, `/ask`, `/dashboard`, SSE |
+| `rsshub` | RSS bridge for GitHub & Twitter/X |
 
-CLI: `homyak-cli` (feed in the terminal), `homyak-interests` (show/diff/apply/backfill), `homyak-reembed`.
+CLI: `homyak-cli` · `homyak-interests` (show/diff/apply/backfill) · `homyak-reembed` ·
+`homyak-backfill-titles` · `homyak-resummarize` · `homyak-wiki-backfill`.
 
 ---
 
@@ -215,17 +267,18 @@ CLI: `homyak-cli` (feed in the terminal), `homyak-interests` (show/diff/apply/ba
 
 ```
 homyak/
-  core/        interfaces · events (NATS) · config · scoring · llm · article · telegraph · verticals
+  core/        interfaces · events (NATS) · config · scoring · llm · search · wiki* · titles · ask
   storage/     postgres (repo) · qdrant · db
   adapters/
     sources/   rss · miniflux · telegram_relay
-    analyzers/ article_fetch · url_dedup · embedder · similarity_dedup ·
-               llm_tagger · llm_summarizer · scorer · llm_relevance · personalizer
-    outputs/   api · tg_bot · cli · rss_out · json_feed · sse
-  pipeline/    ingest_poll · telegram_ingest · processor · learner · sweeper · serve
-  cli/         reembed · interests
-alembic/       migrations 0001–0007
+    analyzers/ article_fetch · url_dedup · embedder · similarity_dedup · prefilter ·
+               title_gen · llm_tagger · llm_summarizer · scorer · llm_relevance · personalizer
+    outputs/   api · tg_bot · dashboard · cli · rss_out · json_feed · sse
+  pipeline/    ingest_poll · telegram_ingest · processor · learner · sweeper · wiki · serve
+  cli/         reembed · interests · backfill_titles · resummarize · wiki_backfill
+alembic/       migrations
 config/        sources.yaml · interests.yaml
+wiki/          the LLM wiki (Obsidian vault, generated)
 docs/          architecture.md · phase-*.md
 ```
 
@@ -233,7 +286,7 @@ docs/          architecture.md · phase-*.md
 
 ## 📚 Documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — architecture, DB schema, pipeline, verticals, failure modes
+- [`docs/architecture.md`](docs/architecture.md) — architecture, DB schema, pipeline, search, wiki, failure modes, key decisions
 - [`docs/phase-1-skeleton.md`](docs/phase-1-skeleton.md) … [`docs/phase-6-personalization.md`](docs/phase-6-personalization.md) — phase plans
 - [`CLAUDE.md`](CLAUDE.md) — conventions and dev run
 
