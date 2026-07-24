@@ -193,20 +193,20 @@ rss:
   - {name: tw_livesquawk, url: "http://rsshub:1200/twitter/user/LiveSquawk", category: business, interval_seconds: 7200, weight: 0.4}
   - {name: tw_financialjuice, url: "http://rsshub:1200/twitter/user/financialjuice", category: business, interval_seconds: 7200, weight: 0.4}
   # --- it: 15 hot(30m) + 62 people(120m) + 103 wires(2h) ---
-  - {name: tw_karpathy, url: "http://rsshub:1200/twitter/user/karpathy", category: tech, interval_seconds: 1800, weight: 1.0}
-  - {name: tw_simonw, url: "http://rsshub:1200/twitter/user/simonw", category: tech, interval_seconds: 1800, weight: 1.0}
+  - {name: tw_karpathy, url: "http://rsshub:1200/twitter/user/karpathy", category: tech, interval_seconds: 600, weight: 1.0}
+  - {name: tw_simonw, url: "http://rsshub:1200/twitter/user/simonw", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_sama, url: "http://rsshub:1200/twitter/user/sama", category: tech, interval_seconds: 1800, weight: 1.0}
-  - {name: tw_id_aa_carmack, url: "http://rsshub:1200/twitter/user/ID_AA_Carmack", category: tech, interval_seconds: 7200, weight: 1.0}
+  - {name: tw_id_aa_carmack, url: "http://rsshub:1200/twitter/user/ID_AA_Carmack", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_gergelyorosz, url: "http://rsshub:1200/twitter/user/GergelyOrosz", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_dan_abramov, url: "http://rsshub:1200/twitter/user/dan_abramov", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_addyosmani, url: "http://rsshub:1200/twitter/user/addyosmani", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_mitchellh, url: "http://rsshub:1200/twitter/user/mitchellh", category: tech, interval_seconds: 7200, weight: 1.0}
+  - {name: tw_mitchellh, url: "http://rsshub:1200/twitter/user/mitchellh", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_dhh, url: "http://rsshub:1200/twitter/user/dhh", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_kelseyhightower, url: "http://rsshub:1200/twitter/user/kelseyhightower", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_jessfraz, url: "http://rsshub:1200/twitter/user/jessfraz", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_b0rk, url: "http://rsshub:1200/twitter/user/b0rk", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_antirez, url: "http://rsshub:1200/twitter/user/antirez", category: tech, interval_seconds: 1800, weight: 1.0}
-  - {name: tw_theprimeagen, url: "http://rsshub:1200/twitter/user/ThePrimeagen", category: tech, interval_seconds: 1800, weight: 1.0}
+  - {name: tw_jessfraz, url: "http://rsshub:1200/twitter/user/jessfraz", category: tech, interval_seconds: 600, weight: 1.0}
+  - {name: tw_b0rk, url: "http://rsshub:1200/twitter/user/b0rk", category: tech, interval_seconds: 600, weight: 1.0}
+  - {name: tw_antirez, url: "http://rsshub:1200/twitter/user/antirez", category: tech, interval_seconds: 600, weight: 1.0}
+  - {name: tw_theprimeagen, url: "http://rsshub:1200/twitter/user/ThePrimeagen", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_t3dotgg, url: "http://rsshub:1200/twitter/user/t3dotgg", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_fireship_dev, url: "http://rsshub:1200/twitter/user/fireship_dev", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_swyx, url: "http://rsshub:1200/twitter/user/swyx", category: tech, interval_seconds: 1800, weight: 1.0}
@@ -219,11 +219,11 @@ rss:
   - {name: tw_mkennedy, url: "http://rsshub:1200/twitter/user/mkennedy", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_jakevdp, url: "http://rsshub:1200/twitter/user/jakevdp", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_wesmckinn, url: "http://rsshub:1200/twitter/user/wesmckinn", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_fchollet, url: "http://rsshub:1200/twitter/user/fchollet", category: tech, interval_seconds: 1800, weight: 1.0}
-  - {name: tw_ylecun, url: "http://rsshub:1200/twitter/user/ylecun", category: tech, interval_seconds: 1800, weight: 1.0}
+  - {name: tw_fchollet, url: "http://rsshub:1200/twitter/user/fchollet", category: tech, interval_seconds: 600, weight: 1.0}
+  - {name: tw_ylecun, url: "http://rsshub:1200/twitter/user/ylecun", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_andrewyng, url: "http://rsshub:1200/twitter/user/AndrewYNg", category: tech, interval_seconds: 1800, weight: 1.0}
   - {name: tw_hardmaru, url: "http://rsshub:1200/twitter/user/hardmaru", category: tech, interval_seconds: 1800, weight: 1.0}
-  - {name: tw_jeremyphoward, url: "http://rsshub:1200/twitter/user/jeremyphoward", category: tech, interval_seconds: 1800, weight: 1.0}
+  - {name: tw_jeremyphoward, url: "http://rsshub:1200/twitter/user/jeremyphoward", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_rasbt, url: "http://rsshub:1200/twitter/user/rasbt", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw__akhaliq, url: "http://rsshub:1200/twitter/user/_akhaliq", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_osanseviero, url: "http://rsshub:1200/twitter/user/osanseviero", category: tech, interval_seconds: 7200, weight: 1.0}
@@ -233,7 +233,7 @@ rss:
   - {name: tw_naval, url: "http://rsshub:1200/twitter/user/naval", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_balajis, url: "http://rsshub:1200/twitter/user/balajis", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_cdixon, url: "http://rsshub:1200/twitter/user/cdixon", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_gdb, url: "http://rsshub:1200/twitter/user/gdb", category: tech, interval_seconds: 1800, weight: 1.0}
+  - {name: tw_gdb, url: "http://rsshub:1200/twitter/user/gdb", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_drfeifei, url: "http://rsshub:1200/twitter/user/drfeifei", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_demishassabis, url: "http://rsshub:1200/twitter/user/demishassabis", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_jackclarksf, url: "http://rsshub:1200/twitter/user/jackclarkSF", category: tech, interval_seconds: 7200, weight: 1.0}
@@ -262,11 +262,11 @@ rss:
   - {name: tw_brendangregg, url: "http://rsshub:1200/twitter/user/brendangregg", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_nixcraft, url: "http://rsshub:1200/twitter/user/nixcraft", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_emollick, url: "http://rsshub:1200/twitter/user/emollick", category: tech, interval_seconds: 1800, weight: 1.0}
-  - {name: tw_drjimfan, url: "http://rsshub:1200/twitter/user/DrJimFan", category: tech, interval_seconds: 1800, weight: 1.0}
+  - {name: tw_drjimfan, url: "http://rsshub:1200/twitter/user/DrJimFan", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_goodside, url: "http://rsshub:1200/twitter/user/goodside", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_giffmana, url: "http://rsshub:1200/twitter/user/giffmana", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw__jasonwei, url: "http://rsshub:1200/twitter/user/_jasonwei", category: tech, interval_seconds: 7200, weight: 1.0}
-  - {name: tw_soumithchintala, url: "http://rsshub:1200/twitter/user/soumithchintala", category: tech, interval_seconds: 7200, weight: 1.0}
+  - {name: tw_soumithchintala, url: "http://rsshub:1200/twitter/user/soumithchintala", category: tech, interval_seconds: 600, weight: 1.0}
   - {name: tw_amanrsanger, url: "http://rsshub:1200/twitter/user/amanrsanger", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_mckaywrigley, url: "http://rsshub:1200/twitter/user/mckaywrigley", category: tech, interval_seconds: 7200, weight: 1.0}
   - {name: tw_oriolvinyalsml, url: "http://rsshub:1200/twitter/user/OriolVinyalsML", category: tech, interval_seconds: 7200, weight: 1.0}
