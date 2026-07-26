@@ -250,17 +250,20 @@ _VEMOJI = {"business": "💼", "it": "💻", "medical": "🩺"}
 
 
 def _digest_text(res: dict, label: str) -> str:
-    parts = [f"📰 <b>Дайджест: {label}</b> · {res['n']} историй"]
-    if res.get("intro"):
-        parts.append("\n" + _md_html(res["intro"]))
-    parts.append("")
+    parts = [f"📰 <b>Дайджест: {label}</b> · {res['n']} историй — от самого главного\n"]
     for i, it in enumerate(res["items"], 1):
         sc = f"{round(it['score'] * 100)}%" if it.get("score") is not None else "—"
         ve = _VEMOJI.get(it.get("vertical") or "", "•")
         title = _esc(it.get("title") or "—")
         url = it.get("url")
-        head = f'<a href="{_esc(url)}">{title}</a>' if url else title
-        parts.append(f"{i}. 🎯{sc} {ve} {head}")
+        head = f'<a href="{_esc(url)}">{title}</a>' if url else f"<b>{title}</b>"
+        line = f"{i}. 🎯{sc} {ve} {head}"
+        tags = hashtags(it.get("tags"))
+        if tags:
+            line += f"\n     <i>{tags}</i>"
+        parts.append(line)
+    if res.get("intro"):
+        parts.append("\n———\n" + _md_html(res["intro"]))
     return "\n".join(parts)
 
 

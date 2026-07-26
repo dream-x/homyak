@@ -24,7 +24,7 @@ async def top_of_period(hours: int, limit: int = 12) -> list[dict]:
             await s.execute(
                 text(
                     "select id, title, source_type, feed_name, vertical, personal_score, summary, url,"
-                    " cluster_id,"
+                    " cluster_id, tags,"
                     " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     " from news_items"
                     " where processed_at is not null and skip_reason is null"
@@ -52,6 +52,7 @@ async def top_of_period(hours: int, limit: int = 12) -> list[dict]:
                 "score": r.personal_score,
                 "summary": (r.summary or "")[:200] or None,
                 "url": r.url,
+                "tags": list(r.tags or [])[:4],
                 "age_s": r.age_s,
             }
         )
