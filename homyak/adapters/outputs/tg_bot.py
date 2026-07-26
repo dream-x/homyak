@@ -98,6 +98,8 @@ BOT_COMMANDS = [
     BotCommand(command="twitter", description="🐦 Только твиттер (все аккаунты)"),
     BotCommand(command="profile", description="👤 Мои профили (3 вертикали)"),
     BotCommand(command="stats", description="📊 Статистика обучения"),
+    BotCommand(command="day", description="📰 Дайджест дня (самое интересное за 24ч)"),
+    BotCommand(command="week", description="🗓 Дайджест за 7 дней"),
     BotCommand(command="ask", description="🧭 Выжимка по ленте: /ask <вопрос>"),
     BotCommand(command="find", description="🔎 Найти в базе: /find <запрос>"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
@@ -239,6 +241,88 @@ async def _send_digest(m: Message, n: int = 10) -> None:
 async def cmd_digest(m: Message, command: CommandObject) -> None:
     n = int(command.args) if command.args and command.args.strip().isdigit() else 10
     await _send_digest(m, n)
+
+
+# --- дайджест «самого интересного за период» (день/неделя) ---
+
+WEEKLY_KEY = "tgbot:last_weekly"
+_VEMOJI = {"business": "💼", "it": "💻", "medical": "🩺"}
+
+
+def _digest_text(res: dict, label: str) -> str:
+    parts = [f"📰 <b>Дайджест: {label}</b> · {res['n']} историй"]
+    if res.get("intro"):
+        parts.append("\n" + _md_html(res["intro"]))
+    parts.append("")
+    for i, it in enumerate(res["items"], 1):
+        sc = f"{round(it['score'] * 100)}%" if it.get("score") is not None else "—"
+        ve = _VEMOJI.get(it.get("vertical") or "", "•")
+        title = _esc(it.get("title") or "—")
+        url = it.get("url")
+        head = f'<a href="{_esc(url)}">{title}</a>' if url else title
+        parts.append(f"{i}. 🎯{sc} {ve} {head}")
+    return "\n".join(parts)
+
+
+def _digest_kb(which: str) -> InlineKeyboardMarkup:
+    btn = (
+        InlineKeyboardButton(text="🗓 За 7 дней", callback_data="dg:week")
+        if which == "day"
+        else InlineKeyboardButton(text="📰 За день", callback_data="dg:day")
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[[btn]])
+
+
+async def _send_period_digest(send, which: str) -> None:
+    """which: day|week. send(text, **kw) — куда слать (m.answer или bot.send_message)."""
+    from homyak.core.digest import build_digest
+
+    hours, label = (24, "за день") if which == "day" else (24 * 7, "за 7 дней")
+    res = await build_digest(hours, limit=12)
+    if not res["n"]:
+        await send("Пусто — за этот период нет персональных новостей.")
+        return
+    chunks = list(_chunks(_digest_text(res, label), 4000))
+    for i, chunk in enumerate(chunks):
+        kb = _digest_kb(which) if i == len(chunks) - 1 else None
+        await send(chunk, reply_markup=kb, disable_web_page_preview=True)
+
+
+@dp.message(Command("day"))
+async def cmd_day(m: Message) -> None:
+    await m.answer("📰 Собираю дайджест дня…")
+    await _send_period_digest(lambda t, **kw: m.answer(t, **kw), "day")
+
+
+@dp.message(Command("week"))
+async def cmd_week(m: Message) -> None:
+    await m.answer("🗓 Собираю дайджест за 7 дней…")
+    await _send_period_digest(lambda t, **kw: m.answer(t, **kw), "week")
+
+
+@dp.callback_query(F.data.in_({"dg:day", "dg:week"}))
+async def cb_digest(cb: CallbackQuery) -> None:
+    which = cb.data.split(":")[1]
+    with suppress(Exception):
+        await cb.answer("собираю…")
+    await _send_period_digest(lambda t, **kw: cb.message.answer(t, **kw), which)
+
+
+async def weekly_digest_loop() -> None:
+    """Авто-дайджест за 7 дней раз в неделю в чат. Первый раз — вскоре после старта, дальше каждые 7д."""
+    while True:
+        await asyncio.sleep(3600)
+        with suppress(Exception):
+            chat = await _repo.get_cursor(CHAT_KEY)
+            if not chat:
+                continue
+            last = await _repo.get_cursor(WEEKLY_KEY)
+            now = time.time()
+            if last and now - float(last) < 7 * 24 * 3600 - 3600:
+                continue
+            await _send_period_digest(lambda t, **kw: _bot.send_message(int(chat), t, **kw), "week")
+            await _repo.save_cursor(WEEKLY_KEY, str(now))
+            log.info("weekly_digest_sent")
 
 
 async def _send_vertical(m: Message, vertical: str, n: int = 8) -> None:
@@ -536,7 +620,8 @@ async def btn_twitter(m: Message) -> None:
 
 @dp.message(F.text == BTN_DIGEST)
 async def btn_digest(m: Message) -> None:
-    await _send_digest(m, 10)
+    await m.answer("📰 Собираю дайджест дня…")
+    await _send_period_digest(lambda t, **kw: m.answer(t, **kw), "day")
 
 
 @dp.message(F.text == BTN_SOURCES)
@@ -1070,6 +1155,7 @@ async def main_async() -> None:
     push_task = asyncio.create_task(push_loop())
     suggest_task = asyncio.create_task(_bus.consume_profile_suggestion(handle_suggestion))
     health_task = asyncio.create_task(twitter_health_loop())
+    weekly_task = asyncio.create_task(weekly_digest_loop())
     log.info("tgbot_started")
     try:
         await dp.start_polling(_bot)
@@ -1077,10 +1163,12 @@ async def main_async() -> None:
         push_task.cancel()
         suggest_task.cancel()
         health_task.cancel()
+        weekly_task.cancel()
         with suppress(asyncio.CancelledError):
             await push_task
             await suggest_task
             await health_task
+            await weekly_task
         await _bus.close()
         await _bot.session.close()
 
