@@ -12,25 +12,34 @@ from sqlalchemy import text
 
 from homyak.storage.db import SessionFactory
 
-# period -> (hours окна, min_count чтобы не тащить шум)
-PERIODS = {"day": (24, 3), "week": (24 * 7, 5), "month": (24 * 30, 8)}
+# period -> (hours окна, base_hours базы, base_div, min_count).
+# База = средний ТИПИЧНЫЙ период до текущего (день vs средний день прошлой недели и т.п.) —
+# устойчивее, чем «ровно предыдущее окно» (у фида ночью провал → шум day-over-day).
+PERIODS = {
+    "day": (24, 24 * 7, 7, 3),
+    "week": (24 * 7, 24 * 28, 4, 5),
+    "month": (24 * 30, 24 * 60, 2, 8),
+}
 
 
-def growth(count: int, prev: int) -> float:
-    """Рост объёма против прошлого окна. Новая тема (prev=0) → умеренный буст, не бесконечность."""
+def growth(count: float, prev: float) -> float:
+    """Рост против типичной базы. Новая тема (prev≈0) → умеренный буст, не бесконечность."""
     if prev <= 0:
         return 2.0 if count > 0 else 0.0
     return (count - prev) / prev
 
 
-def strength(count: int, prev: int, avg_score: float | None) -> float:
-    """Сила тренда: объём, усиленный ростом (cap 3), взвешенный релевантностью."""
-    g = min(max(growth(count, prev), 0.0), 3.0)
+def strength(count: float, prev: float, avg_score: float | None) -> float:
+    """Сила тренда — про МОМЕНТУМ, не про объём: объём сублинейно (count^0.6), рост в степени 1.5
+    (спад приглушает, разгон усиливает; клампы 0.1..4), взвешено релевантностью."""
+    g = growth(count, prev)
+    vol = count**0.6
+    mom = min(max(1.0 + g, 0.1), 4.0) ** 1.5
     rel = 0.4 + 0.6 * (avg_score or 0.0)
-    return count * (1.0 + g) * rel
+    return vol * mom * rel
 
 
-def direction(count: int, prev: int) -> str:
+def direction(count: float, prev: float) -> str:
     """↑ разгон · → ровно · ↓ спад."""
     g = growth(count, prev)
     return "↑" if g >= 0.25 else ("↓" if g <= -0.25 else "→")
@@ -38,7 +47,7 @@ def direction(count: int, prev: int) -> str:
 
 async def compute_trends(period: str = "day", limit: int = 8) -> list[dict]:
     """Топ трендовых тем за период. {tag, count, prev, growth, avg_score, direction, strength}."""
-    hours, min_count = PERIODS.get(period, PERIODS["day"])
+    hours, base_hours, base_div, min_count = PERIODS.get(period, PERIODS["day"])
     async with SessionFactory() as s:
         rows = (
             await s.execute(
@@ -51,19 +60,19 @@ async def compute_trends(period: str = "day", limit: int = 8) -> list[dict]:
                     "      and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
                     "  ) t group by tag"
                     "),"
-                    "prev as ("
-                    "  select tag, count(*) c from ("
+                    "base as ("  # средний типичный период до текущего окна
+                    "  select tag, count(*)::float / :bdiv c from ("
                     "    select unnest(tags) tag from news_items"
                     "    where processed_at is not null and skip_reason is null"
                     "      and coalesce(published_at,fetched_at) <= now() - make_interval(hours=>:h)"
-                    "      and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h2)"
+                    "      and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:total)"
                     "  ) t group by tag"
                     ")"
-                    " select cur.tag, cur.c, coalesce(prev.c,0) pc, cur.s"
-                    " from cur left join prev on prev.tag = cur.tag"
+                    " select cur.tag, cur.c, coalesce(base.c,0) pc, cur.s"
+                    " from cur left join base on base.tag = cur.tag"
                     " where cur.c >= :minc"
                 ),
-                {"h": hours, "h2": hours * 2, "minc": min_count},
+                {"h": hours, "total": hours + base_hours, "bdiv": base_div, "minc": min_count},
             )
         ).all()
     trends = [
