@@ -49,25 +49,25 @@ async def feed_stream(request: Request, category: str | None = None):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page() -> str:
     """Realtime-дашборд пайплайна (self-contained HTML)."""
-    return dashboard.PAGE
+    return dashboard.page(dashboard.PAGE, "/dashboard")
 
 
 @app.get("/lenta", response_class=HTMLResponse)
 async def lenta_page() -> str:
     """Отдельная страница Ленты (фид + 👍/👎 + Разбор), вынесена из операционного дашборда."""
-    return dashboard.LENTA_PAGE
+    return dashboard.page(dashboard.LENTA_PAGE, "/lenta")
 
 
 @app.get("/search", response_class=HTMLResponse)
 async def search_page() -> str:
     """Гибридный поиск по базе знаний (FTS+вектор) + кнопка «Ответить» (RAG/вики)."""
-    return dashboard.SEARCH_PAGE
+    return dashboard.page(dashboard.SEARCH_PAGE, "/search")
 
 
 @app.get("/trends", response_class=HTMLResponse)
 async def trends_page() -> str:
     """Тренды (день/неделя/месяц): что разгоняется + подборка по теме."""
-    return dashboard.TRENDS_PAGE
+    return dashboard.page(dashboard.TRENDS_PAGE, "/trends")
 
 
 def _vertical(v: str) -> str | None:
@@ -103,7 +103,7 @@ async def trends_items(period: str = "day", tag: str = "", vertical: str = "all"
 @app.get("/wiki", response_class=HTMLResponse)
 async def wiki_page() -> str:
     """Браузер LLM-вики: концепты/сущности/источники, клик по [[ссылкам]]."""
-    return dashboard.WIKI_PAGE
+    return dashboard.page(dashboard.WIKI_PAGE, "/wiki")
 
 
 @app.get("/wiki/api/stats")

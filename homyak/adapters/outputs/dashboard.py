@@ -31,6 +31,38 @@ def _bucket(source_type: str | None, feed_name: str | None) -> str:
     return source_type or "other"
 
 
+# --- общее меню разделов (одно на все страницы) ---
+
+NAV_ITEMS = [
+    ("/dashboard", "📊 Пайплайн"),
+    ("/lenta", "🗂 Лента"),
+    ("/search", "🔎 Поиск"),
+    ("/trends", "📈 Тренды"),
+    ("/wiki", "📚 База знаний"),
+]
+NAV_MARK = "<!--NAV-->"  # плейсхолдер в шапке каждой страницы
+
+
+def nav_html(active: str = "") -> str:
+    """Меню всех разделов; текущий подсвечен. Стили inline — страницы независимы от общего CSS."""
+    base = (
+        "font-size:13px;text-decoration:none;padding:5px 11px;border-radius:8px;"
+        "border:1px solid var(--line,#242c3d);white-space:nowrap;"
+    )
+    on = base + "background:var(--accent,#6ee7ff);border-color:var(--accent,#6ee7ff);color:#06202a;font-weight:600"
+    off = base + "background:var(--panel2,#1b2230);color:var(--dim,#8a93a6)"
+    links = "".join(
+        f'<a href="{href}" style="{on if href == active else off}">{label}</a>'
+        for href, label in NAV_ITEMS
+    )
+    return f'<nav style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto">{links}</nav>'
+
+
+def page(html: str, active: str = "") -> str:
+    """Подставить меню в страницу (см. NAV_MARK)."""
+    return html.replace(NAV_MARK, nav_html(active))
+
+
 async def stats_snapshot() -> dict:
     """Снимок агрегатов из Postgres для карточек и панелей дашборда."""
     async with SessionFactory() as s:
@@ -596,7 +628,7 @@ header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
   <h1>🐹 Homyak · Live Pipeline</h1>
   <span class="pulse" id="pulse"></span>
   <div class="spacer"></div>
-  <a href="/lenta" style="color:var(--accent);font-weight:600;font-size:14px;margin-right:18px;padding:5px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)">🗂 Лента</a>
+  <!--NAV-->
   <div class="clock" id="clock"></div>
 </header>
 
@@ -924,7 +956,7 @@ a{color:var(--accent);text-decoration:none}
 .mlbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-top:8px}
 .mclose{position:absolute;top:12px;right:14px;cursor:pointer;color:var(--dim);font-size:20px}
 </style>
-<div class="top"><h1>🗂 Лента — что получаем</h1><span>👍/👎 обучают систему</span><span><a href="/dashboard">← дашборд</a></span></div>
+<div class="top"><h1>🗂 Лента</h1><span>👍/👎 обучают систему</span><!--NAV--></div>
 <div class="wrap">
   <div class="ftabs" id="ftabs"></div>
   <div class="ftabs" id="stabs"></div>
@@ -1019,7 +1051,7 @@ a{color:var(--accent);text-decoration:none}
 .b-tw{background:#12303a;color:#7fd4ea}.b-rss{background:#2a2320;color:#e0b48a}.b-tg{background:#1c2740;color:#8fb2f0}.b-other{background:#232a38;color:#9aa6b8}
 .muted{color:var(--dim);padding:20px;text-align:center}
 </style>
-<div class="top"><h1>🔎 Поиск по базе знаний</h1><span>лексика + смысл (RRF)</span><span><a href="/lenta">🗂 Лента</a> · <a href="/dashboard">← дашборд</a></span></div>
+<div class="top"><h1>🔎 Поиск</h1><span>лексика + смысл (RRF)</span><!--NAV--></div>
 <div class="wrap">
   <div class="qbar">
     <input id="q" placeholder="что искать… напр. инференс LLM на Rust" autofocus>
@@ -1115,7 +1147,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .wl:hover{border-color:var(--accent)}
 .muted{color:var(--dim);padding:20px}
 </style>
-<div class="top"><h1>📚 База знаний</h1><span class="st" id="st"></span><span class="nav"><a href="/search">🔎 Поиск</a> · <a href="/lenta">🗂 Лента</a> · <a href="/dashboard">← дашборд</a></span></div>
+<div class="top"><h1>📚 База знаний</h1><span class="st" id="st"></span><!--NAV--></div>
 <div class="cols">
   <div class="side">
     <div class="tabs" id="tabs"></div>
@@ -1202,7 +1234,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .muted{color:var(--dim);padding:16px 0}
 .h{margin:6px 0 10px;font-size:15px}
 </style>
-<div class="top"><h1>📈 Тренды</h1><span class="st">что разгоняется · ↑ рост · → ровно</span><span class="nav"><a href="/search">🔎 Поиск</a> · <a href="/lenta">🗂 Лента</a> · <a href="/wiki">📚 Вика</a></span></div>
+<div class="top"><h1>📈 Тренды</h1><span class="st">что разгоняется · ↑ рост · → ровно</span><!--NAV--></div>
 <div class="wrap">
   <div class="tabs" id="tabs"></div>
   <div class="tabs" id="vtabs"></div>
