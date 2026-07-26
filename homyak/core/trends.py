@@ -122,7 +122,7 @@ async def trend_items(
                 text(
                     "select id, title, source_type, feed_name, vertical, personal_score, summary, url,"
                     " cluster_id, tags,"
-                    " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
+                    " coalesce(published_at,fetched_at) published, extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     " from news_items"
                     " where processed_at is not null and skip_reason is null"
                     "   and personal_score is not null and tags @> array[:tag]::text[]" + vcond +
@@ -149,6 +149,7 @@ async def trend_items(
                 "summary": (r.summary or "")[:200] or None,
                 "url": r.url,
                 "tags": list(r.tags or [])[:4],
+                "published": r.published,
                 "age_s": r.age_s,
             }
         )

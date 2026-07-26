@@ -39,7 +39,7 @@ from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import FeedQuery
 from homyak.core.razbor import build_razbor
 from homyak.core.scoring import freshness, weights_from_interests
-from homyak.core.textutils import fmt_age, hashtags, strip_html
+from homyak.core.textutils import fmt_age, fmt_when, hashtags, strip_html
 from homyak.core.verticals import LABELS, VERTICALS
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
@@ -134,14 +134,19 @@ _TG_LIMIT = 4096
 _TG_SAFE = 3900  # запас на служебную разметку; summary ничем не ограничен (Text-колонка)
 
 
-def _item_age(item) -> str:
-    """«Когда произошло» для ORM-item: возраст по published_at (иначе fetched_at)."""
-    ts = getattr(item, "published_at", None) or getattr(item, "fetched_at", None)
-    if ts is None:
-        return ""
-    if ts.tzinfo is None:  # на всякий: naive → считаем UTC
-        ts = ts.replace(tzinfo=timezone.utc)
-    return fmt_age((datetime.now(timezone.utc) - ts).total_seconds())
+def _when_age(ts, age_s=None) -> str:
+    """«Когда произошло»: фактическое время + возраст — «14:32 · 3ч», «26 июл, 09:10 · 2д»."""
+    when = fmt_when(ts)
+    if age_s is None and ts is not None:
+        t = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+        age_s = (datetime.now(timezone.utc) - t).total_seconds()
+    age = fmt_age(age_s)
+    return " · ".join(x for x in (when, age) if x)
+
+
+def _item_when(item) -> str:
+    """То же для ORM-item: по published_at (иначе fetched_at)."""
+    return _when_age(getattr(item, "published_at", None) or getattr(item, "fetched_at", None))
 
 
 def _fmt(item) -> str:
@@ -149,7 +154,7 @@ def _fmt(item) -> str:
     vlabel = LABELS.get(item.vertical, "")
     watch = getattr(item, "watch_topics", None) or []
     watch_badge = f"👁 <b>{_esc(', '.join(watch))}</b>\n" if watch else ""
-    when = _item_age(item)  # когда новость произошла — сразу в шапке карточки
+    when = _item_when(item)  # когда новость произошла — сразу в шапке карточки
     head = f"{watch_badge}{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>" + (f"  🕒 {when}" if when else "")
 
     # Заголовок — кликабельная ссылка на оригинал: прочитал саммари → сразу в источник.
@@ -287,7 +292,7 @@ def _digest_text(res: dict, label: str) -> str:
         title = _esc(it.get("title") or "—")
         url = it.get("url")
         head = f'<a href="{_esc(url)}">{title}</a>' if url else f"<b>{title}</b>"
-        when = fmt_age(it.get("age_s"))
+        when = _when_age(it.get("published"), it.get("age_s"))
         meta = _src_label(it) + (f" · 🕒 {when}" if when else "")
         parts.append(f"{i}. 🎯{sc} {ve} {head} · <i>{_esc(meta)}</i>")
         summ = (it.get("summary") or "").replace("\n", " ").strip()
@@ -656,7 +661,7 @@ async def cmd_find(m: Message, command: CommandObject) -> None:
         url = it.get("url")
         title = _esc(it.get("title") or "—")
         head = f'<a href="{_esc(url)}">{title}</a>' if url else title
-        when = fmt_age(it.get("age_s"))
+        when = _when_age(it.get("published"), it.get("age_s"))
         lines.append(f"🎯 {sc} · {_esc(nm)}" + (f" · 🕒 {when}" if when else "") + f"\n{head}")
     for chunk in _chunks("\n\n".join(lines), 4000):
         await m.answer(chunk, disable_web_page_preview=True)

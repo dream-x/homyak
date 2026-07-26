@@ -355,6 +355,7 @@ async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time", 
                 text(
                     "select id, title, source_type, feed_name, vertical, personal_score,"
                     " tags, watch_topics, url, cluster_id,"
+                    " coalesce(published_at,fetched_at) published,"
                     " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     f" from news_items where {where}"
                     f" order by {order} limit :win"
@@ -397,6 +398,7 @@ async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time", 
                 "score": r.personal_score,
                 "tags": list(r.tags or [])[:4],
                 "watch": list(r.watch_topics or []),
+                "published": r.published,
                 "age_s": r.age_s,
                 "feedback": fb.get(r.id, []),
             }
@@ -909,7 +911,7 @@ a{color:var(--accent);text-decoration:none}
 .frow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
 .frow .ttl:hover{color:var(--accent)}
 .frow .sc{color:var(--dim);font-size:12px;white-space:nowrap}
-.frow .tm{color:var(--dim);font-size:12px;white-space:nowrap;min-width:38px;text-align:right}
+.frow .tm{color:var(--dim);font-size:12px;white-space:nowrap;min-width:96px;text-align:right}
 .vbtn{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:4px 9px;cursor:pointer;font-size:14px;line-height:1;user-select:none}
 .vbtn.up.on{background:#1c3a24;border-color:#2f7d4a}.vbtn.down.on{background:#3a1c1c;border-color:#7d2f2f}.vbtn.save.on{background:#3a331c;border-color:#7d6a2f}
 .muted{color:var(--dim);padding:20px;text-align:center}
@@ -942,6 +944,10 @@ const PTABS=[[0,'Всё'],[6,'6 часов'],[24,'Сутки'],[168,'Недел�
 let feedKind='all',feedSort='time',feedHours=0;
 const fmtAge=s=>{if(s==null)return '';const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';return Math.floor(h/24)+'д';};
 const fmtAbs=s=>s==null?'':new Date(Date.now()-s*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const whenOf=it=>{if(it&&it.published)return new Date(it.published);if(it&&it.age_s!=null)return new Date(Date.now()-it.age_s*1000);return null;};
+const fmtWhen=d=>{if(!d||isNaN(d))return '';const n=new Date();const same=d.toDateString()===n.toDateString();return same?d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):d.toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});};
+const fmtFull=d=>(!d||isNaN(d))?'':d.toLocaleString('ru-RU',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const timeCell=it=>{const d=whenOf(it);const w=fmtWhen(d);const a=fmtAge(it&&it.age_s);return w?`<span title="${fmtFull(d)}">🕒 ${w}${a?' · '+a:''}</span>`:'';};
 function renderFtabs(){$('ftabs').innerHTML=FTABS.map(([k,l])=>`<span class="ftab ${k===feedKind?'on':''}" onclick="setFeedKind('${k}')">${esc(l)}</span>`).join('');}
 function setFeedKind(k){feedKind=k;renderFtabs();loadFeed();}
 function renderStabs(){$('stabs').innerHTML=STABS.map(([k,l])=>`<span class="ftab ${k===feedSort?'on':''}" onclick="setFeedSort('${k}')">${esc(l)}</span>`).join('');}
@@ -955,7 +961,7 @@ async function loadFeed(){try{
     const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket);
     const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
     const fb=it.feedback||[];const on=s=>fb.includes(s)?'on':'';
-    return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span><span class="tm" title="${esc(fmtAbs(it.age_s))}">${fmtAge(it.age_s)}</span><span class="sc">🎯 ${sc}</span><span class="vbtn up ${on('up')}" onclick="vote(${it.id},'up',this)">👍</span><span class="vbtn down ${on('down')}" onclick="vote(${it.id},'down',this)">👎</span><span class="vbtn save ${on('save')}" onclick="vote(${it.id},'save',this)">⭐</span></div>`;
+    return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span><span class="tm" title="${fmtFull(whenOf(it))}">${fmtWhen(whenOf(it))}<span style="opacity:.55"> · ${fmtAge(it.age_s)}</span></span><span class="sc">🎯 ${sc}</span><span class="vbtn up ${on('up')}" onclick="vote(${it.id},'up',this)">👍</span><span class="vbtn down ${on('down')}" onclick="vote(${it.id},'down',this)">👎</span><span class="vbtn save ${on('save')}" onclick="vote(${it.id},'save',this)">⭐</span></div>`;
   }).join('')||'<div class="muted">пусто</div>';
 }catch(e){$('lentafeed').innerHTML='<div class="muted">ошибка загрузки</div>';}}
 async function vote(id,signal,el){const was=el.classList.contains('on');el.classList.toggle('on');try{const r=await (await fetch('/dashboard/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:id,signal})})).json();el.classList.toggle('on',r.action==='added');}catch(e){el.classList.toggle('on',was);}}
@@ -1033,6 +1039,10 @@ const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
 const fmtAge=s=>{if(s==null)return '';s=Math.max(0,s|0);if(s<60)return 'только что';const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';const d=Math.floor(h/24);return d<14?d+'д':Math.floor(d/7)+'нед';};
 const fmtAbs=s=>s==null?'':new Date(Date.now()-s*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const whenOf=it=>{if(it&&it.published)return new Date(it.published);if(it&&it.age_s!=null)return new Date(Date.now()-it.age_s*1000);return null;};
+const fmtWhen=d=>{if(!d||isNaN(d))return '';const n=new Date();const same=d.toDateString()===n.toDateString();return same?d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):d.toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});};
+const fmtFull=d=>(!d||isNaN(d))?'':d.toLocaleString('ru-RU',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const timeCell=it=>{const d=whenOf(it);const w=fmtWhen(d);const a=fmtAge(it&&it.age_s);return w?`<span title="${fmtFull(d)}">🕒 ${w}${a?' · '+a:''}</span>`:'';};
 const KTABS=[['all','Все'],['it','💻 IT'],['business','💼 Business'],['medical','🩺 Medical'],['twitter','🐦 Twitter'],['watch','👁 Watch']];
 const PTABS=[[0,'Всё время'],[24,'Сутки'],[168,'Неделя'],[720,'Месяц']];
 const STABS=[[0,'Везде'],[1,'⭐ Сохранённое']];
@@ -1053,7 +1063,7 @@ async function search(){
       const [bc,be]=BADGE[it.bucket]||BADGE.other;
       const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
       const u=safeUrl(it.url);
-      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''}>${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.age_s!=null?` · <span title="${esc(fmtAbs(it.age_s))}">🕒 ${fmtAge(it.age_s)}</span>`:''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''}>${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${timeCell(it)?' · '+timeCell(it):''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">ничего не найдено</div>';
   }catch(e){$('results').innerHTML='<div class="muted">ошибка поиска</div>';}
 }
@@ -1207,6 +1217,10 @@ const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
 const fmtAge=s=>{if(s==null)return '';s=Math.max(0,s|0);if(s<60)return 'только что';const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';const d=Math.floor(h/24);return d<14?d+'д':Math.floor(d/7)+'нед';};
 const fmtAbs=s=>s==null?'':new Date(Date.now()-s*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const whenOf=it=>{if(it&&it.published)return new Date(it.published);if(it&&it.age_s!=null)return new Date(Date.now()-it.age_s*1000);return null;};
+const fmtWhen=d=>{if(!d||isNaN(d))return '';const n=new Date();const same=d.toDateString()===n.toDateString();return same?d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):d.toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});};
+const fmtFull=d=>(!d||isNaN(d))?'':d.toLocaleString('ru-RU',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const timeCell=it=>{const d=whenOf(it);const w=fmtWhen(d);const a=fmtAge(it&&it.age_s);return w?`<span title="${fmtFull(d)}">🕒 ${w}${a?' · '+a:''}</span>`:'';};
 const PERIODS=[['day','📅 День'],['week','🗓 Неделя'],['month','📆 Месяц']];
 const VERTS=[['all','🌐 Все'],['business','💼 Бизнес'],['it','💻 IT'],['medical','🩺 Медицина']];
 let period='day',vertical='all',trends=[],curTag=null;
@@ -1226,7 +1240,7 @@ async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>'
 async function openTag(tag){curTag=tag;renderTrends();$('picked').innerHTML=`Подборка по <b>#${esc(tag)}</b>`;$('items').innerHTML='<div class="muted">…</div>';
   try{const d=await(await fetch(`/trends/api/items?period=${period}&tag=${encodeURIComponent(tag)}&vertical=${vertical}`)).json();
     $('items').innerHTML=(d.items||[]).map(it=>{const [bc,be]=BADGE[it.bucket]||BADGE.other;const sc=it.score!=null?Math.round(it.score*100)+'%':'—';const u=safeUrl(it.url);
-      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.age_s!=null?` · <span title="${esc(fmtAbs(it.age_s))}">🕒 ${fmtAge(it.age_s)}</span>`:''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${timeCell(it)?' · '+timeCell(it):''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">пусто</div>';
   }catch(e){$('items').innerHTML='<div class="muted">ошибка</div>';}}
 function renderTrends(){[...$('trends').children].forEach(c=>{if(c.dataset.t)c.classList.toggle('on',c.dataset.t===curTag);});}

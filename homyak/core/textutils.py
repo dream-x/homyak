@@ -30,6 +30,29 @@ def fmt_age(seconds: int | float | None) -> str:
     return f"{d // 7}нед"
 
 
+_RU_MON = ("янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+
+
+def fmt_when(dt, now=None) -> str:
+    """Фактическое время новости в ЛОКАЛЬНОЙ зоне процесса (TZ в compose): «14:32» если сегодня,
+    «26 июл, 14:32» иначе, «26 июл 2025, 14:32» для прошлых лет. Пусто, если даты нет."""
+    if dt is None:
+        return ""
+    from datetime import datetime, timezone
+
+    if dt.tzinfo is None:  # naive из БД → считаем UTC
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone()
+    cur = (now or datetime.now(timezone.utc)).astimezone()
+    hm = local.strftime("%H:%M")
+    if local.date() == cur.date():
+        return hm
+    day = f"{local.day} {_RU_MON[local.month - 1]}"
+    if local.year != cur.year:
+        day += f" {local.year}"
+    return f"{day}, {hm}"
+
+
 def detect_lang(text: str | None) -> str:
     """Язык для генерации: 'ru' если текст преимущественно кириллический, иначе 'en'.
 

@@ -157,7 +157,7 @@ async def hybrid_search(
                 text(
                     "select id, title, source_type, feed_name, vertical, personal_score,"
                     " summary, url, cluster_id, tags,"
-                    " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
+                    " coalesce(published_at,fetched_at) published, extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     f" from news_items where {where} and id in :ids"
                 ).bindparams(bindparam("ids", value=pool_ids, expanding=True)),
                 params,
@@ -201,6 +201,7 @@ async def hybrid_search(
                 "summary": (r.summary or "")[:200] or None,
                 "url": r.url,
                 "tags": list(r.tags or [])[:4],
+                "published": r.published,
                 "age_s": r.age_s,
             }
         )

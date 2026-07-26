@@ -83,3 +83,24 @@ def test_fmt_age():
     assert fmt_age(13 * 24 * 3600) == "13д"
     assert fmt_age(21 * 24 * 3600) == "3нед"
     assert fmt_age(-5) == "только что"  # часы на источнике убежали вперёд — не «-1м»
+
+
+def test_fmt_when():
+    from datetime import datetime, timedelta, timezone
+
+    from homyak.core.textutils import fmt_when
+
+    assert fmt_when(None) == ""
+    now = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
+    # сегодня → только часы:минуты (в локальной зоне процесса)
+    today = fmt_when(now - timedelta(hours=2), now)
+    assert ":" in today and "июл" not in today
+    # другой день этого года → «26 июл, HH:MM»
+    older = fmt_when(now - timedelta(days=5), now)
+    assert "," in older and any(m in older for m in ("июл", "июн"))
+    assert "2026" not in older
+    # прошлый год → с годом
+    ancient = fmt_when(now - timedelta(days=400), now)
+    assert "2025" in ancient
+    # naive datetime не падает (трактуем как UTC)
+    assert fmt_when(datetime(2026, 7, 26, 10, 0), now) != ""
