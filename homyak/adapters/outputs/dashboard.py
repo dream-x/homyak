@@ -1031,6 +1031,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
+const fmtAge=s=>{if(s==null)return '';s=Math.max(0,s|0);if(s<60)return 'только что';const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';const d=Math.floor(h/24);return d<14?d+'д':Math.floor(d/7)+'нед';};
+const fmtAbs=s=>s==null?'':new Date(Date.now()-s*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
 const KTABS=[['all','Все'],['it','💻 IT'],['business','💼 Business'],['medical','🩺 Medical'],['twitter','🐦 Twitter'],['watch','👁 Watch']];
 const PTABS=[[0,'Всё время'],[24,'Сутки'],[168,'Неделя'],[720,'Месяц']];
 const STABS=[[0,'Везде'],[1,'⭐ Сохранённое']];
@@ -1051,7 +1053,7 @@ async function search(){
       const [bc,be]=BADGE[it.bucket]||BADGE.other;
       const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
       const u=safeUrl(it.url);
-      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''}>${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''}>${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.age_s!=null?` · <span title="${esc(fmtAbs(it.age_s))}">🕒 ${fmtAge(it.age_s)}</span>`:''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">ничего не найдено</div>';
   }catch(e){$('results').innerHTML='<div class="muted">ошибка поиска</div>';}
 }
@@ -1203,6 +1205,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
+const fmtAge=s=>{if(s==null)return '';s=Math.max(0,s|0);if(s<60)return 'только что';const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';const d=Math.floor(h/24);return d<14?d+'д':Math.floor(d/7)+'нед';};
+const fmtAbs=s=>s==null?'':new Date(Date.now()-s*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
 const PERIODS=[['day','📅 День'],['week','🗓 Неделя'],['month','📆 Месяц']];
 const VERTS=[['all','🌐 Все'],['business','💼 Бизнес'],['it','💻 IT'],['medical','🩺 Медицина']];
 let period='day',vertical='all',trends=[],curTag=null;
@@ -1222,7 +1226,7 @@ async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>'
 async function openTag(tag){curTag=tag;renderTrends();$('picked').innerHTML=`Подборка по <b>#${esc(tag)}</b>`;$('items').innerHTML='<div class="muted">…</div>';
   try{const d=await(await fetch(`/trends/api/items?period=${period}&tag=${encodeURIComponent(tag)}&vertical=${vertical}`)).json();
     $('items').innerHTML=(d.items||[]).map(it=>{const [bc,be]=BADGE[it.bucket]||BADGE.other;const sc=it.score!=null?Math.round(it.score*100)+'%':'—';const u=safeUrl(it.url);
-      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.age_s!=null?` · <span title="${esc(fmtAbs(it.age_s))}">🕒 ${fmtAge(it.age_s)}</span>`:''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">пусто</div>';
   }catch(e){$('items').innerHTML='<div class="muted">ошибка</div>';}}
 function renderTrends(){[...$('trends').children].forEach(c=>{if(c.dataset.t)c.classList.toggle('on',c.dataset.t===curTag);});}

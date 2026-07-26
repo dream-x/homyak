@@ -67,3 +67,19 @@ def test_detect_lang():
     assert detect_lang("") == "en"
     assert detect_lang(None) == "en"
     assert detect_lang("12345 !!!") == "en"
+
+
+def test_fmt_age():
+    from homyak.core.textutils import fmt_age
+
+    assert fmt_age(None) == ""
+    assert fmt_age(0) == "только что"
+    assert fmt_age(59) == "только что"
+    assert fmt_age(60) == "1м"
+    assert fmt_age(59 * 60) == "59м"
+    assert fmt_age(3600) == "1ч"
+    assert fmt_age(23 * 3600) == "23ч"
+    assert fmt_age(24 * 3600) == "1д"
+    assert fmt_age(13 * 24 * 3600) == "13д"
+    assert fmt_age(21 * 24 * 3600) == "3нед"
+    assert fmt_age(-5) == "только что"  # часы на источнике убежали вперёд — не «-1м»

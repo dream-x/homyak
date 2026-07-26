@@ -11,6 +11,25 @@ _CYR = re.compile(r"[а-яёА-ЯЁ]")
 _LAT = re.compile(r"[a-zA-Z]")
 
 
+def fmt_age(seconds: int | float | None) -> str:
+    """Возраст новости человеку: «только что · 5м · 3ч · 2д · 3нед». Пусто, если неизвестно."""
+    if seconds is None:
+        return ""
+    s = max(0, int(seconds))
+    if s < 60:
+        return "только что"
+    m = s // 60
+    if m < 60:
+        return f"{m}м"
+    h = m // 60
+    if h < 24:
+        return f"{h}ч"
+    d = h // 24
+    if d < 14:
+        return f"{d}д"
+    return f"{d // 7}нед"
+
+
 def detect_lang(text: str | None) -> str:
     """Язык для генерации: 'ru' если текст преимущественно кириллический, иначе 'en'.
 

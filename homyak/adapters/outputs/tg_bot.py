@@ -12,7 +12,7 @@ import json
 import re
 import time
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timezone
 
 import structlog
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
@@ -39,7 +39,7 @@ from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import FeedQuery
 from homyak.core.razbor import build_razbor
 from homyak.core.scoring import freshness, weights_from_interests
-from homyak.core.textutils import hashtags, strip_html
+from homyak.core.textutils import fmt_age, hashtags, strip_html
 from homyak.core.verticals import LABELS, VERTICALS
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
@@ -134,12 +134,23 @@ _TG_LIMIT = 4096
 _TG_SAFE = 3900  # запас на служебную разметку; summary ничем не ограничен (Text-колонка)
 
 
+def _item_age(item) -> str:
+    """«Когда произошло» для ORM-item: возраст по published_at (иначе fetched_at)."""
+    ts = getattr(item, "published_at", None) or getattr(item, "fetched_at", None)
+    if ts is None:
+        return ""
+    if ts.tzinfo is None:  # на всякий: naive → считаем UTC
+        ts = ts.replace(tzinfo=timezone.utc)
+    return fmt_age((datetime.now(timezone.utc) - ts).total_seconds())
+
+
 def _fmt(item) -> str:
     pct = int(round((item.personal_score or 0) * 100))
     vlabel = LABELS.get(item.vertical, "")
     watch = getattr(item, "watch_topics", None) or []
     watch_badge = f"👁 <b>{_esc(', '.join(watch))}</b>\n" if watch else ""
-    head = f"{watch_badge}{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>"
+    when = _item_age(item)  # когда новость произошла — сразу в шапке карточки
+    head = f"{watch_badge}{vlabel + '  ' if vlabel else ''}🎯 <b>{pct}%</b>" + (f"  🕒 {when}" if when else "")
 
     # Заголовок — кликабельная ссылка на оригинал: прочитал саммари → сразу в источник.
     title = _esc(item.title or "(без заголовка)")
@@ -276,7 +287,9 @@ def _digest_text(res: dict, label: str) -> str:
         title = _esc(it.get("title") or "—")
         url = it.get("url")
         head = f'<a href="{_esc(url)}">{title}</a>' if url else f"<b>{title}</b>"
-        parts.append(f"{i}. 🎯{sc} {ve} {head} · <i>{_esc(_src_label(it))}</i>")
+        when = fmt_age(it.get("age_s"))
+        meta = _src_label(it) + (f" · 🕒 {when}" if when else "")
+        parts.append(f"{i}. 🎯{sc} {ve} {head} · <i>{_esc(meta)}</i>")
         summ = (it.get("summary") or "").replace("\n", " ").strip()
         if summ:
             if len(summ) > 170:
@@ -643,7 +656,8 @@ async def cmd_find(m: Message, command: CommandObject) -> None:
         url = it.get("url")
         title = _esc(it.get("title") or "—")
         head = f'<a href="{_esc(url)}">{title}</a>' if url else title
-        lines.append(f"🎯 {sc} · {_esc(nm)}\n{head}")
+        when = fmt_age(it.get("age_s"))
+        lines.append(f"🎯 {sc} · {_esc(nm)}" + (f" · 🕒 {when}" if when else "") + f"\n{head}")
     for chunk in _chunks("\n\n".join(lines), 4000):
         await m.answer(chunk, disable_web_page_preview=True)
 
