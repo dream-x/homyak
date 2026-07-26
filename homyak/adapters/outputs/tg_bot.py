@@ -249,22 +249,41 @@ WEEKLY_KEY = "tgbot:last_weekly"
 _VEMOJI = {"business": "💼", "it": "💻", "medical": "🩺"}
 
 
+def _src_label(it: dict) -> str:
+    """Метка источника для строки дайджеста."""
+    feed = it.get("feed") or ""
+    if feed.startswith("tw_"):
+        return "🐦 @" + feed[3:]
+    if feed.startswith("gh_stars_"):
+        return "🐙 ★" + feed[9:]
+    if feed.startswith("gh_repos_"):
+        return "🐙 " + feed[9:]
+    if feed.startswith("gh_"):
+        return "🐙 GitHub"
+    if feed.startswith("@"):
+        return "✈️ " + feed
+    return "📡 " + (feed or it.get("bucket") or "источник")
+
+
 def _digest_text(res: dict, label: str) -> str:
     parts = [f"📰 <b>Дайджест: {label}</b> · {res['n']} историй — от самого главного\n"]
+    if res.get("intro"):
+        parts.append(f"<i>{_md_html(res['intro'])}</i>\n")
     for i, it in enumerate(res["items"], 1):
         sc = f"{round(it['score'] * 100)}%" if it.get("score") is not None else "—"
         ve = _VEMOJI.get(it.get("vertical") or "", "•")
         title = _esc(it.get("title") or "—")
         url = it.get("url")
         head = f'<a href="{_esc(url)}">{title}</a>' if url else f"<b>{title}</b>"
-        line = f"{i}. 🎯{sc} {ve} {head}"
+        parts.append(f"{i}. 🎯{sc} {ve} {head} · <i>{_esc(_src_label(it))}</i>")
+        summ = (it.get("summary") or "").replace("\n", " ").strip()
+        if summ:
+            parts.append(f"    {_esc(summ[:160])}")
         tags = hashtags(it.get("tags"))
         if tags:
-            line += f"\n     <i>{tags}</i>"
-        parts.append(line)
-    if res.get("intro"):
-        parts.append("\n———\n" + _md_html(res["intro"]))
-    return "\n".join(parts)
+            parts.append(f"    {tags}")
+        parts.append("")  # пустая строка между пунктами
+    return "\n".join(parts).rstrip()
 
 
 def _digest_kb(which: str) -> InlineKeyboardMarkup:
