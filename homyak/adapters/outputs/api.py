@@ -70,22 +70,34 @@ async def trends_page() -> str:
     return dashboard.TRENDS_PAGE
 
 
+def _vertical(v: str) -> str | None:
+    return v if v in ("business", "it", "medical") else None
+
+
 @app.get("/trends/api/list")
-async def trends_list(period: str = "day") -> dict:
+async def trends_list(period: str = "day", vertical: str = "all") -> dict:
     from homyak.core.trends import PERIODS, compute_trends
 
     period = period if period in PERIODS else "day"
-    return {"period": period, "trends": await compute_trends(period)}
+    return {
+        "period": period,
+        "vertical": vertical,
+        "trends": await compute_trends(period, _vertical(vertical)),
+    }
 
 
 @app.get("/trends/api/items")
-async def trends_items(period: str = "day", tag: str = "") -> dict:
+async def trends_items(period: str = "day", tag: str = "", vertical: str = "all") -> dict:
     from homyak.core.trends import PERIODS, trend_items
 
     period = period if period in PERIODS else "day"
     if not tag:
         raise HTTPException(status_code=400, detail="tag required")
-    return {"period": period, "tag": tag, "items": await trend_items(tag, period, limit=20)}
+    return {
+        "period": period,
+        "tag": tag,
+        "items": await trend_items(tag, period, _vertical(vertical), limit=20),
+    }
 
 
 @app.get("/wiki", response_class=HTMLResponse)

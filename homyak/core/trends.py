@@ -21,6 +21,13 @@ PERIODS = {
     "month": (24 * 30, 24 * 60, 2, 8),
 }
 
+# Слишком широкие теги (уровень вертикали/категории) — из трендов исключаем, чтобы вылезали
+# узкие темы (rust, ai-agents, prompt-injection), а не вечные business/ai. Правится под себя.
+_BROAD_TAGS = {
+    "ai", "business", "it", "medical", "tech", "technology", "news", "startups", "software",
+    "health", "healthcare", "finance", "markets", "economy", "science",
+}
+
 
 def growth(count: float, prev: float) -> float:
     """Рост против типичной базы. Новая тема (prev≈0) → умеренный буст, не бесконечность."""
@@ -45,9 +52,16 @@ def direction(count: float, prev: float) -> str:
     return "↑" if g >= 0.25 else ("↓" if g <= -0.25 else "→")
 
 
-async def compute_trends(period: str = "day", limit: int = 8) -> list[dict]:
-    """Топ трендовых тем за период. {tag, count, prev, growth, avg_score, direction, strength}."""
+async def compute_trends(period: str = "day", vertical: str | None = None, limit: int = 8) -> list[dict]:
+    """Топ трендовых тем за период. {tag, count, prev, growth, avg_score, direction, strength}.
+
+    vertical — ограничить одной вертикалью (business|it|medical); широкие теги (_BROAD_TAGS) вон.
+    """
     hours, base_hours, base_div, min_count = PERIODS.get(period, PERIODS["day"])
+    vcond = " and vertical = :v" if vertical in ("business", "it", "medical") else ""
+    params: dict = {"h": hours, "total": hours + base_hours, "bdiv": base_div, "minc": min_count}
+    if vcond:
+        params["v"] = vertical
     async with SessionFactory() as s:
         rows = (
             await s.execute(
@@ -56,14 +70,14 @@ async def compute_trends(period: str = "day", limit: int = 8) -> list[dict]:
                     "  select tag, count(*) c, avg(personal_score) s from ("
                     "    select unnest(tags) tag, personal_score from news_items"
                     "    where processed_at is not null and skip_reason is null"
-                    "      and personal_score is not null"
+                    "      and personal_score is not null" + vcond +
                     "      and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
                     "  ) t group by tag"
                     "),"
                     "base as ("  # средний типичный период до текущего окна
                     "  select tag, count(*)::float / :bdiv c from ("
                     "    select unnest(tags) tag from news_items"
-                    "    where processed_at is not null and skip_reason is null"
+                    "    where processed_at is not null and skip_reason is null" + vcond +
                     "      and coalesce(published_at,fetched_at) <= now() - make_interval(hours=>:h)"
                     "      and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:total)"
                     "  ) t group by tag"
@@ -72,9 +86,10 @@ async def compute_trends(period: str = "day", limit: int = 8) -> list[dict]:
                     " from cur left join base on base.tag = cur.tag"
                     " where cur.c >= :minc"
                 ),
-                {"h": hours, "total": hours + base_hours, "bdiv": base_div, "minc": min_count},
+                params,
             )
         ).all()
+    rows = [r for r in rows if r.tag and r.tag.lower() not in _BROAD_TAGS]
     trends = [
         {
             "tag": r.tag,
@@ -92,9 +107,15 @@ async def compute_trends(period: str = "day", limit: int = 8) -> list[dict]:
     return trends[:limit]
 
 
-async def trend_items(tag: str, period: str = "day", limit: int = 10) -> list[dict]:
+async def trend_items(
+    tag: str, period: str = "day", vertical: str | None = None, limit: int = 10
+) -> list[dict]:
     """Подборка по тренду: топ-истории с этим тегом за окно (schema как у дайджеста)."""
     hours = PERIODS.get(period, PERIODS["day"])[0]
+    vcond = " and vertical = :v" if vertical in ("business", "it", "medical") else ""
+    params: dict = {"tag": tag, "h": hours, "win": limit * 3}
+    if vcond:
+        params["v"] = vertical
     async with SessionFactory() as s:
         raw = (
             await s.execute(
@@ -104,11 +125,11 @@ async def trend_items(tag: str, period: str = "day", limit: int = 10) -> list[di
                     " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     " from news_items"
                     " where processed_at is not null and skip_reason is null"
-                    "   and personal_score is not null and tags @> array[:tag]::text[]"
+                    "   and personal_score is not null and tags @> array[:tag]::text[]" + vcond +
                     "   and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
                     " order by personal_score desc limit :win"
                 ),
-                {"tag": tag, "h": hours, "win": limit * 3},
+                params,
             )
         ).all()
     seen: set[int] = set()

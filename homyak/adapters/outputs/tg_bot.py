@@ -338,29 +338,41 @@ async def cb_digest(cb: CallbackQuery) -> None:
 _PCODE = {"day": "d", "week": "w", "month": "m"}
 _PDECODE = {"d": "day", "w": "week", "m": "month"}
 _PLABEL = {"day": "за день", "week": "за неделю", "month": "за месяц"}
+_VCODE = {"all": "a", "business": "b", "it": "i", "medical": "m"}
+_VDECODE = {"a": "all", "b": "business", "i": "it", "m": "medical"}
+_VBTN = {"all": "🌐 Все", "business": "💼", "it": "💻", "medical": "🩺"}
 
 
-def _trends_text(period: str, trends: list) -> str:
+def _trends_text(period: str, vertical: str, trends: list) -> str:
+    vsuf = "" if vertical == "all" else f" · {_VBTN[vertical]}"
     if not trends:
-        return f"📈 <b>Тренды: {_PLABEL[period]}</b>\n\nПока пусто — мало данных за период."
+        return f"📈 <b>Тренды: {_PLABEL[period]}{vsuf}</b>\n\nПока пусто — мало данных за период."
     return (
-        f"📈 <b>Тренды: {_PLABEL[period]}</b>\n"
-        "<i>что разгоняется · ↑ рост, → ровно</i>\n"
+        f"📈 <b>Тренды: {_PLABEL[period]}{vsuf}</b>\n"
+        "<i>что разгоняется · ↑ рост, → ровно · 🔥 всплеск</i>\n"
         "Жми тему — покажу подборку."
     )
 
 
-def _trends_kb(period: str, trends: list) -> InlineKeyboardMarkup:
-    def pb(p: str, label: str) -> InlineKeyboardButton:
-        mark = "• " if p == period else ""
-        return InlineKeyboardButton(text=mark + label, callback_data="trp:" + _PCODE[p])
+def _trends_kb(period: str, vertical: str, trends: list) -> InlineKeyboardMarkup:
+    p, v = _PCODE[period], _VCODE[vertical]
 
-    rows = [[pb("day", "📅 День"), pb("week", "🗓 Неделя"), pb("month", "📆 Месяц")]]
-    p = _PCODE[period]
+    def pb(pk: str, label: str) -> InlineKeyboardButton:
+        mark = "• " if pk == period else ""
+        return InlineKeyboardButton(text=mark + label, callback_data=f"trp:{_PCODE[pk]}:{v}")
+
+    def vb(vk: str) -> InlineKeyboardButton:
+        mark = "• " if vk == vertical else ""
+        return InlineKeyboardButton(text=mark + _VBTN[vk], callback_data=f"trp:{p}:{_VCODE[vk]}")
+
+    rows = [
+        [pb("day", "📅 День"), pb("week", "🗓 Неделя"), pb("month", "📆 Месяц")],
+        [vb("all"), vb("business"), vb("it"), vb("medical")],
+    ]
     for t in trends:
         gv = t["growth"]
         g = " 🔥" if gv >= 3 else (f" +{round(gv * 100)}%" if gv > 0 else "")
-        cb = f"tr:{p}:{t['tag']}"
+        cb = f"tr:{p}:{v}:{t['tag']}"
         if len(cb.encode()) <= 64:  # лимит callback_data; длинные теги пропускаем (редко)
             rows.append(
                 [InlineKeyboardButton(text=f"{t['direction']} #{t['tag']} · {t['count']}{g}", callback_data=cb)]
@@ -368,11 +380,12 @@ def _trends_kb(period: str, trends: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def _send_trends(send, period: str) -> None:
+async def _send_trends(send, period: str, vertical: str = "all") -> None:
     from homyak.core.trends import compute_trends
 
-    trends = await compute_trends(period)
-    await send(_trends_text(period, trends), reply_markup=_trends_kb(period, trends))
+    vq = None if vertical == "all" else vertical
+    trends = await compute_trends(period, vq)
+    await send(_trends_text(period, vertical, trends), reply_markup=_trends_kb(period, vertical, trends))
 
 
 @dp.message(Command("trends"))
@@ -382,25 +395,28 @@ async def cmd_trends(m: Message) -> None:
 
 @dp.callback_query(F.data.startswith("trp:"))
 async def cb_trends_period(cb: CallbackQuery) -> None:
-    period = _PDECODE.get(cb.data.split(":")[1], "day")
+    _, p, v = cb.data.split(":", 2)
+    period, vertical = _PDECODE.get(p, "day"), _VDECODE.get(v, "all")
     from homyak.core.trends import compute_trends
 
-    trends = await compute_trends(period)
+    trends = await compute_trends(period, None if vertical == "all" else vertical)
     with suppress(Exception):
         await cb.answer()
     with suppress(Exception):
-        await cb.message.edit_text(_trends_text(period, trends), reply_markup=_trends_kb(period, trends))
+        await cb.message.edit_text(
+            _trends_text(period, vertical, trends), reply_markup=_trends_kb(period, vertical, trends)
+        )
 
 
 @dp.callback_query(F.data.startswith("tr:"))
 async def cb_trend_items(cb: CallbackQuery) -> None:
-    _, p, tag = cb.data.split(":", 2)
-    period = _PDECODE.get(p, "day")
+    _, p, v, tag = cb.data.split(":", 3)
+    period, vertical = _PDECODE.get(p, "day"), _VDECODE.get(v, "all")
     with suppress(Exception):
         await cb.answer("собираю…")
     from homyak.core.trends import trend_items
 
-    items = await trend_items(tag, period)
+    items = await trend_items(tag, period, None if vertical == "all" else vertical)
     if not items:
         await cb.message.answer(f"По #{_esc(tag)} за {_PLABEL[period]} пусто.")
         return

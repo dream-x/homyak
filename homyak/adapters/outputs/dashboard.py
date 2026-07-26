@@ -1193,6 +1193,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div class="top"><h1>📈 Тренды</h1><span class="st">что разгоняется · ↑ рост · → ровно</span><span class="nav"><a href="/search">🔎 Поиск</a> · <a href="/lenta">🗂 Лента</a> · <a href="/wiki">📚 Вика</a></span></div>
 <div class="wrap">
   <div class="tabs" id="tabs"></div>
+  <div class="tabs" id="vtabs"></div>
   <div class="trends" id="trends"><div class="muted">Загрузка…</div></div>
   <div class="h" id="picked"></div>
   <div id="items"></div>
@@ -1203,12 +1204,14 @@ const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&g
 const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
 const PERIODS=[['day','📅 День'],['week','🗓 Неделя'],['month','📆 Месяц']];
-let period='day',trends=[],curTag=null;
+const VERTS=[['all','🌐 Все'],['business','💼 Бизнес'],['it','💻 IT'],['medical','🩺 Медицина']];
+let period='day',vertical='all',trends=[],curTag=null;
 function nm(it){return it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket||'');}
 function srcLabel(it){const f=it.feed||'';if(f.startsWith('tw_'))return '🐦 @'+f.slice(3);if(f.startsWith('gh_stars_'))return '🐙 ★'+f.slice(9);if(f.startsWith('gh_repos_'))return '🐙 '+f.slice(9);if(f.startsWith('gh_'))return '🐙 GitHub';if(f.startsWith('@'))return '✈️ '+f;return '📡 '+(f||it.bucket||'');}
 function renderTabs(){$('tabs').innerHTML=PERIODS.map(([k,l])=>`<span class="tab ${k===period?'on':''}" data-k="${k}">${esc(l)}</span>`).join('');[...$('tabs').children].forEach(c=>c.onclick=()=>{period=c.dataset.k;curTag=null;$('picked').textContent='';$('items').innerHTML='';renderTabs();loadTrends();});}
+function renderVtabs(){$('vtabs').innerHTML=VERTS.map(([k,l])=>`<span class="tab ${k===vertical?'on':''}" data-k="${k}">${esc(l)}</span>`).join('');[...$('vtabs').children].forEach(c=>c.onclick=()=>{vertical=c.dataset.k;curTag=null;$('picked').textContent='';$('items').innerHTML='';renderVtabs();loadTrends();});}
 async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>';try{
-  const d=await(await fetch('/trends/api/list?period='+period)).json();trends=d.trends||[];
+  const d=await(await fetch('/trends/api/list?period='+period+'&vertical='+vertical)).json();trends=d.trends||[];
   if(!trends.length){$('trends').innerHTML='<div class="muted">пока пусто — мало данных</div>';return;}
   $('trends').innerHTML=trends.map(t=>{
     const g=t.growth>=3?`<span class="g up">🔥</span>`:(t.growth>0?`<span class="g up">+${Math.round(t.growth*100)}%</span>`:(t.growth<0?`<span class="g down">${Math.round(t.growth*100)}%</span>`:''));
@@ -1217,12 +1220,12 @@ async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>'
   [...$('trends').children].forEach(c=>{if(c.dataset.t)c.onclick=()=>openTag(c.dataset.t);});
 }catch(e){$('trends').innerHTML='<div class="muted">ошибка</div>';}}
 async function openTag(tag){curTag=tag;renderTrends();$('picked').innerHTML=`Подборка по <b>#${esc(tag)}</b>`;$('items').innerHTML='<div class="muted">…</div>';
-  try{const d=await(await fetch(`/trends/api/items?period=${period}&tag=${encodeURIComponent(tag)}`)).json();
+  try{const d=await(await fetch(`/trends/api/items?period=${period}&tag=${encodeURIComponent(tag)}&vertical=${vertical}`)).json();
     $('items').innerHTML=(d.items||[]).map(it=>{const [bc,be]=BADGE[it.bucket]||BADGE.other;const sc=it.score!=null?Math.round(it.score*100)+'%':'—';const u=safeUrl(it.url);
       return `<div class="frow"><span class="badge ${bc}">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">пусто</div>';
   }catch(e){$('items').innerHTML='<div class="muted">ошибка</div>';}}
 function renderTrends(){[...$('trends').children].forEach(c=>{if(c.dataset.t)c.classList.toggle('on',c.dataset.t===curTag);});}
-renderTabs();loadTrends();
+renderTabs();renderVtabs();loadTrends();
 </script>
 """
