@@ -100,6 +100,7 @@ BOT_COMMANDS = [
     BotCommand(command="stats", description="📊 Статистика обучения"),
     BotCommand(command="day", description="📰 Дайджест дня (самое интересное за 24ч)"),
     BotCommand(command="week", description="🗓 Дайджест за 7 дней"),
+    BotCommand(command="trends", description="📈 Тренды: день/неделя/месяц"),
     BotCommand(command="ask", description="🧭 Выжимка по ленте: /ask <вопрос>"),
     BotCommand(command="find", description="🔎 Найти в базе: /find <запрос>"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
@@ -332,6 +333,81 @@ async def cb_digest(cb: CallbackQuery) -> None:
     await _send_period_digest(lambda t, **kw: cb.message.answer(t, **kw), which)
 
 
+# --- тренды (день/неделя/месяц) ---
+
+_PCODE = {"day": "d", "week": "w", "month": "m"}
+_PDECODE = {"d": "day", "w": "week", "m": "month"}
+_PLABEL = {"day": "за день", "week": "за неделю", "month": "за месяц"}
+
+
+def _trends_text(period: str, trends: list) -> str:
+    if not trends:
+        return f"📈 <b>Тренды: {_PLABEL[period]}</b>\n\nПока пусто — мало данных за период."
+    return (
+        f"📈 <b>Тренды: {_PLABEL[period]}</b>\n"
+        "<i>что разгоняется · ↑ рост, → ровно</i>\n"
+        "Жми тему — покажу подборку."
+    )
+
+
+def _trends_kb(period: str, trends: list) -> InlineKeyboardMarkup:
+    def pb(p: str, label: str) -> InlineKeyboardButton:
+        mark = "• " if p == period else ""
+        return InlineKeyboardButton(text=mark + label, callback_data="trp:" + _PCODE[p])
+
+    rows = [[pb("day", "📅 День"), pb("week", "🗓 Неделя"), pb("month", "📆 Месяц")]]
+    p = _PCODE[period]
+    for t in trends:
+        g = f" +{round(t['growth'] * 100)}%" if t["growth"] > 0 else ""
+        cb = f"tr:{p}:{t['tag']}"
+        if len(cb.encode()) <= 64:  # лимит callback_data; длинные теги пропускаем (редко)
+            rows.append(
+                [InlineKeyboardButton(text=f"{t['direction']} #{t['tag']} · {t['count']}{g}", callback_data=cb)]
+            )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _send_trends(send, period: str) -> None:
+    from homyak.core.trends import compute_trends
+
+    trends = await compute_trends(period)
+    await send(_trends_text(period, trends), reply_markup=_trends_kb(period, trends))
+
+
+@dp.message(Command("trends"))
+async def cmd_trends(m: Message) -> None:
+    await _send_trends(lambda t, **kw: m.answer(t, **kw), "day")
+
+
+@dp.callback_query(F.data.startswith("trp:"))
+async def cb_trends_period(cb: CallbackQuery) -> None:
+    period = _PDECODE.get(cb.data.split(":")[1], "day")
+    from homyak.core.trends import compute_trends
+
+    trends = await compute_trends(period)
+    with suppress(Exception):
+        await cb.answer()
+    with suppress(Exception):
+        await cb.message.edit_text(_trends_text(period, trends), reply_markup=_trends_kb(period, trends))
+
+
+@dp.callback_query(F.data.startswith("tr:"))
+async def cb_trend_items(cb: CallbackQuery) -> None:
+    _, p, tag = cb.data.split(":", 2)
+    period = _PDECODE.get(p, "day")
+    with suppress(Exception):
+        await cb.answer("собираю…")
+    from homyak.core.trends import trend_items
+
+    items = await trend_items(tag, period)
+    if not items:
+        await cb.message.answer(f"По #{_esc(tag)} за {_PLABEL[period]} пусто.")
+        return
+    res = {"n": len(items), "items": items, "intro": None}
+    for chunk in list(_chunks(_digest_text(res, f"#{tag} · {_PLABEL[period]}"), 4000)):
+        await cb.message.answer(chunk, disable_web_page_preview=True)
+
+
 async def weekly_digest_loop() -> None:
     """Авто-дайджест за 7 дней раз в неделю в чат. Первый запуск таймер ЗАСЕВАЕТ без отправки
     (без сюрприза после деплоя) — первый авто придёт через 7 дней; «за неделю» доступно кнопкой."""
@@ -348,7 +424,9 @@ async def weekly_digest_loop() -> None:
                 continue
             if now - float(last) < 7 * 24 * 3600 - 3600:
                 continue
-            await _send_period_digest(lambda t, **kw: _bot.send_message(int(chat), t, **kw), "week")
+            send = lambda t, **kw: _bot.send_message(int(chat), t, **kw)  # noqa: E731
+            await _send_period_digest(send, "week")
+            await _send_trends(send, "week")
             await _repo.save_cursor(WEEKLY_KEY, str(now))
             log.info("weekly_digest_sent")
 

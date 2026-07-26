@@ -64,6 +64,30 @@ async def search_page() -> str:
     return dashboard.SEARCH_PAGE
 
 
+@app.get("/trends", response_class=HTMLResponse)
+async def trends_page() -> str:
+    """Тренды (день/неделя/месяц): что разгоняется + подборка по теме."""
+    return dashboard.TRENDS_PAGE
+
+
+@app.get("/trends/api/list")
+async def trends_list(period: str = "day") -> dict:
+    from homyak.core.trends import PERIODS, compute_trends
+
+    period = period if period in PERIODS else "day"
+    return {"period": period, "trends": await compute_trends(period)}
+
+
+@app.get("/trends/api/items")
+async def trends_items(period: str = "day", tag: str = "") -> dict:
+    from homyak.core.trends import PERIODS, trend_items
+
+    period = period if period in PERIODS else "day"
+    if not tag:
+        raise HTTPException(status_code=400, detail="tag required")
+    return {"period": period, "tag": tag, "items": await trend_items(tag, period, limit=20)}
+
+
 @app.get("/wiki", response_class=HTMLResponse)
 async def wiki_page() -> str:
     """Браузер LLM-вики: концепты/сущности/источники, клик по [[ссылкам]]."""

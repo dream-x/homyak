@@ -1159,3 +1159,70 @@ $('q').addEventListener('input',renderList);
 loadStats();renderTabs();loadList();
 </script>
 """
+
+
+# Страница трендов: период (день/неделя/месяц) → что разгоняется → подборка по теме.
+TRENDS_PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>📈 Тренды — Homyak</title>
+<style>
+:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff;--up:#5fd38b;--down:#e08a8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.top{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.top h1{font-size:16px;margin:0}.top .st{color:var(--dim);font-size:13px}.top .nav{margin-left:auto;font-size:13px}
+.wrap{max-width:1080px;margin:0 auto;padding:16px 20px}
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 14px;font-size:14px;color:var(--dim);cursor:pointer;user-select:none}
+.tab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
+.trends{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.tr{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 13px;cursor:pointer}
+.tr:hover{border-color:var(--accent)}.tr.on{background:var(--panel2);border-color:var(--accent)}
+.tr .tag{font-weight:600}.tr .n{color:var(--dim);font-size:12px}
+.tr .g.up{color:var(--up)}.tr .g.down{color:var(--down)}.tr .g{font-size:12px}
+.frow{display:flex;align-items:flex-start;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:7px}
+.frow .bd{flex:1;min-width:0}.frow .ttl{font-weight:600}.frow .ttl:hover{color:var(--accent)}
+.frow .sm{color:var(--dim);font-size:13px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.frow .mt{color:var(--dim);font-size:11px;margin-top:4px}
+.badge{flex:none;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.b-tw{background:#12303a;color:#7fd4ea}.b-rss{background:#2a2320;color:#e0b48a}.b-tg{background:#1c2740;color:#8fb2f0}.b-other{background:#232a38;color:#9aa6b8}
+.muted{color:var(--dim);padding:16px 0}
+.h{margin:6px 0 10px;font-size:15px}
+</style>
+<div class="top"><h1>📈 Тренды</h1><span class="st">что разгоняется · ↑ рост · → ровно</span><span class="nav"><a href="/search">🔎 Поиск</a> · <a href="/lenta">🗂 Лента</a> · <a href="/wiki">📚 Вика</a></span></div>
+<div class="wrap">
+  <div class="tabs" id="tabs"></div>
+  <div class="trends" id="trends"><div class="muted">Загрузка…</div></div>
+  <div class="h" id="picked"></div>
+  <div id="items"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
+const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
+const PERIODS=[['day','📅 День'],['week','🗓 Неделя'],['month','📆 Месяц']];
+let period='day',trends=[],curTag=null;
+function nm(it){return it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket||'');}
+function srcLabel(it){const f=it.feed||'';if(f.startsWith('tw_'))return '🐦 @'+f.slice(3);if(f.startsWith('gh_stars_'))return '🐙 ★'+f.slice(9);if(f.startsWith('gh_repos_'))return '🐙 '+f.slice(9);if(f.startsWith('gh_'))return '🐙 GitHub';if(f.startsWith('@'))return '✈️ '+f;return '📡 '+(f||it.bucket||'');}
+function renderTabs(){$('tabs').innerHTML=PERIODS.map(([k,l])=>`<span class="tab ${k===period?'on':''}" data-k="${k}">${esc(l)}</span>`).join('');[...$('tabs').children].forEach(c=>c.onclick=()=>{period=c.dataset.k;curTag=null;$('picked').textContent='';$('items').innerHTML='';renderTabs();loadTrends();});}
+async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>';try{
+  const d=await(await fetch('/trends/api/list?period='+period)).json();trends=d.trends||[];
+  if(!trends.length){$('trends').innerHTML='<div class="muted">пока пусто — мало данных</div>';return;}
+  $('trends').innerHTML=trends.map(t=>{
+    const g=t.growth>0?`<span class="g up">+${Math.round(t.growth*100)}%</span>`:(t.growth<0?`<span class="g down">${Math.round(t.growth*100)}%</span>`:'');
+    return `<div class="tr ${t.tag===curTag?'on':''}" data-t="${esc(t.tag)}"><span>${t.direction}</span><span class="tag">#${esc(t.tag)}</span><span class="n">${t.count}</span>${g}</div>`;
+  }).join('');
+  [...$('trends').children].forEach(c=>{if(c.dataset.t)c.onclick=()=>openTag(c.dataset.t);});
+}catch(e){$('trends').innerHTML='<div class="muted">ошибка</div>';}}
+async function openTag(tag){curTag=tag;renderTrends();$('picked').innerHTML=`Подборка по <b>#${esc(tag)}</b>`;$('items').innerHTML='<div class="muted">…</div>';
+  try{const d=await(await fetch(`/trends/api/items?period=${period}&tag=${encodeURIComponent(tag)}`)).json();
+    $('items').innerHTML=(d.items||[]).map(it=>{const [bc,be]=BADGE[it.bucket]||BADGE.other;const sc=it.score!=null?Math.round(it.score*100)+'%':'—';const u=safeUrl(it.url);
+      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+    }).join('')||'<div class="muted">пусто</div>';
+  }catch(e){$('items').innerHTML='<div class="muted">ошибка</div>';}}
+function renderTrends(){[...$('trends').children].forEach(c=>{if(c.dataset.t)c.classList.toggle('on',c.dataset.t===curTag);});}
+renderTabs();loadTrends();
+</script>
+"""
