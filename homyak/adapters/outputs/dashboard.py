@@ -1076,30 +1076,25 @@ SEARCH_PAGE = r"""<!doctype html>
 <title>🔎 Поиск — Homyak</title>
 <style>
 /*BASE*/
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
-a{color:var(--accent);text-decoration:none}
-.top{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.top h1{font-size:16px;margin:0}.top span{color:var(--dim);font-size:13px}
-.wrap{max-width:1080px;margin:0 auto;padding:16px 20px}
+.wrap{max-width:1160px;margin:0 auto;padding:14px 20px 40px}
 .qbar{display:flex;gap:8px;margin-bottom:12px}
-.qbar input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 14px;color:var(--txt);font-size:15px}
-.qbar button{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:0 16px;color:var(--txt);cursor:pointer;font-size:14px}
-.qbar button.go{background:var(--accent);border-color:var(--accent);color:#06202a;font-weight:600}
-.ftabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.ftab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;color:var(--dim);cursor:pointer;user-select:none}
-.ftab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
-.answer{background:var(--panel);border:1px solid #2f5d6a;border-radius:11px;padding:14px 16px;margin:12px 0;white-space:pre-wrap;line-height:1.6;display:none}
+.qbar input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 14px;color:var(--txt);font-size:15px}
+.qbar input:focus{border-color:var(--accent-dim);outline:none}
+.qbar button{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:0 16px;color:var(--txt);cursor:pointer;font-size:13px}
+.qbar button.go{background:var(--accent);border-color:var(--accent);color:#1a1408;font-weight:600}
+.qbar button:hover{border-color:var(--accent-dim)}
+.answer{background:var(--panel);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:13px 16px;margin:12px 0;white-space:pre-wrap;line-height:1.6;display:none}
 .answer.on{display:block}
-.answer .src{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.frow{display:flex;align-items:flex-start;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:7px}
-.frow .bd{flex:1;min-width:0}
-.frow .ttl{font-weight:600;cursor:pointer}.frow .ttl:hover{color:var(--accent)}
-.frow .sm{color:var(--dim);font-size:13px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.frow .mt{color:var(--dim);font-size:11px;margin-top:4px}
-.badge{flex:none;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
-.b-tw{background:#12303a;color:#7fd4ea}.b-rss{background:#2a2320;color:#e0b48a}.b-tg{background:#1c2740;color:#8fb2f0}.b-other{background:#232a38;color:#9aa6b8}
-.muted{color:var(--dim);padding:20px;text-align:center}
+.answer .src{color:var(--faint);font:10px/1 var(--mono);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}
+.frow{display:grid;grid-template-columns:3px 136px 1fr;gap:12px;align-items:start;padding:9px 10px 9px 0;border-bottom:1px solid var(--line)}
+.frow:hover{background:var(--panel)}
+.frow .rel{align-self:stretch;background:linear-gradient(to top,var(--accent) var(--p,0%),transparent var(--p,0%));opacity:.75;border-radius:2px}
+.frow .badge{font:11px/1.4 var(--mono);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .bd{min-width:0}
+.frow .ttl{font-size:13.5px;font-weight:500;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .ttl:hover{color:var(--accent)}
+.frow .sm{color:var(--dim);font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.frow .mt{color:var(--faint);font:11px/1 var(--mono);margin-top:5px}
 </style>
 <div class="top"><h1>🔎 Поиск</h1><span>лексика + смысл (RRF)</span><!--NAV--></div>
 <div class="wrap">
@@ -1145,7 +1140,8 @@ async function search(){
       const [bc,be]=BADGE[it.bucket]||BADGE.other;
       const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
       const u=safeUrl(it.url);
-      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''}>${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${timeCell(it)?' · '+timeCell(it):''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+      const pct=it.score!=null?Math.round(it.score*100):0;
+      return `<div class="frow" style="--p:${pct}%"><span class="rel"></span><span class="badge">${be} ${esc(nm(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''}>${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${timeCell(it)?' · '+timeCell(it):''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">ничего не найдено</div>';
   }catch(e){$('results').innerHTML='<div class="muted">ошибка поиска</div>';}
 }
@@ -1171,31 +1167,31 @@ WIKI_PAGE = r"""<!doctype html>
 <title>📚 Вика — Homyak</title>
 <style>
 /*BASE*/
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.top{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.top h1{font-size:16px;margin:0}.top .st{color:var(--dim);font-size:13px}
-.top .nav{margin-left:auto;font-size:13px}
-.cols{display:flex;height:calc(100vh - 51px)}
-.side{width:320px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
-.tabs{display:flex;gap:6px;padding:10px;flex-wrap:wrap}
-.tab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 11px;font-size:13px;color:var(--dim);cursor:pointer;user-select:none}
-.tab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
-.filter{margin:0 10px 8px}.filter input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 11px;color:var(--txt);font-size:13px}
+a:hover{text-decoration:underline}
+.cols{display:flex;height:calc(100vh - 46px)}
+.side{width:300px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:3px;padding:10px 10px 6px;flex-wrap:wrap}
+.tab{font:12px/1 var(--mono);color:var(--dim);background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 10px;cursor:pointer;user-select:none}
+.tab:hover{color:var(--txt);background:var(--panel)}
+.tab.on{color:var(--accent);border-color:var(--accent-dim);background:var(--panel)}
+.filter{margin:0 10px 8px}
+.filter input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 11px;color:var(--txt);font:12px/1.4 var(--mono)}
+.filter input:focus{border-color:var(--accent-dim);outline:none}
 .list{overflow:auto;flex:1;padding:0 6px 10px}
-.pill{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer}
-.pill:hover{background:var(--panel)}.pill.on{background:var(--panel2)}
+.pill{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px}
+.pill:hover{background:var(--panel)}
+.pill.on{background:var(--panel2);color:var(--accent)}
 .pill .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pill .n{color:var(--dim);font-size:11px;background:var(--panel2);border-radius:10px;padding:1px 7px;flex:none}
-.pill.on .n{background:var(--bg)}
+.pill .n{color:var(--faint);font:10px/1 var(--mono);background:var(--panel2);border-radius:9px;padding:2px 6px;flex:none}
 .main{flex:1;overflow:auto;padding:24px 30px;min-width:0}
-.main h2{margin:0 0 6px;font-size:22px}.main h3{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.6px;margin:18px 0 6px}
-.main p{margin:8px 0;color:#d3d8e0}.main ul{margin:6px 0;padding-left:18px}.main li{margin:5px 0}
-.main .date{color:var(--dim);font-size:12px}
-.wl{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:1px 7px;cursor:pointer;font-size:12px;white-space:nowrap}
-.wl:hover{border-color:var(--accent)}
-.muted{color:var(--dim);padding:20px}
+.main h2{margin:0 0 6px;font-size:21px;font-weight:600}
+.main h3{color:var(--faint);font:10px/1 var(--mono);text-transform:uppercase;letter-spacing:1px;margin:20px 0 8px}
+.main p{margin:8px 0;color:var(--txt);max-width:70ch}
+.main ul{margin:6px 0;padding-left:16px;max-width:75ch}
+.main li{margin:6px 0}
+.main .date{color:var(--faint);font:11px var(--mono)}
+.wl{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 7px;cursor:pointer;font:11px var(--mono);white-space:nowrap}
+.wl:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 <div class="top"><h1>📚 База знаний</h1><span class="st" id="st"></span><!--NAV--></div>
 <div class="cols">
@@ -1261,28 +1257,29 @@ TRENDS_PAGE = r"""<!doctype html>
 <title>📈 Тренды — Homyak</title>
 <style>
 /*BASE*/
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.top{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.top h1{font-size:16px;margin:0}.top .st{color:var(--dim);font-size:13px}.top .nav{margin-left:auto;font-size:13px}
-.wrap{max-width:1080px;margin:0 auto;padding:16px 20px}
-.tabs{display:flex;gap:6px;margin-bottom:14px}
-.tab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 14px;font-size:14px;color:var(--dim);cursor:pointer;user-select:none}
-.tab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
-.trends{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
-.tr{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 13px;cursor:pointer}
-.tr:hover{border-color:var(--accent)}.tr.on{background:var(--panel2);border-color:var(--accent)}
-.tr .tag{font-weight:600}.tr .n{color:var(--dim);font-size:12px}
-.tr .g.up{color:var(--up)}.tr .g.down{color:var(--down)}.tr .g{font-size:12px}
-.frow{display:flex;align-items:flex-start;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:7px}
-.frow .bd{flex:1;min-width:0}.frow .ttl{font-weight:600}.frow .ttl:hover{color:var(--accent)}
-.frow .sm{color:var(--dim);font-size:13px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.frow .mt{color:var(--dim);font-size:11px;margin-top:4px}
-.badge{flex:none;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
-.b-tw{background:#12303a;color:#7fd4ea}.b-rss{background:#2a2320;color:#e0b48a}.b-tg{background:#1c2740;color:#8fb2f0}.b-other{background:#232a38;color:#9aa6b8}
-.muted{color:var(--dim);padding:16px 0}
-.h{margin:6px 0 10px;font-size:15px}
+.wrap{max-width:1160px;margin:0 auto;padding:14px 20px 40px}
+.tabs{display:flex;gap:3px;margin-bottom:8px;flex-wrap:wrap}
+.tab{font:12px/1 var(--mono);color:var(--dim);background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 11px;cursor:pointer;user-select:none}
+.tab:hover{color:var(--txt);background:var(--panel)}
+.tab.on{color:var(--accent);border-color:var(--accent-dim);background:var(--panel)}
+.trends{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 18px}
+.tr{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 11px;cursor:pointer;font:12px/1 var(--mono)}
+.tr:hover{border-color:var(--accent-dim)}
+.tr.on{border-color:var(--accent);background:var(--panel2)}
+.tr .tag{color:var(--txt);font-weight:600}
+.tr .n{color:var(--faint)}
+.tr .g.up{color:var(--up)}.tr .g.down{color:var(--down)}
+.h{margin:6px 0 10px;font:11px/1 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:1px}
+.h b{color:var(--accent);font-weight:600}
+.frow{display:grid;grid-template-columns:3px 136px 1fr;gap:12px;align-items:start;padding:9px 10px 9px 0;border-bottom:1px solid var(--line)}
+.frow:hover{background:var(--panel)}
+.frow .rel{align-self:stretch;background:linear-gradient(to top,var(--accent) var(--p,0%),transparent var(--p,0%));opacity:.75;border-radius:2px}
+.frow .badge{font:11px/1.4 var(--mono);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .bd{min-width:0}
+.frow .ttl{font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .ttl:hover{color:var(--accent)}
+.frow .sm{color:var(--dim);font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.frow .mt{color:var(--faint);font:11px/1 var(--mono);margin-top:5px}
 </style>
 <div class="top"><h1>📈 Тренды</h1><span class="st">что разгоняется · ↑ рост · → ровно</span><!--NAV--></div>
 <div class="wrap">
@@ -1322,7 +1319,8 @@ async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>'
 async function openTag(tag){curTag=tag;renderTrends();$('picked').innerHTML=`Подборка по <b>#${esc(tag)}</b>`;$('items').innerHTML='<div class="muted">…</div>';
   try{const d=await(await fetch(`/trends/api/items?period=${period}&tag=${encodeURIComponent(tag)}&vertical=${vertical}`)).json();
     $('items').innerHTML=(d.items||[]).map(it=>{const [bc,be]=BADGE[it.bucket]||BADGE.other;const sc=it.score!=null?Math.round(it.score*100)+'%':'—';const u=safeUrl(it.url);
-      return `<div class="frow"><span class="badge ${bc}">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${timeCell(it)?' · '+timeCell(it):''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+      const pct=it.score!=null?Math.round(it.score*100):0;
+      return `<div class="frow" style="--p:${pct}%"><span class="rel"></span><span class="badge">${be} ${esc(srcLabel(it))}</span><div class="bd"><div class="ttl" ${u?`onclick="window.open('${esc(u)}','_blank')"`:''} style="cursor:pointer">${esc(it.title||'—')}</div>${it.summary?`<div class="sm">${esc(it.summary)}</div>`:''}<div class="mt">🎯 ${sc}${timeCell(it)?' · '+timeCell(it):''}${it.tags&&it.tags.length?' · '+it.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">пусто</div>';
   }catch(e){$('items').innerHTML='<div class="muted">ошибка</div>';}}
 function renderTrends(){[...$('trends').children].forEach(c=>{if(c.dataset.t)c.classList.toggle('on',c.dataset.t===curTag);});}
