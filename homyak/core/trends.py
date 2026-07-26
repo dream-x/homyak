@@ -80,7 +80,7 @@ async def compute_trends(period: str = "day", limit: int = 8) -> list[dict]:
             "tag": r.tag,
             "count": r.c,
             "prev": r.pc,
-            "growth": round(growth(r.c, r.pc), 2),
+            "growth": round(min(growth(r.c, r.pc), 9.99), 2),  # cap: у молодых данных база ≈0
             "avg_score": round(float(r.s), 3) if r.s is not None else None,
             "direction": direction(r.c, r.pc),
             "strength": strength(r.c, r.pc, r.s),

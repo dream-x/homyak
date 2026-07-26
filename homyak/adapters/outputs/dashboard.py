@@ -1211,7 +1211,7 @@ async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>'
   const d=await(await fetch('/trends/api/list?period='+period)).json();trends=d.trends||[];
   if(!trends.length){$('trends').innerHTML='<div class="muted">пока пусто — мало данных</div>';return;}
   $('trends').innerHTML=trends.map(t=>{
-    const g=t.growth>0?`<span class="g up">+${Math.round(t.growth*100)}%</span>`:(t.growth<0?`<span class="g down">${Math.round(t.growth*100)}%</span>`:'');
+    const g=t.growth>=3?`<span class="g up">🔥</span>`:(t.growth>0?`<span class="g up">+${Math.round(t.growth*100)}%</span>`:(t.growth<0?`<span class="g down">${Math.round(t.growth*100)}%</span>`:''));
     return `<div class="tr ${t.tag===curTag?'on':''}" data-t="${esc(t.tag)}"><span>${t.direction}</span><span class="tag">#${esc(t.tag)}</span><span class="n">${t.count}</span>${g}</div>`;
   }).join('');
   [...$('trends').children].forEach(c=>{if(c.dataset.t)c.onclick=()=>openTag(c.dataset.t);});

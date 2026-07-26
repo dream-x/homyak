@@ -358,7 +358,8 @@ def _trends_kb(period: str, trends: list) -> InlineKeyboardMarkup:
     rows = [[pb("day", "📅 День"), pb("week", "🗓 Неделя"), pb("month", "📆 Месяц")]]
     p = _PCODE[period]
     for t in trends:
-        g = f" +{round(t['growth'] * 100)}%" if t["growth"] > 0 else ""
+        gv = t["growth"]
+        g = " 🔥" if gv >= 3 else (f" +{round(gv * 100)}%" if gv > 0 else "")
         cb = f"tr:{p}:{t['tag']}"
         if len(cb.encode()) <= 64:  # лимит callback_data; длинные теги пропускаем (редко)
             rows.append(
