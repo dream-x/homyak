@@ -309,7 +309,8 @@ async def cb_digest(cb: CallbackQuery) -> None:
 
 
 async def weekly_digest_loop() -> None:
-    """Авто-дайджест за 7 дней раз в неделю в чат. Первый раз — вскоре после старта, дальше каждые 7д."""
+    """Авто-дайджест за 7 дней раз в неделю в чат. Первый запуск таймер ЗАСЕВАЕТ без отправки
+    (без сюрприза после деплоя) — первый авто придёт через 7 дней; «за неделю» доступно кнопкой."""
     while True:
         await asyncio.sleep(3600)
         with suppress(Exception):
@@ -318,7 +319,10 @@ async def weekly_digest_loop() -> None:
                 continue
             last = await _repo.get_cursor(WEEKLY_KEY)
             now = time.time()
-            if last and now - float(last) < 7 * 24 * 3600 - 3600:
+            if last is None:  # первый раз — засеять и молчать
+                await _repo.save_cursor(WEEKLY_KEY, str(now))
+                continue
+            if now - float(last) < 7 * 24 * 3600 - 3600:
                 continue
             await _send_period_digest(lambda t, **kw: _bot.send_message(int(chat), t, **kw), "week")
             await _repo.save_cursor(WEEKLY_KEY, str(now))
