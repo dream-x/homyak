@@ -31,6 +31,63 @@ def _bucket(source_type: str | None, feed_name: str | None) -> str:
     return source_type or "other"
 
 
+BASE_CSS = """
+/* Токены. Тёплый графит вместо сине-чёрного, янтарь вместо неона — «фосфорный» терминал. */
+:root{
+  --bg:#14161a; --panel:#1b1e24; --panel2:#20242b; --line:#2a2f37;
+  --txt:#e8e6e1; --dim:#98a0ab; --faint:#6d7480;
+  --accent:#d8a657; --accent-dim:#8a6c39;
+  --up:#89b482; --down:#d68c8c;
+  --biz:#e0b35c; --it:#7fb3d5; --med:#89b482; --tw:#8fb2d8; --rss:#d8a657; --tg:#a89bd0;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  --row-h:34px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;max-width:100%;overflow-x:hidden}
+body{background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--accent-dim);color:#fff}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Шапка: заголовок слева, меню справа, ничего не вылезает за экран */
+.top{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--line);
+     position:sticky;top:0;background:rgba(20,22,26,.94);backdrop-filter:blur(8px);z-index:6;flex-wrap:wrap}
+.top h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px;white-space:nowrap}
+.top .st,.top span{color:var(--faint);font-size:12px;font-family:var(--mono)}
+nav{min-width:0;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+
+/* Тулбар фильтров — один компактный ряд */
+.bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--line)}
+.grp{display:flex;gap:3px;align-items:center}
+.grp>.lbl{font:11px/1 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.8px;margin-right:5px}
+.chip{font:12px/1 var(--mono);color:var(--dim);background:transparent;border:1px solid transparent;
+      border-radius:6px;padding:6px 9px;cursor:pointer;user-select:none;white-space:nowrap;transition:.12s}
+.chip:hover{color:var(--txt);background:var(--panel)}
+.chip.on{color:var(--accent);border-color:var(--accent-dim);background:var(--panel)}
+
+/* Плотная строка-таблица: полоса релевантности · источник · заголовок · время · скор · действия */
+.thead{display:grid;grid-template-columns:3px 136px 1fr auto 46px 86px;gap:12px;align-items:center;
+       padding:8px 10px 8px 0;font:10px/1 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:1px}
+.row{display:grid;grid-template-columns:3px 136px 1fr auto 46px 86px;gap:12px;align-items:center;
+     padding:0 10px 0 0;min-height:var(--row-h);border-bottom:1px solid var(--line);position:relative}
+.row:hover{background:var(--panel)}
+.row .rel{align-self:stretch;background:linear-gradient(to top,var(--accent) var(--p,0%),transparent var(--p,0%));
+          opacity:.75;border-radius:2px}
+.row .src{font:11px/1 var(--mono);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .ttl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;font-size:13.5px}
+.row .ttl:hover{color:var(--accent)}
+.row .tm{font:11px/1 var(--mono);color:var(--faint);white-space:nowrap;text-align:right}
+.row .sc{font:11px/1 var(--mono);color:var(--dim);white-space:nowrap;min-width:34px;text-align:right}
+.row .act{display:flex;gap:2px;opacity:0;transition:.12s}
+.row:hover .act,.row .act:focus-within{opacity:1}
+.row .act .b{border:none;background:transparent;cursor:pointer;font-size:13px;line-height:1;padding:5px 6px;border-radius:5px;opacity:.65}
+.row .act .b:hover{background:var(--panel2);opacity:1}
+.row .act .b.on{opacity:1;background:var(--panel2)}
+.muted{color:var(--faint);padding:22px 0;text-align:center;font:12px/1 var(--mono)}
+"""
+
+
 # --- общее меню разделов (одно на все страницы) ---
 
 NAV_ITEMS = [
@@ -58,9 +115,12 @@ def nav_html(active: str = "") -> str:
     return f'<nav style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto">{links}</nav>'
 
 
+CSS_MARK = "/*BASE*/"  # плейсхолдер общего CSS в <style> каждой страницы
+
+
 def page(html: str, active: str = "") -> str:
-    """Подставить меню в страницу (см. NAV_MARK)."""
-    return html.replace(NAV_MARK, nav_html(active))
+    """Подставить общий CSS и меню в страницу (см. CSS_MARK / NAV_MARK)."""
+    return html.replace(CSS_MARK, BASE_CSS).replace(NAV_MARK, nav_html(active))
 
 
 async def stats_snapshot() -> dict:
@@ -521,11 +581,7 @@ PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>🐹 Homyak — Live Pipeline</title>
 <style>
-:root{
-  --bg:#0b0e14; --panel:#141924; --panel2:#1b2230; --line:#242c3d;
-  --txt:#e6e9ef; --dim:#8a93a6; --accent:#6ee7ff;
-  --biz:#f5b942; --it:#5aa9ff; --med:#4fd6a0; --tw:#7db9ff; --rss:#ff9b6a; --tg:#a78bfa;
-}
+/*BASE*/
 *{box-sizing:border-box} html,body{margin:0;max-width:100%;overflow-x:hidden}
 body{background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 a{color:inherit;text-decoration:none}
@@ -926,42 +982,24 @@ LENTA_PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🗂 Лента — Homyak</title>
 <style>
-:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
-a{color:var(--accent);text-decoration:none}
-.top{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5;flex-wrap:wrap}
-.top h1{font-size:16px;margin:0}
-.top span{color:var(--dim);font-size:13px}
-.wrap{max-width:1080px;margin:0 auto;padding:16px 20px}
-.ftabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.ftab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 13px;font-size:13px;color:var(--dim);cursor:pointer;user-select:none}
-.ftab.on{background:var(--accent);border-color:var(--accent);color:#06202a}
-.frow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 13px;margin-bottom:7px;min-width:0}
-.badge{flex:none;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
-.b-tw{background:#12303a;color:#7fd4ea}.b-rss{background:#2a2320;color:#e0b48a}.b-tg{background:#1c2740;color:#8fb2f0}.b-other{background:#232a38;color:#9aa6b8}
-.frow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
-.frow .ttl:hover{color:var(--accent)}
-.frow .sc{color:var(--dim);font-size:12px;white-space:nowrap}
-.frow .tm{color:var(--dim);font-size:12px;white-space:nowrap;min-width:96px;text-align:right}
-.vbtn{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:4px 9px;cursor:pointer;font-size:14px;line-height:1;user-select:none}
-.vbtn.up.on{background:#1c3a24;border-color:#2f7d4a}.vbtn.down.on{background:#3a1c1c;border-color:#7d2f2f}.vbtn.save.on{background:#3a331c;border-color:#7d6a2f}
-.muted{color:var(--dim);padding:20px;text-align:center}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;z-index:20;padding:18px}
+/*BASE*/
+.wrap{max-width:1160px;margin:0 auto;padding:0 20px 40px}
+.badge{flex:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.66);display:none;align-items:center;justify-content:center;z-index:20;padding:18px}
 .modal.on{display:flex}
-.mbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;max-height:86vh;overflow:auto;padding:22px;position:relative}
-.mbox h3{margin:0 0 8px}
-.mmeta{color:var(--dim);font-size:12px;display:flex;gap:12px;flex-wrap:wrap;margin:4px 0}
-.mtext{white-space:pre-wrap;word-break:break-word;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:12px;margin:10px 0;font-size:13px;line-height:1.55}
-.mlbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-top:8px}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;max-width:680px;width:100%;max-height:86vh;overflow:auto;padding:22px;position:relative}
+.mbox h3{margin:0 0 8px;font-size:18px}
+.mmeta{color:var(--dim);font:11px/1.6 var(--mono);display:flex;gap:12px;flex-wrap:wrap;margin:4px 0}
+.mtext{white-space:pre-wrap;word-break:break-word;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;font-size:13px;line-height:1.6}
+.mlbl{color:var(--faint);font:10px/1 var(--mono);text-transform:uppercase;letter-spacing:1px;margin-top:12px}
 .mclose{position:absolute;top:12px;right:14px;cursor:pointer;color:var(--dim);font-size:20px}
+.mbox a{color:var(--accent)}
 </style>
 <div class="top"><h1>🗂 Лента</h1><span>👍/👎 обучают систему</span><!--NAV--></div>
 <div class="wrap">
-  <div class="ftabs" id="ftabs"></div>
-  <div class="ftabs" id="stabs"></div>
-  <div class="ftabs" id="ptabs"></div>
-  <div id="lentafeed"><div class="muted">Загрузка…</div></div>
+  <div class="bar" id="bar"></div>
+  <div class="thead"><span></span><span>источник</span><span>заголовок</span><span>время</span><span>🎯</span><span></span></div>
+  <div id="lentafeed"><div class="muted">загрузка…</div></div>
 </div>
 <div class="modal" id="modal"><div class="mbox" id="mbox"><span class="mclose" id="mclose">✕</span><div id="mbody"></div></div></div>
 <script>
@@ -970,9 +1008,9 @@ const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&g
 const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
 const BADGE={twitter:['b-tw','🐦'],rss:['b-rss','📡'],telegram:['b-tg','✈️'],other:['b-other','•']};
 const VLABEL={business:'💼 Business',it:'💻 IT',medical:'🩺 Medical'};
-const FTABS=[['all','Все'],['twitter','🐦 Twitter'],['business','💼 Business'],['it','💻 IT'],['medical','🩺 Medical'],['watch','👁 Watch']];
-const STABS=[['time','🕒 Свежее'],['score','🎯 Скоринг']];
-const PTABS=[[0,'Всё'],[6,'6 часов'],[24,'Сутки'],[168,'Неделя']];
+const FTABS=[['all','все'],['twitter','twitter'],['business','бизнес'],['it','it'],['medical','мед'],['watch','watch']];
+const STABS=[['time','свежее'],['score','скоринг']];
+const PTABS=[[0,'всё'],[6,'6ч'],[24,'сутки'],[168,'неделя']];
 let feedKind='all',feedSort='time',feedHours=0;
 const fmtAge=s=>{if(s==null)return '';const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';return Math.floor(h/24)+'д';};
 const fmtAbs=s=>s==null?'':new Date(Date.now()-s*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -980,20 +1018,32 @@ const whenOf=it=>{if(it&&it.published)return new Date(it.published);if(it&&it.ag
 const fmtWhen=d=>{if(!d||isNaN(d))return '';const n=new Date();const same=d.toDateString()===n.toDateString();return same?d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):d.toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});};
 const fmtFull=d=>(!d||isNaN(d))?'':d.toLocaleString('ru-RU',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
 const timeCell=it=>{const d=whenOf(it);const w=fmtWhen(d);const a=fmtAge(it&&it.age_s);return w?`<span title="${fmtFull(d)}">🕒 ${w}${a?' · '+a:''}</span>`:'';};
-function renderFtabs(){$('ftabs').innerHTML=FTABS.map(([k,l])=>`<span class="ftab ${k===feedKind?'on':''}" onclick="setFeedKind('${k}')">${esc(l)}</span>`).join('');}
-function setFeedKind(k){feedKind=k;renderFtabs();loadFeed();}
-function renderStabs(){$('stabs').innerHTML=STABS.map(([k,l])=>`<span class="ftab ${k===feedSort?'on':''}" onclick="setFeedSort('${k}')">${esc(l)}</span>`).join('');}
-function setFeedSort(k){feedSort=k;renderStabs();loadFeed();}
-function renderPtabs(){$('ptabs').innerHTML=PTABS.map(([k,l])=>`<span class="ftab ${k===feedHours?'on':''}" onclick="setFeedHours(${k})">${esc(l)}</span>`).join('');}
-function setFeedHours(k){feedHours=k;renderPtabs();loadFeed();}
+function grp(label,items,cur,fn){return `<div class="grp"><span class="lbl">${label}</span>`+items.map(([k,l])=>`<span class="chip ${k===cur?'on':''}" data-fn="${fn}" data-k="${k}">${esc(l)}</span>`).join('')+`</div>`;}
+function renderBar(){
+  $('bar').innerHTML=grp('лента',FTABS,feedKind,'kind')+grp('сорт',STABS,feedSort,'sort')+grp('период',PTABS.map(([k,l])=>[String(k),l]),String(feedHours),'hours');
+  [...$('bar').querySelectorAll('.chip')].forEach(c=>c.onclick=()=>{
+    const k=c.dataset.k;
+    if(c.dataset.fn==='kind')feedKind=k; else if(c.dataset.fn==='sort')feedSort=k; else feedHours=+k;
+    renderBar();loadFeed();
+  });
+}
 async function loadFeed(){try{
   const d=await (await fetch('/dashboard/feed?kind='+feedKind+'&sort='+feedSort+'&hours='+feedHours+'&limit=80')).json();
   $('lentafeed').innerHTML=(d.items||[]).map(it=>{
-    const [bc,be]=BADGE[it.bucket]||BADGE.other;
-    const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket);
-    const sc=it.score!=null?Math.round(it.score*100)+'%':'—';
+    const [,be]=BADGE[it.bucket]||BADGE.other;
+    const nm=it.feed&&it.feed.startsWith('tw_')?'@'+it.feed.slice(3):(it.feed||it.vertical||it.bucket||'');
+    const pct=it.score!=null?Math.round(it.score*100):null;
     const fb=it.feedback||[];const on=s=>fb.includes(s)?'on':'';
-    return `<div class="frow"><span class="badge ${bc}">${be} ${esc(nm)}</span><span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span><span class="tm" title="${fmtFull(whenOf(it))}">${fmtWhen(whenOf(it))}<span style="opacity:.55"> · ${fmtAge(it.age_s)}</span></span><span class="sc">🎯 ${sc}</span><span class="vbtn up ${on('up')}" onclick="vote(${it.id},'up',this)">👍</span><span class="vbtn down ${on('down')}" onclick="vote(${it.id},'down',this)">👎</span><span class="vbtn save ${on('save')}" onclick="vote(${it.id},'save',this)">⭐</span></div>`;
+    return `<div class="row" style="--p:${pct||0}%">`
+      +`<span class="rel" title="релевантность ${pct!=null?pct+'%':'—'}"></span>`
+      +`<span class="src" title="${esc(nm)}">${be} ${esc(nm)}</span>`
+      +`<span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span>`
+      +`<span class="tm" title="${fmtFull(whenOf(it))}">${fmtWhen(whenOf(it))}<span style="opacity:.5"> ${fmtAge(it.age_s)}</span></span>`
+      +`<span class="sc">${pct!=null?pct+'%':'—'}</span>`
+      +`<span class="act"><button class="b up ${on('up')}" title="нравится" onclick="vote(${it.id},'up',this)">👍</button>`
+      +`<button class="b down ${on('down')}" title="не нравится" onclick="vote(${it.id},'down',this)">👎</button>`
+      +`<button class="b save ${on('save')}" title="сохранить" onclick="vote(${it.id},'save',this)">⭐</button></span>`
+      +`</div>`;
   }).join('')||'<div class="muted">пусто</div>';
 }catch(e){$('lentafeed').innerHTML='<div class="muted">ошибка загрузки</div>';}}
 async function vote(id,signal,el){const was=el.classList.contains('on');el.classList.toggle('on');try{const r=await (await fetch('/dashboard/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:id,signal})})).json();el.classList.toggle('on',r.action==='added');}catch(e){el.classList.toggle('on',was);}}
@@ -1015,7 +1065,7 @@ async function openItem(id){try{
 async function openRazbor(id){const box=$('razbor-'+id);if(!box)return;box.innerHTML='<div class="muted">Разбираю… (~7с)</div>';try{const d=await (await fetch('/dashboard/razbor/'+id)).json();if(d.error){box.innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}const html=(d.body||'').split('\n').map(l=>{l=l.trim();if(!l)return '';return (l.startsWith('**')&&l.endsWith('**'))?'<div class="mlbl">'+esc(l.slice(2,-2))+'</div>':'<div>'+esc(l)+'</div>';}).join('');box.innerHTML='<div class="mtext">'+html+'</div>';}catch(e){box.innerHTML='<div class="muted">ошибка разбора</div>';}}
 $('mclose').onclick=mHide;$('modal').onclick=e=>{if(e.target.id==='modal')mHide();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')mHide();});
-renderFtabs();renderStabs();renderPtabs();loadFeed();setInterval(loadFeed,20000);
+renderBar();loadFeed();setInterval(loadFeed,20000);
 </script>
 """
 
@@ -1025,7 +1075,7 @@ SEARCH_PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🔎 Поиск — Homyak</title>
 <style>
-:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff}
+/*BASE*/
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
 a{color:var(--accent);text-decoration:none}
@@ -1120,7 +1170,7 @@ WIKI_PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>📚 Вика — Homyak</title>
 <style>
-:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff}
+/*BASE*/
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
@@ -1210,7 +1260,7 @@ TRENDS_PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>📈 Тренды — Homyak</title>
 <style>
-:root{--bg:#0b0e14;--panel:#141924;--panel2:#1b2230;--line:#242c3d;--txt:#e6e9ef;--dim:#8a93a6;--accent:#6ee7ff;--up:#5fd38b;--down:#e08a8a}
+/*BASE*/
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
