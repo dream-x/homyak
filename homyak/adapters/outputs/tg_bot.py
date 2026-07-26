@@ -278,7 +278,9 @@ def _digest_text(res: dict, label: str) -> str:
         parts.append(f"{i}. 🎯{sc} {ve} {head} · <i>{_esc(_src_label(it))}</i>")
         summ = (it.get("summary") or "").replace("\n", " ").strip()
         if summ:
-            parts.append(f"    {_esc(summ[:160])}")
+            if len(summ) > 170:
+                summ = summ[:170].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
+            parts.append(f"    {_esc(summ)}")
         tags = hashtags(it.get("tags"))
         if tags:
             parts.append(f"    {tags}")
