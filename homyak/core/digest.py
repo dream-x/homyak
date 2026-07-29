@@ -10,21 +10,24 @@ from homyak.core.config import settings
 from homyak.core.llm import OllamaLLM
 from homyak.storage.db import SessionFactory
 
-_INTRO_SYSTEM = (
-    "Ты ведёшь персональный дайджест для коллеги-инженера. По списку новостей за период напиши "
-    "СВЯЗНЫЙ ЧЕЛОВЕЧЕСКИЙ обзор на русском — так, как рассказал бы коллеге за кофе.\n\n"
-    "Как писать:\n"
-    "• ОДИН абзац, 3–4 предложения. Коротко — это сводка, а не статья.\n"
-    "• Только 2–3 главные темы периода; остальное читатель увидит в списке ниже.\n"
-    "• Называй конкретику: продукты, компании, цифры. Без общих слов.\n"
-    "• Живой язык, без канцелярита. Без «в мире технологий», «стоит отметить», «в целом».\n"
-    "• Если период пустой или разнородный — скажи это одной фразой, не раздувай.\n\n"
-    "Строго по списку, ничего не выдумывай. Без преамбулы, заголовков, хэштегов и markdown-разметки."
+_COMPOSE_SYSTEM = (
+    "Ты ведёшь персональный дайджест для коллеги-инженера. На входе — пронумерованный список новостей "
+    "(часть на английском). Верни СТРОГО JSON:\n"
+    '{"intro": "...", "items": [{"n": 1, "desc": "..."}]}\n\n'
+    "intro — сводка ОДНИМ абзацем, 3–4 предложения, только 2–3 главные темы периода. Живой язык, "
+    "конкретика (продукты, компании, цифры). Без канцелярита, без «в мире технологий», «стоит отметить».\n"
+    "desc — ОДНА строка до 100 символов: что это и чем полезно. Для каждого номера из списка.\n\n"
+    "ВСЁ — на русском, даже если новость на английском (названия продуктов оставляй как есть). "
+    "Строго по списку, ничего не выдумывай."
 )
 
 
-async def top_of_period(hours: int, limit: int = 12) -> list[dict]:
-    """Топ записей по personal_score за последние N часов, кластеры схлопнуты (одна история — раз)."""
+async def top_of_period(hours: int, limit: int = 12, exclude: list[int] | None = None) -> list[dict]:
+    """Топ записей по personal_score за последние N часов, кластеры схлопнуты (одна история — раз).
+
+    exclude — id, показанные в прошлом дайджесте: топ по скору статичен, и без этого повторный
+    вызов за тот же день отдаёт ровно тот же список.
+    """
     async with SessionFactory() as s:
         raw = (
             await s.execute(
@@ -39,12 +42,15 @@ async def top_of_period(hours: int, limit: int = 12) -> list[dict]:
                     " order by personal_score desc"
                     " limit :win"
                 ),
-                {"h": int(hours), "win": limit * 3},
+                {"h": int(hours), "win": limit * 3 + len(exclude or [])},
             )
         ).all()
+    skip = set(exclude or [])
     seen: set[int] = set()
     out: list[dict] = []
     for r in raw:
+        if r.id in skip:
+            continue
         key = r.cluster_id or -r.id
         if key in seen:
             continue
@@ -68,23 +74,35 @@ async def top_of_period(hours: int, limit: int = 12) -> list[dict]:
     return out
 
 
-async def _intro(items: list[dict], llm: OllamaLLM | None) -> str | None:
+async def _compose(items: list[dict], llm: OllamaLLM | None) -> tuple[str | None, dict[int, str]]:
+    """Один вызов LLM: сводка + короткие русские описания к пунктам (единый язык дайджеста)."""
     lines = []
-    for it in items[:12]:
+    for i, it in enumerate(items, 1):
         body = (it.get("summary") or "").replace("\n", " ").strip()[:320]
         src = it.get("feed") or ""
-        lines.append(f"- {it['title']}" + (f" [{src}]" if src else "") + (f": {body}" if body else ""))
+        lines.append(f"{i}. {it['title']}" + (f" [{src}]" if src else "") + (f": {body}" if body else ""))
     try:
-        raw = await (
+        data = await (
             llm or OllamaLLM(model=settings.summary_model, fallback=settings.summary_fallback_model)
-        ).chat_text(_INTRO_SYSTEM, "Новости:\n" + "\n".join(lines), think=False)
-        return (raw or "").strip() or None
+        ).chat_json(_COMPOSE_SYSTEM, "Новости:\n" + "\n".join(lines))
+        intro = (data.get("intro") or "").strip() or None
+        descs: dict[int, str] = {}
+        for row in data.get("items") or []:
+            try:
+                descs[int(row["n"])] = str(row["desc"]).strip()
+            except (KeyError, TypeError, ValueError):
+                continue
+        return intro, descs
     except Exception:
-        return None
+        return None, {}
 
 
-async def build_digest(hours: int, limit: int = 12, llm: OllamaLLM | None = None) -> dict:
-    """{hours, n, items, intro} — топ за период + LLM-вводка (best-effort)."""
-    items = await top_of_period(hours, limit)
-    intro = await _intro(items, llm) if items else None
+async def build_digest(hours: int, limit: int = 12, llm: OllamaLLM | None = None,
+                       exclude: list[int] | None = None) -> dict:
+    """{hours, n, items, intro} — топ за период + сводка и описания на одном языке (best-effort)."""
+    items = await top_of_period(hours, limit, exclude)
+    intro, descs = (await _compose(items, llm)) if items else (None, {})
+    for i, it in enumerate(items, 1):
+        if i in descs:  # LLM не ответила по пункту → остаётся исходное саммари
+            it["summary"] = descs[i]
     return {"hours": hours, "n": len(items), "items": items, "intro": intro}

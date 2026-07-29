@@ -263,6 +263,7 @@ async def cmd_digest(m: Message, command: CommandObject) -> None:
 # --- дайджест «самого интересного за период» (день/неделя) ---
 
 WEEKLY_KEY = "tgbot:last_weekly"
+DIGEST_SEEN_KEY = "tgbot:digest_seen"  # id из прошлых дайджестов — чтобы не повторяться
 _VEMOJI = {"business": "💼", "it": "💻", "medical": "🩺"}
 
 
@@ -321,14 +322,26 @@ async def _send_period_digest(send, which: str) -> None:
     from homyak.core.digest import build_digest
 
     hours, label = (24, "за день") if which == "day" else (24 * 7, "за 7 дней")
-    res = await build_digest(hours, limit=10)
+    # что уже показывали: топ по скору статичен, иначе повторный вызов отдаёт тот же список
+    raw_seen = await _repo.get_cursor(DIGEST_SEEN_KEY)
+    seen: list[int] = []
+    if raw_seen:
+        with suppress(Exception):
+            seen = [int(x) for x in json.loads(raw_seen)]
+    res = await build_digest(hours, limit=10, exclude=seen)
     if not res["n"]:
-        await send("Пусто — за этот период нет персональных новостей.")
+        await send(
+            "С прошлого дайджеста нового не появилось." if seen
+            else "Пусто — за этот период нет персональных новостей."
+        )
         return
     chunks = list(_chunks(_digest_text(res, label), 4000))
     for i, chunk in enumerate(chunks):
         kb = _digest_kb(which) if i == len(chunks) - 1 else None
         await send(chunk, reply_markup=kb, disable_web_page_preview=True)
+    with suppress(Exception):  # помним последние 80 показанных
+        fresh = [it["id"] for it in res["items"]] + seen
+        await _repo.save_cursor(DIGEST_SEEN_KEY, json.dumps(fresh[:80]))
 
 
 @dp.message(Command("day"))
