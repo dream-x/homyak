@@ -56,10 +56,19 @@ class SimilarityDedupAnalyzer:
         if target is None or target == ctx.cluster_id:
             return
 
-        # сериализуем мержи в один и тот же кластер
-        await s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": int(target)})
-
+        # Сериализуем мержи. Лочим ОБА кластера, и всегда по возрастанию id: с параллельной
+        # обработкой пачки два item'а могут мержить встречно (A: 1→2, B: 2→1), и лока только на
+        # target не хватало — один удалял кластер, на который в этот момент ссылался другой
+        # (ForeignKeyViolation). Единый порядок захвата исключает и гонку, и взаимоблокировку.
         old = ctx.cluster_id
+        keys = sorted({int(target), int(old)} if old is not None else {int(target)})
+        for k in keys:
+            await s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": k})
+
+        # после захвата убеждаемся, что целевой кластер ещё жив — его мог удалить встречный мерж
+        if await s.scalar(select(Cluster.id).where(Cluster.id == target)) is None:
+            return
+
         ctx.cluster_id = target
 
         moved = 0
