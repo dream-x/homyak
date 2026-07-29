@@ -1275,6 +1275,36 @@ async def twitter_health_loop() -> None:
                 alerted = False  # мост ожил — сбрасываем, чтобы поймать следующий обрыв
 
 
+STALL_HOURS = 2       # столько без единой обработки при непустой очереди = встали
+STALL_MIN_PENDING = 30  # маленькая очередь может просто разгрестись — не тревожим
+
+
+async def pipeline_health_loop() -> None:
+    """Сторож пайплайна: ноль обработанных за STALL_HOURS при непустой очереди → алерт в личку.
+
+    Ловит любую причину простоя (LLM недоступна, circuit breaker, упал processor) — в отличие от
+    инфра-алертов, которые видят только хост. Алерт разовый, сбрасывается когда обработка пошла.
+    """
+    alerted = False
+    while True:
+        await asyncio.sleep(1800)
+        with suppress(Exception):
+            done, pending = await _repo.pipeline_health(STALL_HOURS)
+            chat = await _repo.get_cursor(CHAT_KEY)
+            stalled = done == 0 and pending >= STALL_MIN_PENDING
+            if stalled and not alerted and chat:
+                await _bot.send_message(
+                    int(chat),
+                    f"🛑 <b>Пайплайн встал</b>\n\nЗа {STALL_HOURS}ч обработано <b>0</b> новостей, "
+                    f"в очереди <b>{pending}</b>.\n\nЧаще всего — недоступна LLM "
+                    f"(<code>{_esc(settings.ollama_url)}</code>). Проверь:\n"
+                    f"<code>docker logs --tail 20 homyak-processor-1</code>",
+                )
+                alerted = True
+                log.warning("pipeline_stalled", pending=pending, hours=STALL_HOURS)
+            elif done > 0:
+                alerted = False
+
 async def main_async() -> None:
     global _bus, _bot
     if not settings.telegram_bot_token:
@@ -1298,6 +1328,7 @@ async def main_async() -> None:
     suggest_task = asyncio.create_task(_bus.consume_profile_suggestion(handle_suggestion))
     health_task = asyncio.create_task(twitter_health_loop())
     weekly_task = asyncio.create_task(weekly_digest_loop())
+    stall_task = asyncio.create_task(pipeline_health_loop())
     log.info("tgbot_started")
     try:
         await dp.start_polling(_bot)
@@ -1306,11 +1337,13 @@ async def main_async() -> None:
         suggest_task.cancel()
         health_task.cancel()
         weekly_task.cancel()
+        stall_task.cancel()
         with suppress(asyncio.CancelledError):
             await push_task
             await suggest_task
             await health_task
             await weekly_task
+            await stall_task
         await _bus.close()
         await _bot.session.close()
 

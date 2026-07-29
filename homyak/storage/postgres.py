@@ -509,6 +509,21 @@ class NewsRepo:
                 )
             ) or 0
 
+    async def pipeline_health(self, hours: int) -> tuple[int, int]:
+        """(обработано за N часов, размер очереди) — для алерта «пайплайн встал»."""
+        async with self._sf() as s:
+            row = (
+                await s.execute(
+                    sa.text(
+                        "select count(*) filter (where processed_at > now() - make_interval(hours => :h)) done,"
+                        " count(*) filter (where processed_at is null) pending"
+                        " from news_items"
+                    ),
+                    {"h": int(hours)},
+                )
+            ).one()
+        return int(row.done), int(row.pending)
+
     async def count_pushed_since(self, minutes: int) -> int:
         cutoff = func.now() - sa.literal(int(minutes)) * sa.text("interval '1 minute'")
         async with self._sf() as s:
