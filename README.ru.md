@@ -17,7 +17,7 @@
 ![Ollama](https://img.shields.io/badge/Ollama-local%20LLM-000000)
 ![Podman](https://img.shields.io/badge/Podman-compose-892CA0?logo=podman&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)
-![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-important)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 </div>
 
@@ -295,9 +295,11 @@ docs/          architecture.ru.md · phase-*.md
 
 ## 📜 Лицензия
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — **исходники открыты, но это не open source**. Читать, запускать,
-менять и делиться — свободно в любых **некоммерческих** целях; **коммерческое использование запрещено**.
-Нужна коммерческая лицензия — обратись к правообладателю.
+[GNU AGPL-3.0-or-later](LICENSE) — свободное ПО. Пользуйся, изучай, меняй и делись; но если запускаешь
+изменённую версию **как сетевой сервис**, его пользователи должны получить и исходники. Ради этого пункта
+лицензия и выбрана: производные остаются открытыми, а не превращаются тихо в чей-то закрытый продукт.
+
+Copyright © 2026 Maks K. Нужны другие условия — напиши.
 
 ---
 

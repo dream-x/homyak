@@ -17,7 +17,7 @@ against your profile, learns from your 👍/👎 in Telegram — and compounds w
 ![Ollama](https://img.shields.io/badge/Ollama-local%20LLM-000000)
 ![Podman](https://img.shields.io/badge/Podman-compose-892CA0?logo=podman&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)
-![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-important)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 </div>
 
@@ -295,9 +295,11 @@ docs/          architecture.md · phase-*.md
 
 ## 📜 License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — **source-available, not open source**. Read it, run it, modify it and
-share it freely for any noncommercial purpose; **commercial use is not permitted**. Need a commercial licence?
-Ask the copyright holder.
+[GNU AGPL-3.0-or-later](LICENSE) — free software. Use it, study it, change it and share it; if you run a
+modified version **as a network service**, its users must be able to get that source too. That network clause
+is the point: it keeps derivatives open instead of quietly becoming someone's closed product.
+
+Copyright © 2026 Maks K. Want it under different terms? Ask.
 
 ---
 
