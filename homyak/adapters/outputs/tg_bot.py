@@ -297,8 +297,8 @@ def _digest_text(res: dict, label: str) -> str:
         parts.append(f"{i}. 🎯{sc} {ve} {head} · <i>{_esc(meta)}</i>")
         summ = (it.get("summary") or "").replace("\n", " ").strip()
         if summ:
-            if len(summ) > 170:
-                summ = summ[:170].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
+            if len(summ) > 95:
+                summ = summ[:95].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
             parts.append(f"    {_esc(summ)}")
         tags = hashtags(it.get("tags"))
         if tags:
@@ -321,7 +321,7 @@ async def _send_period_digest(send, which: str) -> None:
     from homyak.core.digest import build_digest
 
     hours, label = (24, "за день") if which == "day" else (24 * 7, "за 7 дней")
-    res = await build_digest(hours, limit=12)
+    res = await build_digest(hours, limit=10)
     if not res["n"]:
         await send("Пусто — за этот период нет персональных новостей.")
         return
