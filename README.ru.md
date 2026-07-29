@@ -17,6 +17,7 @@
 ![Ollama](https://img.shields.io/badge/Ollama-local%20LLM-000000)
 ![Podman](https://img.shields.io/badge/Podman-compose-892CA0?logo=podman&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-important)
 
 </div>
 
@@ -289,6 +290,14 @@ docs/          architecture.ru.md · phase-*.md
 - [`docs/architecture.ru.md`](docs/architecture.ru.md) — архитектура, схема БД, пайплайн, поиск, вика, failure modes, ключевые решения
 - [`docs/phase-1-skeleton.md`](docs/phase-1-skeleton.md) … [`docs/phase-6-personalization.md`](docs/phase-6-personalization.md) — планы фаз
 - [`CLAUDE.md`](CLAUDE.md) — конвенции и dev-запуск
+
+---
+
+## 📜 Лицензия
+
+[PolyForm Noncommercial 1.0.0](LICENSE) — **исходники открыты, но это не open source**. Читать, запускать,
+менять и делиться — свободно в любых **некоммерческих** целях; **коммерческое использование запрещено**.
+Нужна коммерческая лицензия — обратись к правообладателю.
 
 ---
 

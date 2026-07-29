@@ -17,6 +17,7 @@ against your profile, learns from your 👍/👎 in Telegram — and compounds w
 ![Ollama](https://img.shields.io/badge/Ollama-local%20LLM-000000)
 ![Podman](https://img.shields.io/badge/Podman-compose-892CA0?logo=podman&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-important)
 
 </div>
 
@@ -289,6 +290,14 @@ docs/          architecture.md · phase-*.md
 - [`docs/architecture.md`](docs/architecture.md) — architecture, DB schema, pipeline, search, wiki, failure modes, key decisions
 - [`docs/phase-1-skeleton.md`](docs/phase-1-skeleton.md) … [`docs/phase-6-personalization.md`](docs/phase-6-personalization.md) — phase plans
 - [`CLAUDE.md`](CLAUDE.md) — conventions and dev run
+
+---
+
+## 📜 License
+
+[PolyForm Noncommercial 1.0.0](LICENSE) — **source-available, not open source**. Read it, run it, modify it and
+share it freely for any noncommercial purpose; **commercial use is not permitted**. Need a commercial licence?
+Ask the copyright holder.
 
 ---
 
