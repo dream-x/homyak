@@ -11,9 +11,17 @@ from homyak.core.llm import OllamaLLM
 from homyak.storage.db import SessionFactory
 
 _INTRO_SYSTEM = (
-    "Ты редактор персонального дайджеста. По списку топ-новостей за период напиши 2–3 предложения "
-    "на русском: что было главное, какие темы задавали тон. Только по списку, без домыслов, без "
-    "преамбулы и хэштегов. Живо и по делу."
+    "Ты ведёшь персональный дайджест для коллеги-инженера. По списку новостей за период напиши "
+    "СВЯЗНЫЙ ЧЕЛОВЕЧЕСКИЙ обзор на русском — так, как рассказал бы коллеге за кофе.\n\n"
+    "Как писать:\n"
+    "• 2–4 абзаца сплошным текстом. Это рассказ, а не перечисление и не список.\n"
+    "• Группируй по смыслу: что за тема поднялась, что в ней происходит, почему это важно "
+    "инженеру. Связывай события между собой, если они об одном.\n"
+    "• Называй конкретику из новостей: продукты, компании, цифры, технологии.\n"
+    "• Живой разговорный язык, без канцелярита и рекламных штампов. Без «в мире технологий», "
+    "«стоит отметить», «в целом».\n"
+    "• Если период выдался пустым или разнородным — так и скажи честно, не раздувай.\n\n"
+    "Строго по списку, ничего не выдумывай. Без преамбулы, заголовков, хэштегов и markdown-разметки."
 )
 
 
@@ -50,7 +58,7 @@ async def top_of_period(hours: int, limit: int = 12) -> list[dict]:
                 "feed": r.feed_name,
                 "vertical": r.vertical,
                 "score": r.personal_score,
-                "summary": (r.summary or "")[:200] or None,
+                "summary": (r.summary or "")[:400] or None,
                 "url": r.url,
                 "tags": list(r.tags or [])[:4],
                 "published": r.published,
@@ -63,7 +71,11 @@ async def top_of_period(hours: int, limit: int = 12) -> list[dict]:
 
 
 async def _intro(items: list[dict], llm: OllamaLLM | None) -> str | None:
-    lines = [f"- {it['title']} ({it.get('summary') or ''})"[:200] for it in items[:12]]
+    lines = []
+    for it in items[:12]:
+        body = (it.get("summary") or "").replace("\n", " ").strip()[:320]
+        src = it.get("feed") or ""
+        lines.append(f"- {it['title']}" + (f" [{src}]" if src else "") + (f": {body}" if body else ""))
     try:
         raw = await (
             llm or OllamaLLM(model=settings.summary_model, fallback=settings.summary_fallback_model)

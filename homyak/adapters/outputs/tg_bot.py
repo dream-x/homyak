@@ -285,7 +285,7 @@ def _src_label(it: dict) -> str:
 def _digest_text(res: dict, label: str) -> str:
     parts = [f"📰 <b>Дайджест: {label}</b> · {res['n']} историй — от самого главного\n"]
     if res.get("intro"):
-        parts.append(f"<i>{_md_html(res['intro'])}</i>\n")
+        parts.append(_md_html(res["intro"]) + "\n")
     for i, it in enumerate(res["items"], 1):
         sc = f"{round(it['score'] * 100)}%" if it.get("score") is not None else "—"
         ve = _VEMOJI.get(it.get("vertical") or "", "•")
