@@ -50,3 +50,49 @@ async def test_cursor_roundtrip(session_factory):
     assert await repo.get_cursor("s") == "42"
     await repo.save_cursor("s", "43", error="boom")
     assert await repo.get_cursor("s") == "43"
+
+
+async def test_sweeper_recovers_items_killed_by_infra_outage(session_factory):
+    """Регресс 28.07: сутки без LLM → attempts исчерпаны → item выпал и из JetStream, и из
+    выборки sweeper'а, то есть умер навсегда из-за чужого сбоя. Вторая линия его возвращает."""
+    from datetime import datetime, timedelta, timezone
+
+    repo = NewsRepo(session_factory)
+    ids = {}
+    for key in ("fresh", "outage", "hopeless"):
+        id_, _ = await repo.upsert_item(
+            NewsItemDTO(source_type="rss", source_id=f"sw-{key}", url=f"https://e.com/{key}", title=key)
+        )
+        ids[key] = id_
+
+    old = datetime.now(timezone.utc) - timedelta(hours=6)
+    async with session_factory() as s:
+        for key, attempts in (("fresh", 2), ("outage", 7), ("hopeless", 25)):
+            item = await s.get(NewsItem, ids[key])
+            item.fetched_at = old
+            item.attempts = attempts
+            item.retry_after = old  # отлежались: время попытки давно прошло
+        await s.commit()
+
+    stale = await repo.unprocessed_stale(older_than_minutes=5)
+    assert ids["fresh"] in stale       # обычная линия — не исчерпал попытки
+    assert ids["outage"] in stale      # вторая линия — жертва инфраструктурного сбоя
+    assert ids["hopeless"] not in stale  # за RECOVERY_CAP: это уже битый item, не инфра
+
+
+async def test_recovery_line_waits_before_retrying(session_factory):
+    """Исчерпавший попытки не должен дёргаться сразу — даём инфраструктуре подняться."""
+    from datetime import datetime, timedelta, timezone
+
+    repo = NewsRepo(session_factory)
+    id_, _ = await repo.upsert_item(
+        NewsItemDTO(source_type="rss", source_id="sw-justfailed", url="https://e.com/jf", title="jf")
+    )
+    async with session_factory() as s:
+        item = await s.get(NewsItem, id_)
+        item.fetched_at = datetime.now(timezone.utc) - timedelta(hours=6)
+        item.attempts = 7
+        item.retry_after = datetime.now(timezone.utc) - timedelta(minutes=1)  # упал только что
+        await s.commit()
+
+    assert id_ not in await repo.unprocessed_stale(older_than_minutes=5)

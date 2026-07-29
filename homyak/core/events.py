@@ -186,8 +186,8 @@ class NatsBus:
         handler: Callable[[dict], Awaitable[None]],
         *,
         durable: str,
-        batch: int = 1,
-        ack_wait: int = 120,
+        batch: int = 8,
+        ack_wait: int = 300,
         max_deliver: int = 5,
         fetch_timeout: float = 5.0,
     ) -> None:
@@ -216,13 +216,13 @@ class NatsBus:
                 await asyncio.sleep(1)
                 continue
 
-            for msg in msgs:
+            async def _process(msg) -> None:
                 try:
                     data = json.loads(msg.data)
                 except Exception as e:
                     log.error("bad_message", error=str(e))
                     await msg.term()  # неразбираемое — не реквеуим
-                    continue
+                    return
                 try:
                     await handler(data)
                     await msg.ack()
@@ -237,3 +237,7 @@ class NatsBus:
                         **data if isinstance(data, dict) else {},
                     )
                     await msg.nak(delay=delay)
+
+            # пачку разбираем ПАРАЛЛЕЛЬНО: на item уходит ~6с почти целиком на ожидание LLM,
+            # а бокс при этом простаивает — последовательный разбор упирался в задержки, не в железо
+            await asyncio.gather(*(_process(m) for m in msgs))

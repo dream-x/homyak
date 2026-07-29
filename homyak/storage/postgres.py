@@ -180,22 +180,40 @@ class NewsRepo:
             )
             await s.commit()
 
+    # Сколько попыток до «обычного» отказа и когда сдаёмся окончательно. Между ними — вторая
+    # линия: 28.07 LLM лежала сутки, 3576 новостей исчерпали attempts=5 и выпали разом из
+    # JetStream (max_deliver) и из этой выборки — то есть умерли навсегда из-за чужого сбоя.
+    MAX_ATTEMPTS = 5
+    RECOVERY_CAP = 20  # дальше это уже не инфраструктура, а битый item — не трогаем
+    RECOVERY_QUIET_MIN = 30  # даём инфре время подняться, прежде чем пробовать снова
+    RECOVERY_BATCH = 50  # медленно, чтобы разбор завала не забивал очередь свежим новостям
+
     async def unprocessed_stale(self, older_than_minutes: int = 5) -> list[int]:
-        """Для sweeper'а: зависшие items, готовые к повторной публикации."""
+        """Для sweeper'а: зависшие items, готовые к повторной публикации.
+
+        Две линии. Обычная — не исчерпавшие попытки. Восстановительная — исчерпавшие, но
+        отлежавшиеся: инфраструктурный сбой (LLM недоступна) не должен хоронить новости
+        навсегда, в отличие от реально битого item'а, который упрётся в RECOVERY_CAP.
+        """
         cutoff = func.now() - sa.literal(int(older_than_minutes)) * sa.text("interval '1 minute'")
-        stmt = (
-            select(NewsItem.id)
-            .where(
-                NewsItem.processed_at.is_(None),
-                NewsItem.fetched_at < cutoff,
-                NewsItem.attempts < 5,
-                or_(NewsItem.retry_after.is_(None), NewsItem.retry_after < func.now()),
+        ready = or_(NewsItem.retry_after.is_(None), NewsItem.retry_after < func.now())
+        base = select(NewsItem.id).where(NewsItem.processed_at.is_(None), NewsItem.fetched_at < cutoff)
+
+        normal = base.where(NewsItem.attempts < self.MAX_ATTEMPTS, ready).order_by(NewsItem.id).limit(500)
+        quiet = func.now() - sa.literal(self.RECOVERY_QUIET_MIN) * sa.text("interval '1 minute'")
+        recovery = (
+            base.where(
+                NewsItem.attempts >= self.MAX_ATTEMPTS,
+                NewsItem.attempts < self.RECOVERY_CAP,
+                or_(NewsItem.retry_after.is_(None), NewsItem.retry_after < quiet),
             )
             .order_by(NewsItem.id)
-            .limit(500)
+            .limit(self.RECOVERY_BATCH)
         )
         async with self._sf() as s:
-            return list((await s.execute(stmt)).scalars().all())
+            ids = list((await s.execute(normal)).scalars().all())
+            ids += list((await s.execute(recovery)).scalars().all())
+        return ids
 
     # --- Phase 6: профиль и аффинити ---
 
