@@ -53,8 +53,12 @@ class OllamaLLM:
         last: Exception | None = None
         for url, m in targets(payload["model"]):
             payload["model"] = m
+            # облачный фолбэк (ollama.com) требует Bearer; локальный хост — нет
+            headers = {}
+            if settings.ollama_fallback_key and url == settings.ollama_url_fallback:
+                headers["Authorization"] = f"Bearer {settings.ollama_fallback_key}"
             try:
-                async with httpx.AsyncClient(base_url=url, timeout=300) as client:
+                async with httpx.AsyncClient(base_url=url, timeout=300, headers=headers) as client:
                     resp = await client.post("/api/chat", json=payload)
                     resp.raise_for_status()
                     return resp.json()["message"]["content"]

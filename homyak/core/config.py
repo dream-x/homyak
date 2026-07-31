@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # вертикали 3/4, и лучше всех отделяет мусор (SEC-филинг → insight 0.0). Требует think=False.
     llm_model: str = Field(default="qwen3.5:9b", alias="LLM_MODEL")
     llm_model_fallback: str | None = Field(default=None, alias="LLM_MODEL_FALLBACK")
+    # Ключ для ОБЛАЧНОГО фолбэка (ollama.com): локальный хост авторизации не требует, облако —
+    # требует Bearer. Пусто = фолбэк считается локальным хостом и шлётся без заголовка.
+    ollama_fallback_key: str = Field(default="", alias="OLLAMA_FALLBACK_KEY")
     llm_num_ctx: int = Field(default=32768, alias="LLM_NUM_CTX")
     # Саммари — на той же qwen3.5:9b: облачная gpt-oss:120b упёрлась в недельный лимит (429),
     # каждое саммари молча падало на gemma4 — то есть 120B мы и так уже не получали, а в памяти
