@@ -6,15 +6,18 @@ from feedgen.feed import FeedGenerator
 
 from homyak.core.interfaces import Feed
 
-_SELF = "http://localhost:8000/feed.rss"
+_BASE = "http://localhost:8000"
+_SELF = _BASE + "/feed.rss"
 
 
-def render(feed: Feed, title: str = "Homyak Feed") -> bytes:
+def render(feed: Feed, title: str = "Homyak Feed", self_path: str = "/feed.rss") -> bytes:
+    """self_path — путь ЭТОЙ ленты: по atom:link rel=self ридер переподписывается,
+    и общий на всех /feed.rss увёл бы подписчика ⭐-ленты на общую."""
     fg = FeedGenerator()
-    fg.id("http://localhost:8000/")
+    fg.id(_BASE + "/")
     fg.title(title)
-    fg.link(href=_SELF, rel="self")
-    fg.link(href="http://localhost:8000/", rel="alternate")
+    fg.link(href=_BASE + self_path, rel="self")
+    fg.link(href=_BASE + "/", rel="alternate")
     fg.description("Персональная лента новостей Homyak")
     fg.language("ru")
 

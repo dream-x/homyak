@@ -7,7 +7,8 @@ from homyak.core.interfaces import Feed
 _BASE = "http://localhost:8000"
 
 
-def render(feed: Feed, title: str = "Homyak Feed") -> dict:
+def render(feed: Feed, title: str = "Homyak Feed", self_path: str = "/feed.json") -> dict:
+    """self_path — путь ЭТОЙ ленты: feed_url ридер запоминает как адрес подписки."""
     items = []
     for it in feed.items:
         entry: dict = {"id": str(it.id or it.source_id)}
@@ -29,7 +30,7 @@ def render(feed: Feed, title: str = "Homyak Feed") -> dict:
         "version": "https://jsonfeed.org/version/1.1",
         "title": title,
         "home_page_url": _BASE + "/",
-        "feed_url": _BASE + "/feed.json",
+        "feed_url": _BASE + self_path,
         "items": items,
     }
     if feed.next_cursor:

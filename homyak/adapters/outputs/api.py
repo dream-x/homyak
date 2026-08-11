@@ -446,7 +446,8 @@ async def saved_rss(
     rows = await _saved_query(signal, kind, None, 0, "", None, sort, limit, 0)
     feed_obj = Feed(items=[dto for dto, _, _ in rows])
     return Response(
-        content=rss_out.render(feed_obj, title="Homyak ⭐"), media_type="application/rss+xml"
+        content=rss_out.render(feed_obj, title="Homyak ⭐", self_path="/saved.rss"),
+        media_type="application/rss+xml",
     )
 
 
@@ -455,7 +456,9 @@ async def saved_json_feed(
     signal: str = "save", kind: str = "all", sort: str = "saved", limit: int = 50
 ) -> dict:
     rows = await _saved_query(signal, kind, None, 0, "", None, sort, limit, 0)
-    return json_feed.render(Feed(items=[dto for dto, _, _ in rows]), title="Homyak ⭐")
+    return json_feed.render(
+        Feed(items=[dto for dto, _, _ in rows]), title="Homyak ⭐", self_path="/saved.json"
+    )
 
 
 @app.get("/feed.rss")

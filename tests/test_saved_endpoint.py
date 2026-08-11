@@ -125,8 +125,11 @@ async def test_saved_feeds_render(session_factory, monkeypatch):
     async with await _client() as ac:
         rss = await ac.get("/saved.rss")
         assert rss.status_code == 200 and b"<rss" in rss.content
+        # rel=self — адрес подписки: ридер не должен увести подписчика ⭐ на общую ленту
+        assert b'href="http://localhost:8000/saved.rss" rel="self"' in rss.content
         jf = (await ac.get("/saved.json")).json()
         assert jf["version"] == "https://jsonfeed.org/version/1.1"
+        assert jf["feed_url"].endswith("/saved.json")
         assert len(jf["items"]) == 1
 
 
