@@ -28,6 +28,7 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
 from nats.js.api import ConsumerConfig, DeliverPolicy
 
@@ -85,7 +86,9 @@ MAIN_KB = ReplyKeyboardMarkup(
         [KeyboardButton(text=BTN_PUSH), KeyboardButton(text=BTN_SOURCES), KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_STATS)],
     ],
     resize_keyboard=True,
-    is_persistent=True,
+    # НЕ persistent: занимала пол-экрана постоянно. Вызывается по /menu, прячется после нажатия;
+    # всё то же самое доступно командами из меню «/» (BOT_COMMANDS).
+    one_time_keyboard=True,
 )
 
 # Меню команд (кнопка «/» в клиенте Telegram)
@@ -110,6 +113,8 @@ BOT_COMMANDS = [
     BotCommand(command="pushall", description="🌐 Пуши по всем вертикалям"),
     BotCommand(command="threshold", description="🎚 Порог пуша: /threshold <0..1>"),
     BotCommand(command="pause", description="⏸ Пауза пушей: /pause [часы]"),
+    BotCommand(command="menu", description="⌨️ Показать кнопки"),
+    BotCommand(command="hide", description="🙈 Убрать кнопки"),
     BotCommand(command="start", description="🚀 Запустить/перезапустить"),
 ]
 
@@ -234,14 +239,21 @@ async def cmd_start(m: Message) -> None:
     await _repo.save_cursor(CHAT_KEY, str(m.chat.id))
     await m.answer(
         "Homyak на связи 🐹\nТри тематические ленты — 💼 Business, 💻 IT, 🩺 Medical — каждая учится "
-        "отдельно на твоих 👍/👎.\n\nЖми кнопки внизу или команды /business /it /medical.",
-        reply_markup=MAIN_KB,
+        "отдельно на твоих 👍/👎.\n\n"
+        "Команды — в меню «/» слева от поля ввода: /it /business /medical, /day дайджест, "
+        "/find поиск, /trends тренды.\nНужны кнопки — /menu.",
+        reply_markup=ReplyKeyboardRemove(),
     )
+
+
+@dp.message(Command("hide"))
+async def cmd_hide(m: Message) -> None:
+    await m.answer("Кнопки убраны. Вернуть — /menu", reply_markup=ReplyKeyboardRemove())
 
 
 @dp.message(Command("menu"))
 async def cmd_menu(m: Message) -> None:
-    await m.answer("Клавиатура:", reply_markup=MAIN_KB)
+    await m.answer("Кнопки (скроются после нажатия):", reply_markup=MAIN_KB)
 
 
 async def _send_digest(m: Message, n: int = 10) -> None:
