@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from feedgen.feed import FeedGenerator
 
+from homyak.core.config import settings
 from homyak.core.interfaces import Feed
-
-_BASE = "http://localhost:8000"
-_SELF = _BASE + "/feed.rss"
 
 
 def render(feed: Feed, title: str = "Homyak Feed", self_path: str = "/feed.rss") -> bytes:
     """self_path — путь ЭТОЙ ленты: по atom:link rel=self ридер переподписывается,
     и общий на всех /feed.rss увёл бы подписчика ⭐-ленты на общую."""
+    base = settings.public_base_url.rstrip("/")
     fg = FeedGenerator()
-    fg.id(_BASE + "/")
+    fg.id(base + "/")
     fg.title(title)
-    fg.link(href=_BASE + self_path, rel="self")
-    fg.link(href=_BASE + "/", rel="alternate")
+    fg.link(href=base + self_path, rel="self")
+    fg.link(href=base + "/", rel="alternate")
     fg.description("Персональная лента новостей Homyak")
     fg.language("ru")
 

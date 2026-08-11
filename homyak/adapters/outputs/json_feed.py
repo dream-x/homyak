@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from homyak.core.config import settings
 from homyak.core.interfaces import Feed
-
-_BASE = "http://localhost:8000"
 
 
 def render(feed: Feed, title: str = "Homyak Feed", self_path: str = "/feed.json") -> dict:
     """self_path — путь ЭТОЙ ленты: feed_url ридер запоминает как адрес подписки."""
+    base = settings.public_base_url.rstrip("/")
     items = []
     for it in feed.items:
         entry: dict = {"id": str(it.id or it.source_id)}
@@ -29,10 +29,10 @@ def render(feed: Feed, title: str = "Homyak Feed", self_path: str = "/feed.json"
     result = {
         "version": "https://jsonfeed.org/version/1.1",
         "title": title,
-        "home_page_url": _BASE + "/",
-        "feed_url": _BASE + self_path,
+        "home_page_url": base + "/",
+        "feed_url": base + self_path,
         "items": items,
     }
     if feed.next_cursor:
-        result["next_url"] = f"{_BASE}/feed.json?cursor={feed.next_cursor}"
+        result["next_url"] = f"{base}{self_path}?cursor={feed.next_cursor}"
     return result

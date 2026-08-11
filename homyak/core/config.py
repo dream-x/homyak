@@ -113,6 +113,10 @@ class Settings(BaseSettings):
         default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
     )
 
+    # Адрес, по которому API видно СНАРУЖИ. Нужен лентам (RSS/JSON Feed): ридер запоминает
+    # ссылку rel=self / feed_url как адрес подписки, и «localhost» с другой машины не откроется.
+    public_base_url: str = Field(default="http://localhost:8000", alias="PUBLIC_BASE_URL")
+
 
 settings = Settings()
 
