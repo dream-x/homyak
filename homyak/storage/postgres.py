@@ -613,6 +613,89 @@ class NewsRepo:
         disliked = [(r[1] or "", list(r[2] or [])) for r in rows if r[0] == "down"]
         return liked, disliked
 
+    async def saved_items(
+        self,
+        *,
+        signals: list[str],
+        kind: str = "all",
+        tag: str | None = None,
+        hours: int = 0,
+        since: datetime | None = None,
+        min_score: float | None = None,
+        sort: str = "saved",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[tuple[NewsItemDTO, datetime, list[str]]]:
+        """Помеченное ⭐/👍 — item + когда пометили + какие сигналы стоят (API /saved).
+
+        Фидбек сворачиваем ДО join'а: на одной записи может быть и ⭐, и 👍 (плюс мьюты тем) —
+        прямой join размножил бы item на число строк фидбека.
+
+        Фильтров processed_at/skip_reason тут НЕТ намеренно: звезда — явное решение человека,
+        она главнее любых гейтов пайплайна. Что помечено, то и отдаём.
+
+        `since` — по времени пометки, а не публикации: это ключ к инкрементальной выгрузке
+        («забери всё, что я отметил после прошлой синхронизации»).
+        """
+        marks = (
+            select(
+                Feedback.news_item_id.label("iid"),
+                func.max(Feedback.created_at).label("marked_at"),
+                func.array_agg(sa.distinct(Feedback.signal)).label("signals"),
+            )
+            .where(Feedback.signal.in_(signals))
+            .group_by(Feedback.news_item_id)
+            .subquery()
+        )
+        conds = []
+        if kind == "twitter":
+            conds.append(NewsItem.feed_name.like("tw_%"))
+        elif kind in ("business", "it", "medical"):
+            conds.append(NewsItem.vertical == kind)
+        elif kind == "watch":
+            conds.append(func.cardinality(NewsItem.watch_topics) > 0)
+        if tag:
+            conds.append(NewsItem.tags.any(tag))
+        if hours > 0:
+            conds.append(
+                _sort_ts() > func.now() - sa.literal(int(hours)) * sa.text("interval '1 hour'")
+            )
+        if since is not None:
+            conds.append(marks.c.marked_at > since)
+        if min_score is not None:
+            conds.append(NewsItem.personal_score >= min_score)
+
+        if sort == "score":
+            order = [NewsItem.personal_score.desc().nullslast(), marks.c.marked_at.desc()]
+        elif sort == "time":
+            order = [_sort_ts().desc()]
+        else:
+            order = [marks.c.marked_at.desc()]
+
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    select(NewsItem, marks.c.marked_at, marks.c.signals)
+                    .join(marks, marks.c.iid == NewsItem.id)
+                    .where(*conds)
+                    .order_by(*order, NewsItem.id.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            ).all()
+        return [(_dto(r[0]), r[1], sorted(r[2] or [])) for r in rows]
+
+    async def saved_count(self, signals: list[str]) -> int:
+        async with self._sf() as s:
+            return int(
+                await s.scalar(
+                    select(func.count(sa.distinct(Feedback.news_item_id))).where(
+                        Feedback.signal.in_(signals)
+                    )
+                )
+                or 0
+            )
+
     async def get_item_meta(self, news_item_id: int):
         """(source_type, source_key, tags, vertical). source_key = feed_name или author."""
         async with self._sf() as s:

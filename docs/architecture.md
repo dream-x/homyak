@@ -182,7 +182,7 @@ rebuild. Ollama stays on the host (Metal).
 | `learner` | learning + profile refinement |
 | `sweeper` | re-publish stuck items |
 | `tgbot` | Telegram bot |
-| `api` | FastAPI (`/feed*`, `/lenta`, `/search`, `/ask`, `/dashboard`) |
+| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/dashboard`) |
 | `wiki` | LLM knowledge base from ⭐/👍 (below) |
 
 Secrets live only in `.env` (gitignored): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, scoring weights, thresholds,
@@ -198,6 +198,20 @@ Hybrid retrieval over the whole corpus, `core/search.py`:
 
 The **Ответить** button (`POST /search/answer`) asks the wiki first (`wiki_query.answer_from_wiki`); if the
 wiki has nothing, it falls back to feed RAG (`core/ask.py`).
+
+## Curated export (`GET /saved`)
+
+⭐/👍 are the only hand-made layer in the system, so they get a first-class read API
+(`NewsRepo.saved_items`) for anything built on top: export, newsletter, a page of one's own.
+`/saved.rss` + `/saved.json` render the same set for readers.
+
+- Feedback is aggregated **before** the join (`max(created_at)`, `array_agg(distinct signal)`): one item can
+  carry ⭐ *and* 👍 (plus topic mutes), and a straight join would multiply it by the number of feedback rows.
+- **No `processed_at`/`skip_reason` filter** — deliberate. A star is an explicit human decision and outranks
+  any pipeline gate; whatever was marked is returned.
+- `since` filters by **mark time**, not publication: the response's `latest_saved_at` is a watermark a client
+  passes back for incremental sync. It is parsed leniently — `isoformat()` contains `+`, which a query string
+  decodes as a space, so an un-encoded watermark would otherwise fail to make the round trip.
 
 ## LLM Wiki (`homyak-wiki` service, `core/wiki*.py`)
 

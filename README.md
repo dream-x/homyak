@@ -226,6 +226,34 @@ Web surfaces: **`/lenta`** (feed + reactions), **`/search`** (hybrid search + An
 
 ---
 
+## 📤 Taking the good stuff out (`/saved`)
+
+Everything you hit ⭐ (or 👍) on is a hand-picked set — `GET /saved` hands it to whatever you want to build
+on top of it (export, newsletter, a page of your own):
+
+```bash
+curl 'http://homyak:8000/saved?limit=20'                   # newest starred first
+curl 'http://homyak:8000/saved?sort=score&min_score=0.7'   # best of the starred
+curl 'http://homyak:8000/saved?signal=any&kind=it&tag=llm' # ⭐+👍, IT, tagged llm
+curl 'http://homyak:8000/saved?since=2026-08-01T00:00:00Z' # only marked since then
+```
+
+| Param | Values |
+|---|---|
+| `signal` | `save` (default, ⭐) · `up` (👍) · `any` |
+| `sort` | `saved` (when you marked it, default) · `score` · `time` (publication) |
+| `kind` | `all` · `it` · `business` · `medical` · `twitter` · `watch` |
+| `tag` · `min_score` · `hours` | tag filter · personal-score floor · publication age window |
+| `since` · `limit` · `offset` | ISO time of the *mark* · page size (≤500) · paging |
+
+Each item carries `saved_at` and `signals` alongside the usual fields. For incremental sync, keep the
+response's `latest_saved_at` and pass it back as `since` next time — no bookkeeping on your side.
+`GET /saved.rss` and `GET /saved.json` serve the same set as RSS / JSON Feed for readers.
+
+Marks are the human layer, so `/saved` deliberately ignores pipeline gates: if you starred it, you get it.
+
+---
+
 ## ⚙️ Configuration
 
 - **Sources** — `config/sources.yaml` (RSS/GitHub/Twitter: url, interval, weight). GitHub & Twitter go through
@@ -256,7 +284,7 @@ Telegram channels come from **tscrapper** — a *separate service* (Telethon, it
 | `wiki` | compound the LLM wiki from ⭐/👍 |
 | `sweeper` | re-publish stuck items |
 | `tgbot` | Telegram bot (push, reactions, commands, search) |
-| `api` | FastAPI: `/feed*`, `/lenta`, `/search`, `/ask`, `/dashboard`, SSE |
+| `api` | FastAPI: `/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/dashboard`, SSE |
 | `rsshub` | RSS bridge for GitHub & Twitter/X |
 
 CLI: `homyak-cli` · `homyak-interests` (show/diff/apply/backfill) · `homyak-reembed` ·

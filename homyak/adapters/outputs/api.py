@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
@@ -13,7 +14,7 @@ from sqlalchemy import text
 from homyak.adapters.outputs import dashboard, json_feed, rss_out, sse
 from homyak.core.config import settings
 from homyak.core.events import NatsBus
-from homyak.core.interfaces import FeedQuery, NewsItemDTO
+from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
 from homyak.storage.db import SessionFactory, engine
 from homyak.storage.postgres import NewsRepo
 
@@ -343,6 +344,118 @@ async def item(item_id: int) -> dict:
         "published_at": row.published_at.isoformat() if row.published_at else None,
         "processed_at": row.processed_at.isoformat() if row.processed_at else None,
     }
+
+
+# --- ⭐ Сохранённое: выгрузка «лучшего» наружу ---
+
+# Что считать «сохранённым». save — звезда (явное «в копилку»), up — 👍 (слабее, но тоже отбор).
+_SAVED_SIGNALS = {"save": ["save"], "up": ["up"], "any": ["save", "up"]}
+
+# «…:00 00:00» — это испорченное «…:00+00:00»: в query-string '+' декодируется как пробел.
+_LOST_PLUS = re.compile(r"(\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?) (\d{2}:?\d{2})$")
+
+
+def _parse_since(value: str) -> datetime | None:
+    """`since` принимаем строкой, а не datetime: в isoformat есть '+', и без ручной кодировки
+    клиента он приезжает пробелом — водяной знак из нашего же ответа не доехал бы обратно."""
+    v = (value or "").strip()
+    if not v:
+        return None
+    try:
+        dt = datetime.fromisoformat(_LOST_PLUS.sub(r"\1+\2", v))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"since: ожидается ISO-8601, а не {v!r}") from e
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+async def _saved_query(
+    signal: str,
+    kind: str,
+    tag: str | None,
+    hours: int,
+    since: str,
+    min_score: float | None,
+    sort: str,
+    limit: int,
+    offset: int,
+) -> list[tuple[NewsItemDTO, datetime, list[str]]]:
+    signals = _SAVED_SIGNALS.get(signal)
+    if signals is None:
+        raise HTTPException(status_code=400, detail="signal must be save|up|any")
+    if sort not in ("saved", "score", "time"):
+        raise HTTPException(status_code=400, detail="sort must be saved|score|time")
+    return await repo.saved_items(
+        signals=signals,
+        kind=kind,
+        tag=tag or None,
+        hours=min(max(hours, 0), 8760 * 5),
+        since=_parse_since(since),
+        min_score=min_score,
+        sort=sort,
+        limit=min(max(limit, 1), 500),
+        offset=max(offset, 0),
+    )
+
+
+@app.get("/saved")
+async def saved(
+    signal: str = "save",
+    kind: str = "all",
+    tag: str = "",
+    hours: int = 0,
+    since: str = "",
+    min_score: float | None = None,
+    sort: str = "saved",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """Посты, помеченные ⭐ (и/или 👍) — то, что отобрано вручную.
+
+    signal: save|up|any · kind: all|twitter|it|business|medical|watch · sort: saved|score|time.
+    `since` (ISO-время пометки) даёт инкрементальную выгрузку: клиент запоминает `latest_saved_at`
+    из ответа и в следующий раз просит только то, что появилось после.
+    """
+    rows = await _saved_query(
+        signal, kind, tag, hours, since, min_score, sort, limit, offset
+    )
+    items = [
+        {
+            **_item_json(dto),
+            "vertical": dto.vertical,
+            "insight_score": dto.insight_score,
+            "watch_topics": dto.watch_topics or [],
+            "saved_at": marked_at.isoformat(),
+            "signals": signals,
+        }
+        for dto, marked_at, signals in rows
+    ]
+    return {
+        "signal": signal,
+        "sort": sort,
+        "count": len(items),
+        "total": await repo.saved_count(_SAVED_SIGNALS[signal]),
+        "latest_saved_at": max((i["saved_at"] for i in items), default=None),
+        "items": items,
+    }
+
+
+@app.get("/saved.rss")
+async def saved_rss(
+    signal: str = "save", kind: str = "all", sort: str = "saved", limit: int = 50
+) -> Response:
+    rows = await _saved_query(signal, kind, None, 0, "", None, sort, limit, 0)
+    feed_obj = Feed(items=[dto for dto, _, _ in rows])
+    return Response(
+        content=rss_out.render(feed_obj, title="Homyak ⭐"), media_type="application/rss+xml"
+    )
+
+
+@app.get("/saved.json")
+async def saved_json_feed(
+    signal: str = "save", kind: str = "all", sort: str = "saved", limit: int = 50
+) -> dict:
+    rows = await _saved_query(signal, kind, None, 0, "", None, sort, limit, 0)
+    return json_feed.render(Feed(items=[dto for dto, _, _ in rows]), title="Homyak ⭐")
 
 
 @app.get("/feed.rss")
