@@ -143,8 +143,11 @@ def make_handler(repo: NewsRepo, bot: Bot, llm: OllamaLLM):
         if data.get("signal") != "save" or data.get("action") != "added":
             return
         # Снятие звезды пост НЕ удаляет (решение владельца): у подписчиков он бы исчез без следа.
-        with contextlib.suppress(Exception):  # одна запись не должна ронять consumer
-            await publish_star(data["news_item_id"], repo, bot, llm)
+        #
+        # Исключение НЕ глушим: сбой отправки в Telegram (падал прокси — 6-8.08 на двое суток)
+        # должен уйти в nak+backoff консюмера и доехать позже, а не быть съеденным вместе с
+        # ack'ом. Ошибки LLM и сети за статьёй сюда не доходят — их гасит сам make_card.
+        await publish_star(data["news_item_id"], repo, bot, llm)
 
     return handle
 
