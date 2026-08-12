@@ -127,6 +127,18 @@ def test_spelled_out_numbers_do_not_legalize_other_digits():
     assert ungrounded("выросло на 40%", "four requests remained open") == {"40"}
 
 
+def test_cjk_leak_is_dropped():
+    """Qwen изредка роняет иероглиф в русскую фразу — в публичный канал это уходить не должно."""
+    card = Card(
+        line="OctoBus — шлюз на Go",
+        points=["Поддерживает 常驻 (резидентный) процесс", "Хранит состояние в SQLite"],
+        mode="full",
+    )
+    out = filter_grounded(card, "OctoBus is a Go gateway. It keeps state in SQLite. Resident process.")
+    assert out.points == ["Хранит состояние в SQLite"]
+    assert "чужое письмо" in out.dropped[0]
+
+
 # --- расписание дайджеста ---
 
 

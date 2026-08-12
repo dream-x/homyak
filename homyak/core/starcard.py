@@ -113,6 +113,10 @@ for _digit, _forms in {
 
 _WORD = re.compile(r"[a-zа-яё]+")
 
+# Qwen изредка роняет иероглиф прямо в русскую фразу («常驻 (резидентный) процесс» — поймано
+# на живой ⭐). В публичный канал такое отдавать нельзя, а «почистить» нечем: выкидываем фразу.
+_FOREIGN = re.compile(r"[぀-ヿ㐀-鿿가-힯֐-׿؀-ۿ]")
+
 
 @dataclass
 class Card:
@@ -178,6 +182,14 @@ def ungrounded(fragment: str, source: str) -> set[str]:
     return bad
 
 
+def _reject(fragment: str, source: str) -> str | None:
+    """Причина, по которой фразу нельзя публиковать (None = можно)."""
+    if _FOREIGN.search(fragment):
+        return "чужое письмо"
+    bad = ungrounded(fragment, source)
+    return ", ".join(sorted(bad)) if bad else None
+
+
 def filter_grounded(card: Card, source: str) -> Card:
     """Выбрасывает фразы с неподтверждёнными фактами — по одной, а не всю карточку.
 
@@ -187,15 +199,15 @@ def filter_grounded(card: Card, source: str) -> Card:
     dropped: list[str] = []
     line = card.line
     if line:
-        bad = ungrounded(line, source)
-        if bad:
-            dropped.append(f"line: {', '.join(sorted(bad))}")
+        why = _reject(line, source)
+        if why:
+            dropped.append(f"line: {why}")
             line = None
     points = []
     for p in card.points:
-        bad = ungrounded(p, source)
-        if bad:
-            dropped.append(f"point: {', '.join(sorted(bad))}")
+        why = _reject(p, source)
+        if why:
+            dropped.append(f"point: {why}")
         else:
             points.append(p)
     # Линия — стержень карточки; без неё тезисы висят в воздухе, режим падает до bare.
