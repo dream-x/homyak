@@ -491,6 +491,15 @@ class NewsRepo:
             )
             await s.commit()
 
+    async def mark_star_posted(self, news_item_id: int) -> None:
+        async with self._sf() as s:
+            await s.execute(
+                update(NewsItem)
+                .where(NewsItem.id == news_item_id)
+                .values(star_posted_at=func.now())
+            )
+            await s.commit()
+
     async def cluster_already_sent(self, cluster_id: int, field: str, exclude_id: int) -> bool:
         """Есть ли в кластере ДРУГОЙ item с уже проставленным pushed_at/channel_posted_at.
 

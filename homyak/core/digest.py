@@ -22,12 +22,20 @@ _COMPOSE_SYSTEM = (
 )
 
 
-async def top_of_period(hours: int, limit: int = 12, exclude: list[int] | None = None) -> list[dict]:
+async def top_of_period(
+    hours: int, limit: int = 12, exclude: list[int] | None = None, vertical: str | None = None
+) -> list[dict]:
     """Топ записей по personal_score за последние N часов, кластеры схлопнуты (одна история — раз).
 
     exclude — id, показанные в прошлом дайджесте: топ по скору статичен, и без этого повторный
     вызов за тот же день отдаёт ровно тот же список.
+    vertical — сузить до одной вертикали (⭐-канал берёт только it).
     """
+    params: dict = {"h": int(hours), "win": limit * 3 + len(exclude or [])}
+    vcond = ""
+    if vertical:
+        vcond = " and vertical = :v"
+        params["v"] = vertical
     async with SessionFactory() as s:
         raw = (
             await s.execute(
@@ -39,10 +47,11 @@ async def top_of_period(hours: int, limit: int = 12, exclude: list[int] | None =
                     " where processed_at is not null and skip_reason is null"
                     "   and personal_score is not null"
                     "   and coalesce(published_at, fetched_at) > now() - make_interval(hours => :h)"
+                    f"{vcond}"
                     " order by personal_score desc"
                     " limit :win"
                 ),
-                {"h": int(hours), "win": limit * 3 + len(exclude or [])},
+                params,
             )
         ).all()
     skip = set(exclude or [])
@@ -98,9 +107,9 @@ async def _compose(items: list[dict], llm: OllamaLLM | None) -> tuple[str | None
 
 
 async def build_digest(hours: int, limit: int = 12, llm: OllamaLLM | None = None,
-                       exclude: list[int] | None = None) -> dict:
+                       exclude: list[int] | None = None, vertical: str | None = None) -> dict:
     """{hours, n, items, intro} — топ за период + сводка и описания на одном языке (best-effort)."""
-    items = await top_of_period(hours, limit, exclude)
+    items = await top_of_period(hours, limit, exclude, vertical)
     intro, descs = (await _compose(items, llm)) if items else (None, {})
     for i, it in enumerate(items, 1):
         if i in descs:  # LLM не ответила по пункту → остаётся исходное саммари

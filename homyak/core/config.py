@@ -90,6 +90,14 @@ class Settings(BaseSettings):
     # Скоуп вертикалей канала (csv, напр. "it"). Пусто = все. IT-твиты сюда входят —
     # они тоже vertical=it. Безвертикальный шум не проходит в любом случае (нет score).
     channel_verticals: str = Field(default="", alias="CHANNEL_VERTICALS")
+    # ⭐-канал (сервис homyak-starchan): всё, что помечено звездой, уходит отдельным каналом
+    # с русской выжимкой. Пусто = выключено. Бот должен быть админом канала.
+    star_channel_id: str = Field(default="", alias="STAR_CHANNEL_ID")
+    # Только эта вертикаль (пусто = любая). Звёзды и так на 98% it, но фильтр держим явным.
+    star_vertical: str = Field(default="it", alias="STAR_VERTICAL")
+    # Часы (локальные) авто-дайджеста в ⭐-канал, csv. Пусто = без дайджеста.
+    star_digest_hours: str = Field(default="10,23", alias="STAR_DIGEST_HOURS")
+    star_digest_limit: int = Field(default=5, alias="STAR_DIGEST_LIMIT")
     taste_neg_lr: float = Field(default=0.03, alias="TASTE_NEG_LR")
     profile_refine_every: int = Field(default=10, alias="PROFILE_REFINE_EVERY")
     # LLM-вика (сервис homyak-wiki): каталог markdown-страниц, компаундится из ⭐/👍.

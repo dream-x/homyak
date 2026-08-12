@@ -184,6 +184,7 @@ rebuild. Ollama stays on the host (Metal).
 | `tgbot` | Telegram bot |
 | `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/dashboard`) |
 | `wiki` | LLM knowledge base from ⭐/👍 (below) |
+| `starchan` | ⭐ channel: starred items + daily digest (below) |
 
 Secrets live only in `.env` (gitignored): `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, scoring weights, thresholds,
 `GITHUB_ACCESS_TOKEN` (RSSHub GitHub trending).
@@ -212,6 +213,35 @@ wiki has nothing, it falls back to feed RAG (`core/ask.py`).
 - `since` filters by **mark time**, not publication: the response's `latest_saved_at` is a watermark a client
   passes back for incremental sync. It is parsed leniently — `isoformat()` contains `+`, which a query string
   decodes as a space, so an un-encoded watermark would otherwise fail to make the round trip.
+
+## ⭐ channel (`homyak-starchan` service, `core/starcard.py`)
+
+Everything starred goes to its own Telegram channel as a Russian card, plus a daily top-5 digest.
+Consumes `homyak.feedback.recorded` (durable `starchan`, `signal=save`, `action=added`) — so stars from
+the bot *and* from `/lenta` both land, since both publish the same event. A separate process because a
+card costs an LLM call (and sometimes a network fetch), which has no business inside the bot's push loop.
+`news_items.star_posted_at` makes it idempotent; un-starring does not delete the post (owner's call).
+
+Faithfulness is the whole point of the channel, and it is enforced structurally rather than by prompt:
+
+- **No text, no retelling.** A third of stars arrive from lobsters/hn/github with 0–130 chars stored. The
+  service re-runs `fetch_article` at publish time (the ingest-time attempt may have failed), and if there
+  is still nothing, the card ships bare — title, link, tags. A thin card beats an invented one.
+- **Three modes by source size** — `full` (through-line + 2-3 points), `brief` (one line from a short
+  description, essentially a translation), `bare`.
+- **Grounding check** (`ungrounded`, pure/tested, no second LLM call): every checkable token of the
+  summary — Latin proper noun or number — must occur in the source. Offending phrases are dropped one by
+  one; if the through-line itself fails, the card degrades to bare. Cyrillic is deliberately not checked
+  (a retelling must reword), and the normalizer folds Unicode typography — a non-breaking hyphen in
+  `GPT‑5.5` and a thin space in `1 290` both used to read as fabrications.
+- **Prompt tested on real stars**, not invented samples: `homyak-starcard-eval [N] [--judge]` builds cards
+  from actual ⭐ items and an independent LLM judge lists claims the source doesn't support — the only way
+  to catch *relational* errors (mistranslated terms, shifted dates, dropped "only/not" qualifiers) that a
+  token check cannot see. The judge stays in the eval; production pays for one call per card.
+
+Digest: `STAR_DIGEST_HOURS` (local, default `10,23`) → top-5 of the last 24h from the whole IT feed, not
+just stars — the channel has to have a pulse on days with zero stars. Slots are tracked by calendar date,
+so a restart cannot double-post and a slot missed during downtime still goes out that day.
 
 ## LLM Wiki (`homyak-wiki` service, `core/wiki*.py`)
 

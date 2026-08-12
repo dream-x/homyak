@@ -226,6 +226,25 @@ Web surfaces: **`/lenta`** (feed + reactions), **`/search`** (hybrid search + An
 
 ---
 
+## ⭐ The starred channel
+
+Hit ⭐ on anything IT and it shows up in its own Telegram channel as a Russian card — original link,
+the article's actual through-line, two or three concrete points. A top-5 digest of the day's feed goes
+out at 10:00 and 23:00 so the channel keeps a pulse even on days nobody stars anything.
+
+The hard part isn't the summary, it's not inventing one. Guarantees, in order:
+
+1. **No source text → no retelling.** A third of stars come from lobsters/hn/github with almost nothing
+   stored; the service refetches the article at publish time and, failing that, ships a bare card.
+2. **Grounding check** — every number and Latin proper noun in the summary must appear in the source, or
+   that phrase is dropped. Pure function, unit-tested, no second LLM call.
+3. **The prompt is tested on real stars** — `homyak-starcard-eval N --judge` rebuilds cards from actual ⭐
+   items and has an independent judge list unsupported claims.
+
+Config: `STAR_CHANNEL_ID`, `STAR_VERTICAL` (default `it`), `STAR_DIGEST_HOURS` (default `10,23`).
+
+---
+
 ## 📤 Taking the good stuff out (`/saved`)
 
 Everything you hit ⭐ (or 👍) on is a hand-picked set — `GET /saved` hands it to whatever you want to build
@@ -282,13 +301,14 @@ Telegram channels come from **tscrapper** — a *separate service* (Telethon, it
 | `processor` | the analyzer pipeline (dedup → title → tag → summarize → judge → personalize) |
 | `learner` | learning from feedback + auto profile refinement |
 | `wiki` | compound the LLM wiki from ⭐/👍 |
+| `starchan` | ⭐ channel: starred items as Russian cards + daily digest |
 | `sweeper` | re-publish stuck items |
 | `tgbot` | Telegram bot (push, reactions, commands, search) |
 | `api` | FastAPI: `/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/dashboard`, SSE |
 | `rsshub` | RSS bridge for GitHub & Twitter/X |
 
 CLI: `homyak-cli` · `homyak-interests` (show/diff/apply/backfill) · `homyak-reembed` ·
-`homyak-backfill-titles` · `homyak-resummarize` · `homyak-wiki-backfill`.
+`homyak-backfill-titles` · `homyak-resummarize` · `homyak-wiki-backfill` · `homyak-starcard-eval`.
 
 ---
 

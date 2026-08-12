@@ -131,6 +131,14 @@ services:
     command: ["homyak-tgbot"]
     depends_on: *after_migrate
 
+  # ⭐-канал: отдельный процесс, потому что карточка = LLM-вызов (+ иногда поход за статьёй),
+  # а в tgbot этим временем оплачивался бы цикл пушей. Отправку ведёт второй инстанс Bot —
+  # конфликтует только getUpdates, он остаётся за tgbot.
+  starchan:
+    <<: *app
+    command: ["homyak-starchan"]
+    depends_on: *after_migrate
+
   api:
     <<: *app
     command: ["homyak-api"]

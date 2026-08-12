@@ -18,6 +18,7 @@ from nats.js import JetStreamContext
 from nats.js.api import (
     AckPolicy,
     ConsumerConfig,
+    DeliverPolicy,
     RetentionPolicy,
     StorageType,
     StreamConfig,
@@ -190,11 +191,17 @@ class NatsBus:
         ack_wait: int = 300,
         max_deliver: int = 5,
         fetch_timeout: float = 5.0,
+        deliver_policy: DeliverPolicy = DeliverPolicy.ALL,
     ) -> None:
         """Pull-consumer: handler(dict) → успех=ack; исключение=nak+backoff.
 
         Несколько инстансов с одним `durable` делят нагрузку. После `max_deliver` доставок
         JetStream перестаёт передавать сообщение (dead-letter — Phase 2.5).
+
+        deliver_policy действует ТОЛЬКО при создании durable; дальше consumer продолжает
+        со своей позиции, и простой сервиса ничего не теряет. NEW нужен потребителям с
+        внешним эффектом (⭐-канал): по умолчанию новый durable проигрывает всю историю
+        стрима — для публикации в канал это залп сотни старых постов.
         """
         psub = await self.js.pull_subscribe(
             subject,
@@ -203,6 +210,7 @@ class NatsBus:
                 ack_wait=ack_wait,
                 max_deliver=max_deliver,
                 ack_policy=AckPolicy.EXPLICIT,
+                deliver_policy=deliver_policy,
             ),
         )
         log.info("consumer_started", durable=durable, subject=subject)

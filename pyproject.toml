@@ -48,6 +48,8 @@ homyak-tgbot = "homyak.adapters.outputs.tg_bot:main"
 homyak-learner = "homyak.pipeline.learner:main"
 homyak-wiki = "homyak.pipeline.wiki:main"
 homyak-wiki-backfill = "homyak.cli.wiki_backfill:main"
+homyak-starchan = "homyak.pipeline.starchan:main"
+homyak-starcard-eval = "homyak.cli.starcard_eval:main"
 
 [build-system]
 requires = ["hatchling"]

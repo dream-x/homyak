@@ -83,6 +83,7 @@ class NewsItem(Base):
     scored_profile_version: Mapped[int | None] = mapped_column(Integer)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     channel_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    star_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     search_tsv: Mapped[str | None] = mapped_column(
         TSVECTOR,
