@@ -1,4 +1,8 @@
-"""Fallback sweep: раз в 5 минут переопубликовывает зависшие items (защита от event loss)."""
+"""Фоновое обслуживание: пересев зависших items и разбор очереди на переэмбеддинг.
+
+Сюда же, а не отдельным сервисом: обе работы периодические, редкие и без внешнего эффекта —
+своего процесса не стоят, а APScheduler тут уже поднят.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from homyak.core.config import settings
 from homyak.core.events import NatsBus
+from homyak.core.reembed import reembed
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
 
@@ -25,6 +30,21 @@ async def sweep(repo: NewsRepo, bus: NatsBus) -> None:
         log.info("swept", republished=len(ids))
 
 
+async def reembed_stale(repo: NewsRepo) -> None:
+    """Разбор очереди на переэмбеддинг — порциями, чтобы разовый бэкфилл не занял час.
+
+    Очередь наполняется сама: переписал текст записи (дотянули статью, подтянули README) —
+    её вектор объявлен устаревшим. Раньше это чинилось ручным запуском `homyak-reembed`,
+    то есть не чинилось: бэкфилл README переписал 883 записи, и поиск ещё сутки искал их
+    по прежним, коротким текстам.
+    """
+    ids = await repo.stale_embedding_ids(limit=settings.reembed_batch)
+    if not ids:
+        return
+    done = await reembed(ids)
+    log.info("reembedded", done=done, left=await repo.stale_embedding_count())
+
+
 async def main_async() -> None:
     repo = NewsRepo(SessionFactory)
     bus = NatsBus(settings.nats_url)
@@ -34,8 +54,20 @@ async def main_async() -> None:
     scheduler.add_job(
         sweep, CronTrigger(minute="*/5"), args=[repo, bus], id="sweep", max_instances=1
     )
+    if settings.reembed_every_minutes > 0:
+        scheduler.add_job(
+            reembed_stale,
+            CronTrigger(minute=f"*/{settings.reembed_every_minutes}"),
+            args=[repo],
+            id="reembed",
+            max_instances=1,  # долгий прогон не должен наслаиваться сам на себя
+        )
     scheduler.start()
-    log.info("sweeper_started")
+    log.info(
+        "sweeper_started",
+        reembed_every_min=settings.reembed_every_minutes,
+        reembed_batch=settings.reembed_batch,
+    )
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

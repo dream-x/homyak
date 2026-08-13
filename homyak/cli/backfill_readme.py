@@ -71,7 +71,13 @@ async def main_async() -> None:
         if dry:
             continue
         async with SessionFactory() as s:
-            await s.execute(update(NewsItem).where(NewsItem.id == r.id).values(text=readme))
+            # embedding_version=NULL — заявка на переэмбеддинг: вектор построен по прежнему
+            # блёрбу и по новому README искать не будет. Разберёт планировщик в sweeper'е.
+            await s.execute(
+                update(NewsItem)
+                .where(NewsItem.id == r.id)
+                .values(text=readme, embedding_version=None)
+            )
             await s.commit()
             if summarizer is not None:
                 item = await s.get(NewsItem, r.id)

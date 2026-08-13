@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from homyak.core.config import settings
 from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
 from homyak.core.models import (
     Feedback,
@@ -469,11 +470,49 @@ class NewsRepo:
         return [(r[0], r[1], r[2]) for r in rows]
 
     async def set_item_text(self, news_item_id: int, text: str) -> None:
+        """Переписать текст записи — и объявить её вектор устаревшим.
+
+        embedding_version=NULL обязателен: вектор в Qdrant построен по ПРЕЖНЕМУ тексту и после
+        перезаписи ищет не то. Другого признака расхождения в схеме нет, поэтому сброс версии
+        и есть очередь на переэмбеддинг — её разгребает планировщик в sweeper'е.
+        Кто ещё правит text (бэкфиллы), обязан делать то же самое.
+        """
         async with self._sf() as s:
             await s.execute(
-                update(NewsItem).where(NewsItem.id == news_item_id).values(text=text)
+                update(NewsItem)
+                .where(NewsItem.id == news_item_id)
+                .values(text=text, embedding_version=None)
             )
             await s.commit()
+
+    def _stale_embedding(self):
+        """Вектор разошёлся с текстом или с настройками эмбеддера.
+
+        NULL-версия — это и «никогда не эмбеддилось», и «текст переписали» (set_item_text
+        сбрасывает версию). Отдельной очереди не заводим: признак живёт в самой записи.
+        """
+        return or_(
+            NewsItem.embedding_version.is_(None),
+            NewsItem.embedding_version < settings.embedding_version,
+            NewsItem.embedding_model != settings.embedding_model,
+        )
+
+    async def stale_embedding_ids(self, limit: int | None = None) -> list[int]:
+        """Очередь на переэмбеддинг, свежие первыми: их ищут чаще, чем архив."""
+        stmt = select(NewsItem.id).where(self._stale_embedding()).order_by(NewsItem.id.desc())
+        if limit:
+            stmt = stmt.limit(limit)
+        async with self._sf() as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def stale_embedding_count(self) -> int:
+        async with self._sf() as s:
+            return int(
+                await s.scalar(
+                    select(func.count()).select_from(NewsItem).where(self._stale_embedding())
+                )
+                or 0
+            )
 
     async def mark_pushed(self, news_item_id: int) -> None:
         async with self._sf() as s:

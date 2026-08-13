@@ -85,6 +85,14 @@ Personalization (per-vertical): `profile` (one active per vertical), `tag_affini
 **Qdrant:** collection `news_items` (1024-dim, Cosine, payload source_type/category/published_at) written by
 `embedder`; collection `taste` — one point per vertical (the taste centroid).
 
+**Re-embed queue.** A vector is built from the text as it stood at ingest, so rewriting `text` silently
+invalidates it — search keeps matching the old wording. There is no separate queue table: the marker is
+`embedding_version IS NULL`, which `set_item_text` sets on every rewrite (`NewsRepo.stale_embedding_ids`
+also catches a changed `EMBEDDING_MODEL`/`VERSION`). The sweeper drains it every `REEMBED_EVERY_MINUTES`,
+`REEMBED_BATCH` items at a time so a large backfill cannot occupy the host in one go. **Anything that
+writes `text` must clear the version** — the README backfill did not, and search spent a day matching
+hundreds of GitHub repos by the one-line blurb they no longer stored.
+
 **Idempotency:** `(source_type, source_id)` UNIQUE; `upsert_item()` uses `ON CONFLICT … DO UPDATE` and returns
 `(id, was_new)`; `items.ingested` is published only when `was_new=true`.
 
@@ -180,7 +188,7 @@ rebuild. Ollama stays on the host (Metal).
 | `telegram-ingest` | consume `homyak.telegram.raw` (tscrapper) |
 | `processor` | pipeline (url_dedup … title_gen … personalizer) |
 | `learner` | learning + profile refinement |
-| `sweeper` | re-publish stuck items |
+| `sweeper` | re-publish stuck items · drain the re-embed queue |
 | `tgbot` | Telegram bot |
 | `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/dashboard`) |
 | `wiki` | LLM knowledge base from ⭐/👍 (below) |
@@ -282,7 +290,7 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
 | Ollama down | Circuit breaker → `nak`; item retried later via JetStream. |
 | Consumer zombie | JetStream `ack_wait` redelivers to another instance. |
 | Duplicate on ingest | `ON CONFLICT DO UPDATE`, publish only when `was_new=true`. |
-| Qdrant out of sync with PG | `homyak-reembed` re-embeds `WHERE embedding_version < current`. |
+| Qdrant out of sync with PG | The sweeper drains the re-embed queue every `REEMBED_EVERY_MINUTES` (below); `homyak-reembed` does the same in one go. |
 | Wiki LLM down on ingest | best-effort — source page + log still written; concept/entity extraction skipped. |
 | Wiki behind on history | `homyak-wiki-backfill` replays all ⭐/👍 from the `feedback` table (idempotent). |
 | Twitter bridge silent ≥6h | bot sends a one-off alert — `TWITTER_AUTH_TOKEN` likely expired (x.com via proxy, cookie in `.env`). |

@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     embedding_version: int = Field(default=1, alias="EMBEDDING_VERSION")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
     similarity_threshold: float = Field(default=0.88, alias="SIMILARITY_THRESHOLD")
+    # Переэмбеддинг устаревших векторов — планировщиком в sweeper'е, а не руками.
+    # Порция ограничена: разовый бэкфилл (сотни записей) не должен занимать хост на час.
+    # 0 минут = выключить планировщик (остаётся ручной `homyak-reembed`).
+    reembed_every_minutes: int = Field(default=30, alias="REEMBED_EVERY_MINUTES")
+    reembed_batch: int = Field(default=300, alias="REEMBED_BATCH")
 
     # Токен GitHub: нужен RSSHub для trending и нам — для README (без токена API даёт
     # 60 запросов в час на IP, а поток gh_search_* выбирает это за минуты).

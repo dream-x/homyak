@@ -305,7 +305,7 @@ Telegram channels come from **tscrapper** — a *separate service* (Telethon, it
 | `learner` | learning from feedback + auto profile refinement |
 | `wiki` | compound the LLM wiki from ⭐/👍 |
 | `starchan` | ⭐ channel: starred items as Russian cards + daily digest |
-| `sweeper` | re-publish stuck items |
+| `sweeper` | re-publish stuck items · drain the re-embed queue |
 | `tgbot` | Telegram bot (push, reactions, commands, search) |
 | `api` | FastAPI: `/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/dashboard`, SSE |
 | `rsshub` | RSS bridge for GitHub & Twitter/X |
