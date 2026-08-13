@@ -490,11 +490,18 @@ class NewsRepo:
 
         NULL-версия — это и «никогда не эмбеддилось», и «текст переписали» (set_item_text
         сбрасывает версию). Отдельной очереди не заводим: признак живёт в самой записи.
+
+        Только обработанные: у необработанных версия тоже NULL, но их эмбеддит процессор
+        своим чередом — и раньше по тексту-огрызку, до article_fetch. Планировщик, взяв их,
+        жёг бы GPU на работу, которую пайплайн всё равно переделает.
         """
-        return or_(
-            NewsItem.embedding_version.is_(None),
-            NewsItem.embedding_version < settings.embedding_version,
-            NewsItem.embedding_model != settings.embedding_model,
+        return sa.and_(
+            NewsItem.processed_at.isnot(None),
+            or_(
+                NewsItem.embedding_version.is_(None),
+                NewsItem.embedding_version < settings.embedding_version,
+                NewsItem.embedding_model != settings.embedding_model,
+            ),
         )
 
     async def stale_embedding_ids(self, limit: int | None = None) -> list[int]:

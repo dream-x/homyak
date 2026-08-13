@@ -24,13 +24,18 @@ Two architectural pillars:
 - FastAPI, SQLAlchemy 2.x (async), Alembic, asyncpg, pydantic-settings
 - Postgres 17 (metadata + FTS), Qdrant (1024-dim vectors for bge-m3, collections `news_items` + `taste`)
 - **NATS 2.10 + JetStream** (event bus)
-- **Ollama** (on the host, Metal): `bge-m3` (embeddings), `qwen2.5:14b` (judge/tags),
-  `gpt-oss:120b-cloud` → `gemma4` (summaries)
-- feedparser + trafilatura (fetch/extract full article text), httpx; aiogram + Telegraph (bot); Telethon in tscrapper
+- **Ollama**: `bge-m3` (embeddings) plus one chat model for tags, judge, summaries, cards and wiki —
+  `LLM_MODEL`/`SUMMARY_MODEL`, in production `qwen3.6:27b` on the GPU box. Host and model fall back as a
+  pair (`core/ollama.targets`), because the spare host rarely carries the same model. One chat model
+  instead of three: three kept 17 GB resident, and the cloud 120b had quietly been hitting its weekly
+  limit and degrading to a small local model anyway.
+- feedparser + trafilatura (fetch/extract full article text), GitHub API for repo READMEs, httpx;
+  aiogram + Telegraph (bot); Telethon in tscrapper
 - structlog
-- **Deploy:** `Dockerfile` + `docker-compose.yml` (podman compose) — postgres/qdrant/nats + migrate +
-  app services (ingest-poll, telegram-ingest, processor, learner, sweeper, tgbot, api). Ollama on the host
-  (`host.containers.internal:11434`). `podman compose up -d` brings everything up.
+- **Deploy:** `Dockerfile` + `docker-compose.yml` — postgres/qdrant/nats + migrate + app services
+  (ingest-poll, telegram-ingest, processor, learner, sweeper, wiki, starchan, tgbot, api) + RSSHub.
+  Production runs docker compose on a always-on VM; a Mac runs the same file under podman for development,
+  minus the bot (one token cannot serve two `getUpdates`). Ollama stays outside the compose file.
 
 ---
 
@@ -98,18 +103,22 @@ hundreds of GitHub repos by the one-line blurb they no longer stored.
 
 ---
 
-## Processing pipeline (9 stages)
+## Processing pipeline
 
-Analyzers run sequentially in the `processor` (mutating a shared `AnalyzerContext`):
+Analyzers run sequentially in the `processor`, mutating a shared `AnalyzerContext`, ordered by `stage`
+(`registry.build_analyzers`; ties keep registration order, hence the two entries each at 2 and 3):
 
-| # | Stage | What it does |
+| Stage | Analyzer | What it does |
 |---|---|---|
-| 0 | `article_fetch` | downloads the **full article text** by URL (trafilatura) if RSS gave only a stub |
+| 0 | `article_fetch` | full text by URL: **README via the GitHub API** for repos, trafilatura otherwise, `r.jina.ai` when the site blocks bots |
 | 1 | `url_dedup` | normalizes URL, finds/creates a cluster by normalized URL |
+| 2 | `watchlist_matcher` | marks `watch_topics` — before `prefilter`, which treats them as a whitelist |
 | 2 | `embedder` | bge-m3 via Ollama `/api/embed`, upsert to Qdrant, sets `embedding_model/version` |
 | 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters (advisory lock) |
-| 4 | `llm_tagger` | tags + **vertical** (business/it/medical/other), `qwen2.5:14b`, JSON |
-| 5 | `llm_summarizer` | mixed summary (gist + takeaways), engineer voice, original language. `gpt-oss:120b-cloud` → `gemma4` fallback |
+| 3 | `prefilter` | noise gate against the taste centroid — cuts the cheap way before any LLM stage |
+| 3 | `title_gen` | headline from the text when the source gave none (LLM, heuristic fallback) |
+| 4 | `llm_tagger` | tags + **vertical** (business/it/medical/other), JSON |
+| 5 | `llm_summarizer` | gist + takeaways in an engineer's voice, language pinned to the source text (`detect_lang`) |
 | 6 | `scorer` | base `freshness · (1+raw) · (1+ln(cluster_size))` |
 | 7 | `llm_relevance` | **LLM judge**: relevance to the item's vertical profile (0..1) + reason, cached by `scored_profile_version` |
 | 8 | `personalizer` | hybrid `personal_score` (llm + taste + tag/source affinity + fresh) − hard-mute |
@@ -294,6 +303,9 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
 | Wiki LLM down on ingest | best-effort — source page + log still written; concept/entity extraction skipped. |
 | Wiki behind on history | `homyak-wiki-backfill` replays all ⭐/👍 from the `feedback` table (idempotent). |
 | Twitter bridge silent ≥6h | bot sends a one-off alert — `TWITTER_AUTH_TOKEN` likely expired (x.com via proxy, cookie in `.env`). |
+| GitHub API rate-limited | Unauthenticated it is 60/h per IP, and the `gh_search_*` stream burns that in minutes; README falls through to `raw.githubusercontent.com`, trying the names it actually serves. |
+| LLM unreachable on a ⭐ | The star is nak'd and retried rather than published bare — the article text is already in hand, so a stripped card would be a permanent loss for a transient outage. |
+| Telegram send fails in the ⭐ channel | Exception reaches the consumer's nak+backoff instead of being swallowed with the ack. The 44-hour proxy outage would otherwise have eaten every star in the window. |
 
 ---
 

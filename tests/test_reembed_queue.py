@@ -1,5 +1,7 @@
 """Очередь на переэмбеддинг: попадание в неё и выбор порции."""
 
+from datetime import datetime, timezone
+
 from homyak.core.config import settings
 from homyak.core.interfaces import NewsItemDTO
 from homyak.core.models import NewsItem
@@ -9,7 +11,8 @@ from homyak.storage.postgres import NewsRepo
 _KEEP = object()  # «не задано» — иначе version=None не отличить от «оставь как есть»
 
 
-async def _seed(session_factory, repo, source_id, *, model=_KEEP, version=_KEEP) -> int:
+async def _seed(session_factory, repo, source_id, *, model=_KEEP, version=_KEEP,
+                processed=True) -> int:
     id_, _ = await repo.upsert_item(
         NewsItemDTO(source_type="rss", source_id=source_id, url=f"https://x.com/{source_id}",
                     title=source_id, text="исходный текст")
@@ -18,6 +21,8 @@ async def _seed(session_factory, repo, source_id, *, model=_KEEP, version=_KEEP)
         item = await s.get(NewsItem, id_)
         item.embedding_model = settings.embedding_model if model is _KEEP else model
         item.embedding_version = settings.embedding_version if version is _KEEP else version
+        if processed:
+            item.processed_at = datetime.now(timezone.utc)
         await s.commit()
     return id_
 
@@ -50,6 +55,17 @@ async def test_rewriting_text_queues_the_item(session_factory):
 
     await repo.set_item_text(id_, "полный README на много тысяч символов")
     assert await NewsRepo(session_factory).stale_embedding_ids() == [id_]
+
+
+async def test_unprocessed_items_are_left_to_the_pipeline(session_factory):
+    """У необработанных версия тоже NULL, но их эмбеддит процессор — и по полному тексту.
+
+    Планировщик, взяв их, гонялся бы с ним наперегонки и жёг GPU на работу, которую пайплайн
+    всё равно переделает: article_fetch дотягивает статью уже после того, как запись создана.
+    """
+    repo = NewsRepo(session_factory)
+    await _seed(session_factory, repo, "ещё-в-очереди", version=None, processed=False)
+    assert await NewsRepo(session_factory).stale_embedding_count() == 0
 
 
 async def test_batch_takes_the_freshest_first(session_factory):

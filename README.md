@@ -90,8 +90,8 @@ LLMs run on Ollama (a GPU box, with a local Metal fallback). Full architecture: 
 
 ```mermaid
 flowchart LR
-    A["article_fetch<br/>full text"] --> B["url_dedup"]
-    B --> C["embedder<br/>bge-m3"] --> D["similarity_dedup"]
+    A["article_fetch<br/>full text · GitHub README"] --> B["url_dedup"]
+    B --> W["watchlist_matcher"] --> C["embedder<br/>bge-m3"] --> D["similarity_dedup"]
     D --> P["prefilter<br/>noise gate"] --> T["title_gen<br/>LLM headline"]
     T --> E["llm_tagger<br/>tags + vertical"] --> F["llm_summarizer"]
     F --> G["scorer"] --> H["llm_relevance<br/>judge vs profile"]
@@ -101,6 +101,10 @@ flowchart LR
 Analyzers mutate a shared `AnalyzerContext`, ordered by `stage`. The expensive `llm_relevance` is cached by
 profile version; lightweight components recompute on read. On failure — `nak` + exponential backoff, circuit
 breaker on Ollama.
+
+Rewriting an item's text (a late article fetch, a README backfill) marks its vector stale
+(`embedding_version = NULL`); the sweeper re-embeds the queue in batches, so search never keeps matching
+wording an item no longer holds.
 
 ---
 
@@ -176,7 +180,7 @@ every N reactions → LLM proposes a profile refinement (✅/❌)
 | Bus | NATS 2.10 + JetStream |
 | LLM (Ollama) | `bge-m3` (embeddings), **Qwen3** (judge / tags / summaries / wiki) with a local fallback |
 | Bridges | **RSSHub** (GitHub, Twitter/X), tscrapper (Telegram) |
-| Extraction | feedparser, trafilatura, httpx |
+| Extraction | feedparser, trafilatura, GitHub API (repo READMEs), httpx |
 | Bot | aiogram 3.x + Telegraph |
 | Deploy | Dockerfile + compose (Podman / Docker) |
 
@@ -311,7 +315,8 @@ Telegram channels come from **tscrapper** — a *separate service* (Telethon, it
 | `rsshub` | RSS bridge for GitHub & Twitter/X |
 
 CLI: `homyak-cli` · `homyak-interests` (show/diff/apply/backfill) · `homyak-reembed` ·
-`homyak-backfill-titles` · `homyak-resummarize` · `homyak-wiki-backfill` · `homyak-starcard-eval`.
+`homyak-backfill-titles` · `homyak-backfill-readme` · `homyak-resummarize` · `homyak-wiki-backfill` ·
+`homyak-starcard-eval`.
 
 ---
 
@@ -319,15 +324,18 @@ CLI: `homyak-cli` · `homyak-interests` (show/diff/apply/backfill) · `homyak-re
 
 ```
 homyak/
-  core/        interfaces · events (NATS) · config · scoring · llm · search · wiki* · titles · ask
+  core/        interfaces · events (NATS) · config · scoring · llm · search · wiki* · titles ·
+               ask · digest · trends · starcard · github · reembed
   storage/     postgres (repo) · qdrant · db
   adapters/
     sources/   rss · miniflux · telegram_relay
-    analyzers/ article_fetch · url_dedup · embedder · similarity_dedup · prefilter ·
-               title_gen · llm_tagger · llm_summarizer · scorer · llm_relevance · personalizer
+    analyzers/ article_fetch · url_dedup · watchlist_matcher · embedder · similarity_dedup ·
+               prefilter · title_gen · llm_tagger · llm_summarizer · scorer · llm_relevance ·
+               personalizer
     outputs/   api · tg_bot · dashboard · cli · rss_out · json_feed · sse
-  pipeline/    ingest_poll · telegram_ingest · processor · learner · sweeper · wiki · serve
-  cli/         reembed · interests · backfill_titles · resummarize · wiki_backfill
+  pipeline/    ingest_poll · telegram_ingest · processor · learner · sweeper · wiki · starchan · serve
+  cli/         reembed · interests · backfill_titles · backfill_readme · resummarize ·
+               wiki_backfill · starcard_eval
 alembic/       migrations
 config/        sources.yaml · interests.yaml
 wiki/          the LLM wiki (Obsidian vault, generated)

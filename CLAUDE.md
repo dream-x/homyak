@@ -33,8 +33,10 @@ event-driven (NATS JetStream) архитектура. Флагманская ф�
 ## Окружение и запуск
 **ПРОД — VM `homyak` (Proxmox, 192.168.140.20, `ssh maks@192.168.140.20`, ключ `~/.ssh/homelab`)**,
 работает 24/7 (Mac ночью спит — поэтому переехали). Там docker compose в `~/homyak`: весь стек
-(postgres/qdrant/nats + migrate + 7 сервисов) + gost-прокси (`TELEGRAM_BOT_PROXY` для Bot API) +
+(postgres/qdrant/nats + migrate + 9 сервисов) + gost-прокси (`TELEGRAM_BOT_PROXY` для Bot API) +
 tscrapper-контейнер (`~/tscrapper`, MTProto через `TG_PROXY`) + мониторинг + RSSHub.
+- **Образ не монтирует код** (только `./config` и `./wiki`): после `git pull` на VM обязателен
+  `--build`, иначе новый код и новые миграции просто не попадут в контейнер.
 - **Деплой на VM**: у VM нет кредов к GitHub → `git push` с Мака, затем на VM `git pull` не работает;
   проверенный путь — `git bundle create b.bundle <vm-head>..master` → scp → на VM `git pull /tmp/b.bundle
   master` → `docker compose up -d --build <сервис>`.
@@ -48,17 +50,29 @@ tscrapper-контейнер (`~/tscrapper`, MTProto через `TG_PROXY`) + м
 только нужные сервисы (`podman compose up -d api`). Тесты: `uv run pytest` с хоста против
 контейнерного postgres (нужна БД `homyak_test`).
 
-## Состояние (2026-07-23)
-Реализованы Phase 1-4 + Phase 6.0-6.3 (флагман закрыт). Пайплайн: url_dedup → embedder →
-similarity_dedup → prefilter → **title_gen** (LLM-заголовок, если источник не дал) → llm_tagger →
-llm_summarizer → scorer → llm_relevance (судья) → personalizer. Процессы:
-`homyak-ingest-poll` (RSS), `homyak-telegram-ingest` (TG из tscrapper через NATS `homyak.telegram.raw`),
-`homyak-processor`, `homyak-learner` (обучение на 👍/👎), `homyak-sweeper`, `homyak-tgbot`, `homyak-api`,
-**`homyak-wiki`** (LLM-вика из ⭐/👍). CLI: `homyak-cli`, `homyak-interests` (show/diff/apply/backfill),
-`homyak-reembed`, `homyak-backfill-titles`, `homyak-resummarize`, `homyak-wiki-backfill`.
+## Состояние (2026-08-13)
+Реализованы Phase 1-4 + Phase 6.0-6.3 (флагман закрыт). Пайплайн: article_fetch → url_dedup →
+watchlist_matcher → embedder → similarity_dedup → prefilter → **title_gen** (LLM-заголовок, если
+источник не дал) → llm_tagger → llm_summarizer → scorer → llm_relevance (судья) → personalizer.
+Процессы: `homyak-ingest-poll` (RSS), `homyak-telegram-ingest` (TG из tscrapper через NATS
+`homyak.telegram.raw`), `homyak-processor`, `homyak-learner` (обучение на 👍/👎), `homyak-sweeper`
+(пересев зависших + **очередь переэмбеддинга**), `homyak-tgbot`, `homyak-api`,
+**`homyak-wiki`** (LLM-вика из ⭐/👍), **`homyak-starchan`** (⭐-канал). CLI: `homyak-cli`,
+`homyak-interests` (show/diff/apply/backfill), `homyak-reembed`, `homyak-backfill-titles`,
+`homyak-backfill-readme`, `homyak-resummarize`, `homyak-wiki-backfill`, `homyak-starcard-eval`.
 Сверх фаз: дашборд `/dashboard` + лента `/lenta` (👍/👎, Разбор, сортировка свежесть/скоринг, период),
 публикация ленты в TG-канал (`CHANNEL_VERTICALS`), `/ask` RAG-дайджест, HN/Lobsters + **GitHub-источники**
 (RSSHub: trending/search/repos/starred — trending требует `GITHUB_ACCESS_TOKEN`).
+**⭐-канал** (`homyak-starchan`, `core/starcard.py`): звезда на IT-записи → карточка в отдельный канал
+(значок по теме, русская выжимка, ссылка на оригинал) + дайджест топ-5 в `STAR_DIGEST_HOURS`. Против
+выдумок — структурно: нет текста → карточка голая; сгенерированное проверяется на заземление
+(числа и латинские имена обязаны быть в исходнике); промпт гоняется на живых ⭐ через
+`homyak-starcard-eval N --judge`.
+**GitHub-записи**: текст берётся из README (`core/github.py`, API → фолбэк raw); общий `fetch_article`
+делает это для любых ссылок на репозитории.
+**Переэмбеддинг — по расписанию** (задание `reembed` в sweeper'е). Очередь = `embedding_version IS NULL`;
+**кто переписывает `text`, обязан сбросить версию**, иначе вектор молча ищет по исчезнувшему тексту.
+**API `/saved`** — выгрузка помеченного ⭐/👍 (+`/saved.rss`, `/saved.json`), `since` = время пометки.
 **Поиск `/search` + бот `/find`**: гибрид (Postgres FTS `search_tsv` × Qdrant bge-m3, слито RRF, схлоп
 кластеров) + кнопка «Ответить» (сперва вика, иначе RAG по ленте).
 **LLM-вика (по Karpathy)** — сервис `homyak-wiki` консюмит `homyak.feedback.recorded` (up/save) и
