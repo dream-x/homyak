@@ -9,6 +9,7 @@ from homyak.core.starcard import (
     facts,
     filter_grounded,
     from_data,
+    topic_emoji,
     ungrounded,
 )
 from homyak.pipeline.starchan import due_hour, parse_hours, render_card
@@ -191,7 +192,7 @@ def test_render_escapes_html_in_title_and_url():
     out = render_card(_Item(), Card(line="Суть", points=["Тезис"], mode="full"))
     assert "Rust &lt;3 &amp; co" in out
     assert "x=1&amp;y=2" in out
-    assert out.startswith("⭐ <a href=")
+    assert out.startswith("🦀 <a href=")  # значок по теме записи, а не общая звезда
 
 
 def test_render_bare_card_has_link_and_no_empty_body():
@@ -202,3 +203,49 @@ def test_render_bare_card_has_link_and_no_empty_body():
 def test_render_truncates_to_telegram_limit():
     huge = Card(line="д" * 5000, points=["ц" * 3000], mode="full")
     assert len(render_card(_Item(), huge)) <= 3900
+
+
+# --- значок по теме ---
+
+
+def test_narrow_topic_beats_broad_one():
+    """`ai` и `llm` висят на тысячах записей: если бы они выигрывали, лента стала бы одноцветной."""
+    assert topic_emoji(["ai", "llm", "rust"]) == "🦀"
+    assert topic_emoji(["ai", "devtools", "security"]) == "🛡"
+    assert topic_emoji(["llm", "ai-agents"]) == "🤖"
+
+
+def test_broad_topic_used_when_nothing_narrower():
+    assert topic_emoji(["ai", "llm"]) == "🧠"
+    assert topic_emoji(["devtools"]) == "🛠"
+
+
+# Ниже — реальные наборы тегов с живых ⭐: на них первая раскладка ошибалась.
+
+
+def test_companion_tags_do_not_hijack_the_topic():
+    """`startups` висел на половине записей, `devops` — на каждой заметке про агентов."""
+    assert topic_emoji(["ai-agents", "devops", "llm", "backend", "startups"]) == "🤖"
+    assert topic_emoji(["ai-agents", "devtools", "llm", "startups", "backend"]) == "🤖"
+    assert topic_emoji(["ai", "llm", "devtools", "backend", "startups"]) == "🧠"
+
+
+def test_language_tag_does_not_outrank_the_actual_subject():
+    """Вредоносный MCP-сервер помечен и `python`, но материал — про атаку, а не про язык."""
+    assert topic_emoji(["security", "ai-agents", "devops", "supply-chain", "python"]) == "🛡"
+    assert topic_emoji(["golang", "backend", "devtools", "distributed-systems"]) == "🐹"
+
+
+def test_hardware_and_performance_beat_the_ai_backdrop():
+    assert topic_emoji(["ai", "llm", "hardware", "devops"]) == "🖥"
+    assert topic_emoji(["ai", "llm", "performance", "devtools", "systems"]) == "🏎"
+
+
+def test_falls_back_to_source_then_default():
+    assert topic_emoji([], "gh_search_rust") == "📦"
+    assert topic_emoji(None, "tw_theprimeagen") == "💬"
+    assert topic_emoji(["чтототакое"], "lobsters_hot") == "📌"
+
+
+def test_tags_are_matched_case_insensitively():
+    assert topic_emoji([" Rust ", "AI"]) == "🦀"

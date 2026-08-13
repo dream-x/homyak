@@ -243,6 +243,15 @@ Digest: `STAR_DIGEST_HOURS` (local, default `10,23`) → top-5 of the last 24h f
 just stars — the channel has to have a pulse on days with zero stars. Slots are tracked by calendar date,
 so a restart cannot double-post and a slot missed during downtime still goes out that day.
 
+**Topic emoji** (`topic_emoji`, pure/tested) heads every card and digest line. First matching rule wins, so
+the ordering *is* the logic, and it was tuned against real stars rather than intuition: the tagger attaches
+five tags and some are always incidental — `startups` sat on half the corpus, `devops` on every agent note,
+and near the top they painted the whole feed one colour. Tiers: subject-defining (`security` above the
+language tags — a malicious MCP server is also tagged `python`, but the story is the attack) → language and
+platform → narrow subject → property (`debugging`, `performance`) → field → broad. On 30 consecutive stars
+this yields 10 distinct emoji. Known cost of putting `security` first: a reliability story that merely
+mentions security (SQLite corruption at Tailscale) gets 🛡 instead of 🗄.
+
 ## LLM Wiki (`homyak-wiki` service, `core/wiki*.py`)
 
 Adaptation of Karpathy's "LLM Wiki" (Apr 2026): **not RAG** — instead of retrieving raw fragments per query,

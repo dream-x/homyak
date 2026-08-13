@@ -31,7 +31,7 @@ from homyak.core.config import settings
 from homyak.core.digest import build_digest
 from homyak.core.events import NatsBus
 from homyak.core.llm import OllamaLLM
-from homyak.core.starcard import MIN_FULL, Card, make_card
+from homyak.core.starcard import MIN_FULL, Card, make_card, topic_emoji
 from homyak.core.textutils import fmt_age, fmt_when, hashtags
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
@@ -73,9 +73,18 @@ def _when(item) -> str:
 
 
 def render_card(item, card: Card) -> str:
-    """Карточка для канала. Заголовок — оригинальный (по решению владельца) и кликабельный."""
+    """Карточка для канала. Заголовок — оригинальный (по решению владельца) и кликабельный.
+
+    Значок — по теме записи, а не общая звезда: лента из одинаковых ⭐ не читается взглядом,
+    а тема видна до чтения заголовка.
+    """
+    emoji = topic_emoji(getattr(item, "tags", None), getattr(item, "feed_name", None))
     title = _esc(item.title or "(без заголовка)")
-    head = f'⭐ <a href="{_esc(item.url)}"><b>{title}</b></a>' if item.url else f"⭐ <b>{title}</b>"
+    head = (
+        f'{emoji} <a href="{_esc(item.url)}"><b>{title}</b></a>'
+        if item.url
+        else f"{emoji} <b>{title}</b>"
+    )
     parts = [head]
     if card.line:
         parts.append(f"\n{_esc(card.line)}")
@@ -202,8 +211,8 @@ def _digest_text(res: dict, when: str) -> str:
         title = _esc(it.get("title") or "—")
         url = it.get("url")
         head = f'<a href="{_esc(url)}">{title}</a>' if url else f"<b>{title}</b>"
-        sc = f"{round((it.get('score') or 0) * 100)}%"
-        parts.append(f"{i}. 🎯{sc} {head}")
+        emoji = topic_emoji(it.get("tags"), it.get("feed"))
+        parts.append(f"{i}. {emoji} {head}")
         desc = (it.get("summary") or "").replace("\n", " ").strip()
         if desc:
             if len(desc) > 140:

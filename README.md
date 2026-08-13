@@ -232,6 +232,9 @@ Hit ⭐ on anything IT and it shows up in its own Telegram channel as a Russian 
 the article's actual through-line, two or three concrete points. A top-5 digest of the day's feed goes
 out at 10:00 and 23:00 so the channel keeps a pulse even on days nobody stars anything.
 
+Each card is headed by an emoji picked from the item's tags (🦀 rust, 🛡 security, 🐛 a debugging story),
+so the feed is scannable before you read a word of it.
+
 The hard part isn't the summary, it's not inventing one. Guarantees, in order:
 
 1. **No source text → no retelling.** A third of stars come from lobsters/hn/github with almost nothing

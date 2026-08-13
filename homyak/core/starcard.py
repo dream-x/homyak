@@ -118,6 +118,80 @@ _WORD = re.compile(r"[a-zа-яё]+")
 _FOREIGN = re.compile(r"[぀-ヿ㐀-鿿가-힯֐-׿؀-ۿ]")
 
 
+# Значок карточки — по теме записи. Побеждает ПЕРВОЕ совпадение, поэтому порядок и есть вся
+# логика. Ярусы выстроены по проверке на живых ⭐, а не по интуиции: теггер вешает 5 тегов, и
+# среди них всегда есть попутные. `startups` оказался на половине записей (включая «I'm done
+# using AI»), `devops` — на каждой заметке про агентов; наверху они красили ленту в один цвет.
+#
+# 1. Тема, которая почти всегда и есть сюжет. `security` выше языков намеренно: вредоносный
+#    MCP-сервер помечен ещё и `python`, но материал — про атаку, а не про Python.
+# 2. Язык и платформа — если помечен, то материал действительно о нём.
+# 3. Узкий предмет.
+# 4. Свойство материала: разбор бага, оптимизация.
+# 5. Область.
+# 6. Широкое — последний рубеж перед фолбэком по источнику.
+_TOPIC_EMOJI: tuple[tuple[str, frozenset[str]], ...] = (
+    # 1
+    ("🛡", frozenset({"security", "cybersecurity", "vulnerabilities", "supply-chain"})),
+    ("🕵️", frozenset({"privacy", "surveillance"})),
+    # 2
+    ("🦀", frozenset({"rust"})),
+    ("🐍", frozenset({"python"})),
+    ("🐹", frozenset({"golang", "go"})),
+    ("🐧", frozenset({"linux"})),
+    ("🍎", frozenset({"apple", "macos", "ios"})),
+    ("🪟", frozenset({"windows"})),
+    ("📱", frozenset({"android", "mobile"})),
+    ("🐳", frozenset({"docker"})),
+    ("☸️", frozenset({"kubernetes"})),
+    ("📜", frozenset({"javascript", "typescript"})),
+    # 3
+    ("🦾", frozenset({"robotics"})),
+    ("🎮", frozenset({"gaming", "game-dev"})),
+    ("⛓", frozenset({"crypto", "blockchain"})),
+    ("👁", frozenset({"computer-vision"})),
+    ("📐", frozenset({"mathematics", "math"})),
+    ("🩺", frozenset({"medical", "biotech", "health"})),
+    ("⚡", frozenset({"energy", "data-centers"})),
+    ("🖥", frozenset({"hardware", "nvidia", "chips", "semiconductors"})),
+    ("🗄", frozenset({"databases", "data-science"})),
+    ("🌐", frozenset({"networking", "cloudflare", "dns"})),
+    # 4
+    ("🐛", frozenset({"testing", "debugging"})),
+    ("🏎", frozenset({"performance"})),
+    ("🔌", frozenset({"mcp", "api", "integrations"})),
+    # 5
+    ("🤖", frozenset({"ai-agents", "automation"})),
+    ("🔬", frozenset({"science", "ml-research", "research", "physics"})),
+    ("⚖️", frozenset({"politics", "policy", "regulation", "ethics", "law", "legal"})),
+    ("🎓", frozenset({"education"})),
+    ("🏛", frozenset({"history"})),
+    # 6
+    ("🧠", frozenset({"llm", "ai", "machine-learning", "reinforcement-learning"})),
+    ("🔓", frozenset({"open-source"})),
+    ("🛠", frozenset({"devtools", "cli", "programming", "software-engineering", "productivity"})),
+    ("🕸", frozenset({"web", "frontend"})),
+    ("⚙️", frozenset({"backend", "systems", "distributed-systems", "compilers", "data"})),
+    ("☁️", frozenset({"devops", "infrastructure", "cloud", "aws", "gcp", "azure"})),
+    ("🚀", frozenset({"startups", "funding"})),
+    ("💼", frozenset({"business", "finance", "markets"})),
+)
+
+
+def topic_emoji(tags: list[str] | None, feed_name: str | None = None) -> str:
+    """Значок по теме записи. Тегов нет или они незнакомы — опираемся на источник."""
+    have = {str(t).strip().lower() for t in (tags or [])}
+    for emoji, keys in _TOPIC_EMOJI:
+        if have & keys:
+            return emoji
+    feed = feed_name or ""
+    if feed.startswith("gh_"):
+        return "📦"  # карточка репозитория
+    if feed.startswith("tw_"):
+        return "💬"
+    return "📌"
+
+
 @dataclass
 class Card:
     """Готовая выжимка. mode: full | brief | bare (без пересказа)."""
