@@ -22,7 +22,11 @@ from homyak.core.config import settings
 log = structlog.get_logger(__name__)
 
 _API = "https://api.github.com/repos/{owner}/{repo}/readme"
-_RAW = "https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md"
+# Резервный путь на случай, когда API отвечает отказом (без токена — 60 запросов в час на IP,
+# поток gh_search_* выбирает это быстро). Тут имя файла приходится перебирать: raw отдаёт
+# конкретный путь, а не «какой бы README ни лежал», как API.
+_RAW = "https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{name}"
+_RAW_NAMES = ("README.md", "readme.md", "Readme.md", "README.rst", "README.txt", "README")
 
 # Служебные пути: это не репозитории, README у них нет.
 _NOT_REPOS = frozenset(
@@ -81,18 +85,21 @@ async def fetch_readme(url: str, timeout: float = 20.0) -> str | None:
     if settings.github_access_token:
         headers["Authorization"] = f"Bearer {settings.github_access_token}"
 
-    for target, hdrs in (
-        (_API.format(owner=owner, repo=repo), headers),
-        (_RAW.format(owner=owner, repo=repo), {"User-Agent": "homyak"}),
-    ):
-        try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    targets = [(_API.format(owner=owner, repo=repo), headers)]
+    targets += [
+        (_RAW.format(owner=owner, repo=repo, name=n), {"User-Agent": "homyak"}) for n in _RAW_NAMES
+    ]
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        for target, hdrs in targets:
+            try:
                 resp = await client.get(target, headers=hdrs)
                 resp.raise_for_status()
                 text = clean_markdown(resp.text)
                 if text:
                     log.info("github_readme_fetched", repo=f"{owner}/{repo}", chars=len(text))
                     return text
-        except Exception as e:
-            log.debug("github_readme_failed", url=target, error=f"{type(e).__name__}: {e}"[:120])
+            except Exception as e:
+                log.debug(
+                    "github_readme_failed", url=target, error=f"{type(e).__name__}: {e}"[:120]
+                )
     return None
