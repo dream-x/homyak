@@ -49,6 +49,7 @@ homyak-learner = "homyak.pipeline.learner:main"
 homyak-wiki = "homyak.pipeline.wiki:main"
 homyak-wiki-backfill = "homyak.cli.wiki_backfill:main"
 homyak-starchan = "homyak.pipeline.starchan:main"
+homyak-backfill-readme = "homyak.cli.backfill_readme:main"
 homyak-starcard-eval = "homyak.cli.starcard_eval:main"
 
 [build-system]

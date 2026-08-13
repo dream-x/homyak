@@ -135,6 +135,10 @@ async def publish_star(item_id: int, repo: NewsRepo, bot: Bot, llm: OllamaLLM) -
         return False
     text = await ensure_text(item, repo)
     card = await make_card(item.title, text, llm)
+    if card.mode == "failed":
+        # Текст есть, а модель не ответила — откладываем на ретрай консюмера. Публиковать
+        # сейчас значило бы отдать голый заголовок по статье, которая у нас уже скачана.
+        raise RuntimeError(f"LLM недоступна, звезда {item_id} ждёт ретрая")
     if card.dropped:
         log.warning("starchan_ungrounded", item=item_id, dropped=card.dropped)
     await bot.send_message(

@@ -15,6 +15,7 @@ import httpx
 import structlog
 
 from homyak.core.config import settings
+from homyak.core.github import fetch_readme
 
 try:
     import trafilatura
@@ -82,6 +83,13 @@ async def fetch_article(url: str, timeout: float = 20.0) -> str | None:
     """Скачивает URL и извлекает основной текст. Фолбэк на reader при неудаче. None при провале."""
     if not url or _skipped(url):  # известная бот-стена — не тратим попытки
         return None
+
+    # Репозиторий — особый случай: у страницы GitHub общий экстрактор берёт обвязку вместо
+    # содержания, поэтому README запрашиваем напрямую. Здесь, а не в ⭐-канале: полный текст
+    # нужен всем — теггеру, саммари, судье, поиску и вике.
+    readme = await fetch_readme(url, timeout)
+    if readme and len(readme) >= _MIN_CHARS:
+        return readme
 
     text = ""
     if trafilatura is not None:

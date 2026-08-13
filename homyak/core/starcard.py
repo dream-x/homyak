@@ -326,7 +326,14 @@ def choose_mode(text: str | None) -> str:
 
 
 async def make_card(title: str | None, text: str | None, llm) -> Card:
-    """Заголовок+текст → проверенная выжимка. Ошибка LLM = голая карточка, не исключение."""
+    """Заголовок+текст → проверенная выжимка.
+
+    Режим `failed` ОТДЕЛЬНО от `bare`: «текста нет» — это окончательный вердикт и карточку
+    можно публиковать, а «модель не ответила» — временная беда, и публиковать по ней голую
+    карточку нельзя. Ровно так и вышло с первым живым постом: статья скачалась на 60 КБ,
+    но перегруженный GPU-бокс не ответил за таймаут, и в канал уехал голый заголовок.
+    Звонящий должен отложить такую запись и вернуться к ней позже.
+    """
     source = (text or "").strip()
     mode = choose_mode(source)
     if mode == "bare":
@@ -338,8 +345,9 @@ async def make_card(title: str | None, text: str | None, llm) -> Card:
     try:
         card = from_data(await llm.chat_json(system, user))
     except Exception as e:
-        log.warning("starcard_llm_failed", error=str(e)[:150])
-        return Card(mode="bare")
+        # Тип обязателен: у httpx.ReadTimeout пустое сообщение, и в логе оставалось «error=».
+        log.warning("starcard_llm_failed", error=f"{type(e).__name__}: {e}"[:150])
+        return Card(mode="failed")
     card.mode = mode
     if not card.has_text:
         return Card(mode="bare")

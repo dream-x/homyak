@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
     similarity_threshold: float = Field(default=0.88, alias="SIMILARITY_THRESHOLD")
 
+    # Токен GitHub: нужен RSSHub для trending и нам — для README (без токена API даёт
+    # 60 запросов в час на IP, а поток gh_search_* выбирает это за минуты).
+    github_access_token: str = Field(default="", alias="GITHUB_ACCESS_TOKEN")
+
     # Извлечение статей: фолбэк на reader-сервис (r.jina.ai) при бот-блоке/JS. Внешний вызов.
     article_reader_fallback: bool = Field(default=True, alias="ARTICLE_READER_FALLBACK")
     # Хосты с жёсткой бот-стеной (403 даже reader'у) — не пытаемся тянуть, берём RSS-огрызок.
