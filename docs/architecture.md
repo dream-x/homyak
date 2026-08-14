@@ -193,7 +193,7 @@ rebuild. Ollama stays on the host (Metal).
 
 | Service | Role |
 |---|---|
-| `ingest-poll` | poll RSS/Miniflux (+ GitHub/Twitter via RSSHub) |
+| `ingest-poll` | poll RSS/Miniflux (+ GitHub trending mirror, Twitter via RSSHub) |
 | `telegram-ingest` | consume `homyak.telegram.raw` (tscrapper) |
 | `processor` | pipeline (url_dedup … title_gen … personalizer) |
 | `learner` | learning + profile refinement |
@@ -304,6 +304,8 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
 | Wiki behind on history | `homyak-wiki-backfill` replays all ⭐/👍 from the `feedback` table (idempotent). |
 | Twitter bridge silent ≥6h | bot sends a one-off alert — `TWITTER_AUTH_TOKEN` likely expired (x.com via proxy, cookie in `.env`). |
 | GitHub API rate-limited | Unauthenticated it is 60/h per IP, and the `gh_search_*` stream burns that in minutes; README falls through to `raw.githubusercontent.com`, trying the names it actually serves. |
+| GitHub search closed to anonymous callers | All four `gh_search_*` feeds died together (RSSHub throws on `undefined.map` when GitHub returns an error instead of results). Project discovery moved to an RSS mirror of the trending page, which needs no token; the search feeds revive with `GITHUB_ACCESS_TOKEN`. |
+| A feed works locally but not in production | Check it **from the VM**: `redis.io` answers it 403 and `brooker.co.za`, `danluu.com`, `netflixtechblog.com` time out there while opening fine on the laptop. |
 | LLM unreachable on a ⭐ | The star is nak'd and retried rather than published bare — the article text is already in hand, so a stripped card would be a permanent loss for a transient outage. |
 | Telegram send fails in the ⭐ channel | Exception reaches the consumer's nak+backoff instead of being swallowed with the ack. The 44-hour proxy outage would otherwise have eaten every star in the window. |
 

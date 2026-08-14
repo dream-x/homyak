@@ -91,6 +91,13 @@ verticals:
       - {name: kubernetes,   polarity: like}
       - {name: devops,       polarity: like}
       - {name: open-source,  polarity: like}
+      # Ниже — темы, которые дописал авто-рефайнмент профиля и которые apply иначе бы стёр.
+      # Взяты только те, что теггер реально ставит: `rust-ecosystem`/`llm-local-inference`
+      # и прочие его выдумки в корпусе не встречаются вовсе и работают лишь как слова в
+      # промпте судьи (а это и так сказано в description).
+      - {name: self-hosted,  polarity: love}
+      - {name: self-hosting, polarity: love}
+      - {name: supply-chain, polarity: like}
       - {name: devtools,     polarity: love}
       - {name: performance,  polarity: love}
       - {name: security,     polarity: love}

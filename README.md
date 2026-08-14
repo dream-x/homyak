@@ -46,7 +46,7 @@ Three architectural pillars:
 | 🔎 **Hybrid search** | `/search` + bot `/find` — Postgres FTS × Qdrant vectors fused by RRF, cluster-collapsed |
 | 📚 **Self-building LLM wiki** | ⭐/👍 compound into an interlinked markdown knowledge base (Karpathy-style), Obsidian-viewable |
 | 💬 **Ask your feed** | `/ask` and the search **Answer** button synthesize grounded digests with citations |
-| 🐙 **GitHub discovery** | trending, topic search, and *who publishes / stars what* — right in the IT feed |
+| 🐙 **GitHub discovery** | trending per language (no token needed), plus *who publishes / stars what* — right in the IT feed |
 | 🔀 **Semantic dedup** | the same story from RSS, GitHub, Twitter and Telegram merges into one cluster |
 | ✍️ **Engineer-grade summaries** | technical voice, hard-locked to the article's language (RU→RU, else EN) |
 | 🏷 **Auto titles** | sourceless posts (Telegram, tweets, bare links) get an LLM-written headline |
@@ -147,7 +147,7 @@ The feed is split into **3 independent topics** — a like in IT never touches m
 | Vertical | Audience | Sources |
 |---|---|---|
 | 💼 **Business** | traders/founders — markets, macro, "where the world is heading" | WSJ, Economist, MarketWatch, NYT, SeekingAlpha… |
-| 💻 **IT** | engineers — languages, systems, AI/ML, infra, GitHub projects | HN, Lobsters, GitHub, HuggingFace, The Register… |
+| 💻 **IT** | engineers — languages, systems, databases, observability, mobile, AI/ML, new projects | HN, Lobsters, GitHub trending, LWN, CNCF, OpenTelemetry, DuckDB, weeklies… |
 | 🩺 **Medical** | clinicians — clinical, pharma, biotech | STAT, Lancet, Nature Medicine, Fierce, WHO… |
 
 The vertical is decided by the **LLM tagger from content** (not the source). Each has its own profile
