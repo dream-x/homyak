@@ -68,10 +68,73 @@ rss:
   - {name: selfhst,        url: "https://selfh.st/rss/",                               category: tech,     interval_seconds: 3600, weight: 0.9}
   - {name: selfhst_weekly, url: "https://selfh.st/weekly/rss/",                        category: tech,     interval_seconds: 86400, weight: 1.0}
 
+  # === Новые проекты: GitHub trending по языкам, БЕЗ токена ==================================
+  # Зеркало трендов в виде RSS (mshibanami). Появилось не от хорошей жизни: GitHub закрыл
+  # search API для анонимных запросов, и все gh_search_* ниже умерли разом — RSSHub падает на
+  # `Cannot read properties of undefined (reading 'map')`, потому что вместо results приходит
+  # ошибка. Это зеркало ходит на публичную страницу трендов и авторизации не требует.
+  # weekly, а не daily: недельное окно — сито само по себе, а url_dedup всё равно впустит
+  # каждый репозиторий один раз.
+  - {name: gh_trend_rust_w,   url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/rust.xml",       category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_trend_go_w,     url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/go.xml",         category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_trend_ts_w,     url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/typescript.xml", category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_trend_js_w,     url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/javascript.xml", category: tech, interval_seconds: 21600, weight: 0.8}
+  - {name: gh_trend_c_w,      url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/c.xml",          category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: gh_trend_cpp_w,    url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/c++.xml",        category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: gh_trend_zig_w,    url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/zig.xml",        category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: gh_trend_swift_w,  url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/swift.xml",      category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: gh_trend_kotlin_w, url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/kotlin.xml",     category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: gh_trend_dart_w,   url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/dart.xml",       category: tech, interval_seconds: 43200, weight: 0.7}
+  - {name: gh_trend_any_w,    url: "https://mshibanami.github.io/GitHubTrendingRSS/weekly/all.xml",        category: tech, interval_seconds: 21600, weight: 0.9}
+
+  # === Базы данных, включая in-memory ========================================================
+  - {name: duckdb,          url: "https://duckdb.org/feed.xml",                       category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: clickhouse,      url: "https://clickhouse.com/rss.xml",                    category: tech, interval_seconds: 21600, weight: 0.8}
+  - {name: planetscale,     url: "https://planetscale.com/blog/rss.xml",              category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: neon_blog,       url: "https://neon.tech/blog/rss.xml",                    category: tech, interval_seconds: 43200, weight: 0.7}
+  - {name: postgres_weekly, url: "https://cprss.s3.amazonaws.com/postgresweekly.com.xml", category: tech, interval_seconds: 86400, weight: 0.9}
+
+  # === Observability =========================================================================
+  - {name: opentelemetry,   url: "https://opentelemetry.io/blog/index.xml",           category: tech, interval_seconds: 43200, weight: 0.9}
+  - {name: grafana_blog,    url: "https://grafana.com/blog/index.xml",                category: tech, interval_seconds: 21600, weight: 0.8}
+  - {name: cncf,            url: "https://www.cncf.io/feed/",                         category: tech, interval_seconds: 21600, weight: 0.8}
+  - {name: honeycomb,       url: "https://www.honeycomb.io/feed",                     category: tech, interval_seconds: 43200, weight: 0.8}
+
+  # === Системное и распределённое ============================================================
+  - {name: lwn,             url: "https://lwn.net/headlines/newrss",                  category: tech, interval_seconds: 10800, weight: 0.9}
+  - {name: cloudflare_blog, url: "https://blog.cloudflare.com/rss/",                  category: tech, interval_seconds: 10800, weight: 0.9}
+  - {name: murat_dist,      url: "https://muratbuffalo.blogspot.com/feeds/posts/default", category: tech, interval_seconds: 86400, weight: 0.9}
+  # НЕ добавлять без проверки С VM: redis.io отдаёт ей 403 (блокирует IP), а brooker.co.za,
+  # danluu.com и netflixtechblog.com с неё стабильно таймаутят, хотя с Мака открываются.
+  # Фид, живой на ноутбуке, — ещё не живой фид: проверять надо оттуда, где крутится поллер.
+
+  # === Языки: Rust / Go ======================================================================
+  - {name: this_week_rust,  url: "https://this-week-in-rust.org/rss.xml",             category: tech, interval_seconds: 86400, weight: 0.9}
+  - {name: rust_blog,       url: "https://blog.rust-lang.org/feed.xml",               category: tech, interval_seconds: 86400, weight: 0.9}
+  - {name: golang_weekly,   url: "https://cprss.s3.amazonaws.com/golangweekly.com.xml", category: tech, interval_seconds: 86400, weight: 0.9}
+  - {name: go_blog,         url: "https://go.dev/blog/feed.atom",                     category: tech, interval_seconds: 86400, weight: 0.9}
+
+  # === TypeScript / JavaScript ===============================================================
+  - {name: js_weekly,       url: "https://cprss.s3.amazonaws.com/javascriptweekly.com.xml", category: tech, interval_seconds: 86400, weight: 0.8}
+  - {name: node_weekly,     url: "https://cprss.s3.amazonaws.com/nodeweekly.com.xml",  category: tech, interval_seconds: 86400, weight: 0.8}
+  - {name: ts_devblog,      url: "https://devblogs.microsoft.com/typescript/feed/",    category: tech, interval_seconds: 86400, weight: 0.9}
+  - {name: bun_blog,        url: "https://bun.sh/rss.xml",                             category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: deno_blog,       url: "https://deno.com/feed",                              category: tech, interval_seconds: 43200, weight: 0.8}
+
+  # === Мобильная разработка ==================================================================
+  - {name: android_weekly,  url: "https://androidweekly.net/rss.xml",                  category: tech, interval_seconds: 86400, weight: 0.9}
+  - {name: android_dev,     url: "https://android-developers.googleblog.com/feeds/posts/default", category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: apple_dev_news,  url: "https://developer.apple.com/news/rss/news.rss",      category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: kotlin_blog,     url: "https://blog.jetbrains.com/kotlin/feed/",            category: tech, interval_seconds: 43200, weight: 0.8}
+  - {name: swift_sundell,   url: "https://www.swiftbysundell.com/rss",                 category: tech, interval_seconds: 86400, weight: 0.8}
+  - {name: react_native,    url: "https://reactnative.dev/blog/rss.xml",               category: tech, interval_seconds: 86400, weight: 0.8}
+
   # === GitHub via RSSHub — интересные проекты + кто что публикует/звёздит (вертикаль решает теггер) ===
   # Идёт в общую IT-ленту (category tech). url_dedup склеивает один репозиторий, попавший в
   # несколько фидов (trending + чьи-то звёзды + чьи-то репы) → один пост. Ники/темы правь под себя.
-  # -- поиск свежих проектов по темам (работает БЕЗ токена) --
+  # -- ПОИСК ЛЕЖИТ: GitHub закрыл search API для анонимных запросов (RSSHub → 503,
+  #    `Cannot read properties of undefined (reading 'map')`). Оживёт вместе с trending, когда
+  #    в .env появится GITHUB_ACCESS_TOKEN. До тех пор проекты берём из gh_trend_*_w выше.
   - {name: gh_search_llm,      url: "http://rsshub:1200/github/search/topic%3Allm%20stars%3A%3E150/updated/desc",       category: tech, interval_seconds: 10800, weight: 0.9}
   - {name: gh_search_agents,   url: "http://rsshub:1200/github/search/topic%3Aai-agents%20stars%3A%3E80/updated/desc",  category: tech, interval_seconds: 10800, weight: 0.9}
   - {name: gh_search_devtools, url: "http://rsshub:1200/github/search/topic%3Acli%20stars%3A%3E200/updated/desc",       category: tech, interval_seconds: 14400, weight: 0.8}

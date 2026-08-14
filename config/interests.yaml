@@ -54,8 +54,13 @@ verticals:
     description: >
       Инженер-практик senior-уровня. В центре — системное и низкоуровневое программирование,
       производительность и прикладная кибербезопасность. Go, Python, Java, Rust, C++ без
-      фаворитов; распределённые системы, Kubernetes, service mesh, сети, инфраструктура,
-      базы данных. AI/LLM интересен как инженерия, а не хайп: архитектура мультиагентных
+      фаворитов; распределённые системы, Kubernetes, service mesh, сети, инфраструктура.
+      Отдельно и жадно — НОВЫЕ ПРОЕКТЫ и релизы: свежие базы данных (включая in-memory и
+      embedded — Redis-подобные, DuckDB-подобные, движки хранения), инструменты observability
+      (OpenTelemetry, трассировка, метрики, профилирование в проде), системные утилиты, а также
+      заметные проекты на Rust, Go, TypeScript и JavaScript. Интересен и мир мобильной
+      разработки: Android/iOS, Swift, Kotlin, кроссплатформенные фреймворки.
+      AI/LLM интересен как инженерия, а не хайп: архитектура мультиагентных
       систем, orchestrator-routing, inference (vLLM/ASR), realtime, локальный self-hosting,
       MLOps — и именно в контексте реальной интеграции с ОС и инфраструктурой. Отдельно ценит
       dev-инструменты, поднимающие продуктивность: CLI, агенты, автоматизация, тесты. Заходят
@@ -67,14 +72,25 @@ verticals:
       - {name: python,       polarity: love}
       - {name: golang,       polarity: love}
       - {name: java,         polarity: like}
-      - {name: rust,         polarity: like}
+      - {name: rust,         polarity: love}
       - {name: cpp,          polarity: like}
+      - {name: zig,          polarity: like}
+      - {name: typescript,   polarity: like}
+      - {name: javascript,   polarity: like}
       - {name: systems,      polarity: love}
       - {name: backend,      polarity: love}
-      - {name: distributed-systems, polarity: like}
-      - {name: databases,    polarity: like}
+      - {name: distributed-systems, polarity: love}
+      - {name: databases,    polarity: love}
+      - {name: observability, polarity: love}
+      - {name: monitoring,   polarity: like}
+      - {name: networking,   polarity: like}
+      - {name: infrastructure, polarity: like}
+      - {name: mobile,       polarity: like}
+      - {name: android,      polarity: like}
+      - {name: ios,          polarity: like}
       - {name: kubernetes,   polarity: like}
       - {name: devops,       polarity: like}
+      - {name: open-source,  polarity: like}
       - {name: devtools,     polarity: love}
       - {name: performance,  polarity: love}
       - {name: security,     polarity: love}
