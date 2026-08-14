@@ -770,6 +770,27 @@ class NewsRepo:
         source_key = row[2] or row[1]  # feed_name предпочтительнее author
         return row[0], source_key, list(row[3] or []), row[4]
 
+    async def top_tags(self, vertical: str, limit: int = 60, days: int = 30) -> list[str]:
+        """Ходовые теги вертикали — словарь для рефайнмента профиля.
+
+        Без него LLM сочиняет составные имена (`rust-go-devtools`, `llm-local-inference`),
+        которых теггер не ставит никогда: такая тема не матчится ни с одной записью и живёт
+        только словом в промпте судьи.
+        """
+        async with self._sf() as s:
+            rows = (
+                await s.execute(
+                    sa.text(
+                        "select t from news_items n, unnest(n.tags) t"
+                        " where n.vertical = :v"
+                        "   and n.processed_at > now() - make_interval(days => :d)"
+                        " group by t order by count(*) desc limit :lim"
+                    ),
+                    {"v": vertical, "d": int(days), "lim": int(limit)},
+                )
+            ).all()
+        return [r[0] for r in rows]
+
     async def feed_source_counts(self, limit: int = 30) -> list[tuple[str, int]]:
         """(feed_name, count) обработанных items — для /sources."""
         async with self._sf() as s:

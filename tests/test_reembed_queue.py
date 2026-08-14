@@ -73,3 +73,24 @@ async def test_batch_takes_the_freshest_first(session_factory):
     repo = NewsRepo(session_factory)
     ids = [await _seed(session_factory, repo, f"i{i}", version=None) for i in range(5)]
     assert await NewsRepo(session_factory).stale_embedding_ids(limit=2) == sorted(ids, reverse=True)[:2]
+
+
+async def test_top_tags_is_a_real_vocabulary(session_factory):
+    """Словарь для рефайнмента: без него LLM сочиняет теги, которых теггер не ставит никогда."""
+    from homyak.core.models import NewsItem as NI
+
+    repo = NewsRepo(session_factory)
+    for i, (tags, vertical) in enumerate(
+        [(["rust", "systems"], "it"), (["rust"], "it"), (["pharma"], "medical")]
+    ):
+        id_ = await _seed(session_factory, repo, f"t{i}")
+        async with session_factory() as s:
+            item = await s.get(NI, id_)
+            item.tags = tags
+            item.vertical = vertical
+            await s.commit()
+
+    tags = await repo.top_tags("it")
+    assert tags[0] == "rust"  # по убыванию частоты
+    assert "systems" in tags
+    assert "pharma" not in tags  # чужая вертикаль
