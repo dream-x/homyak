@@ -96,3 +96,51 @@ async def test_recovery_line_waits_before_retrying(session_factory):
         await s.commit()
 
     assert id_ not in await repo.unprocessed_stale(older_than_minutes=5)
+
+
+async def test_sweeper_does_not_hand_out_the_same_item_twice(session_factory):
+    """Главная защита от лавины: выданное уходит на паузу, а не выгребается каждые 5 минут.
+
+    Без неё sweeper брал одни и те же записи 288 раз в сутки по 500 штук — у консюмера
+    накопилось 266 000 сообщений на 4872 реальные записи, и свежая новость вставала в хвост
+    за четверть миллиона дублей.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    repo = NewsRepo(session_factory)
+    id_, _ = await repo.upsert_item(
+        NewsItemDTO(source_type="rss", source_id="sw-dup", url="https://e.com/dup", title="dup")
+    )
+    async with session_factory() as s:
+        item = await s.get(NewsItem, id_)
+        item.fetched_at = datetime.now(timezone.utc) - timedelta(hours=6)
+        await s.commit()
+
+    assert id_ in await repo.unprocessed_stale(older_than_minutes=5)
+    assert id_ not in await repo.unprocessed_stale(older_than_minutes=5)  # сразу — уже на паузе
+
+    async with session_factory() as s:  # пауза вышла — возвращается
+        item = await s.get(NewsItem, id_)
+        item.retry_after = datetime.now(timezone.utc) - timedelta(minutes=1)
+        await s.commit()
+    assert id_ in await repo.unprocessed_stale(older_than_minutes=5)
+
+
+async def test_sweeper_takes_the_freshest_first(session_factory):
+    """Лента новостей: при заторе FIFO кормит процессор архивом, и сегодняшнее не доходит."""
+    from datetime import datetime, timedelta, timezone
+
+    repo = NewsRepo(session_factory)
+    ids = []
+    for i in range(4):
+        id_, _ = await repo.upsert_item(
+            NewsItemDTO(source_type="rss", source_id=f"sw-ord{i}", url=f"https://e.com/o{i}", title=f"o{i}")
+        )
+        ids.append(id_)
+    async with session_factory() as s:
+        for id_ in ids:
+            item = await s.get(NewsItem, id_)
+            item.fetched_at = datetime.now(timezone.utc) - timedelta(hours=6)
+        await s.commit()
+
+    assert await repo.unprocessed_stale(older_than_minutes=5) == sorted(ids, reverse=True)

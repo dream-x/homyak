@@ -189,18 +189,33 @@ class NewsRepo:
     RECOVERY_QUIET_MIN = 30  # даём инфре время подняться, прежде чем пробовать снова
     RECOVERY_BATCH = 50  # медленно, чтобы разбор завала не забивал очередь свежим новостям
 
+    # Пауза, на которую запись уходит после переотправки: пока она в очереди JetStream,
+    # переотправлять её снова бессмысленно. Без этой паузы sweeper каждые 5 минут выгребал
+    # ОДНИ И ТЕ ЖЕ записи и публиковал их заново — 288 прогонов в сутки по 500 штук; у
+    # консюмера накопилось 266 000 сообщений на 4872 реальные записи, и свежая новость
+    # вставала в хвост за четверть миллиона дублей.
+    REPUBLISH_PAUSE_MIN = 30
+
     async def unprocessed_stale(self, older_than_minutes: int = 5) -> list[int]:
         """Для sweeper'а: зависшие items, готовые к повторной публикации.
 
         Две линии. Обычная — не исчерпавшие попытки. Восстановительная — исчерпавшие, но
         отлежавшиеся: инфраструктурный сбой (LLM недоступна) не должен хоронить новости
         навсегда, в отличие от реально битого item'а, который упрётся в RECOVERY_CAP.
+
+        Порядок — от СВЕЖИХ. Лента новостей: сегодняшняя запись ценна, двухнедельная почти
+        нет. При заторе FIFO кормит процессор архивом, а сегодняшнее так и не доходит —
+        ровно это и выглядит как «новостей сегодня нет».
         """
         cutoff = func.now() - sa.literal(int(older_than_minutes)) * sa.text("interval '1 minute'")
         ready = or_(NewsItem.retry_after.is_(None), NewsItem.retry_after < func.now())
         base = select(NewsItem.id).where(NewsItem.processed_at.is_(None), NewsItem.fetched_at < cutoff)
 
-        normal = base.where(NewsItem.attempts < self.MAX_ATTEMPTS, ready).order_by(NewsItem.id).limit(500)
+        normal = (
+            base.where(NewsItem.attempts < self.MAX_ATTEMPTS, ready)
+            .order_by(NewsItem.id.desc())
+            .limit(500)
+        )
         quiet = func.now() - sa.literal(self.RECOVERY_QUIET_MIN) * sa.text("interval '1 minute'")
         recovery = (
             base.where(
@@ -214,6 +229,20 @@ class NewsRepo:
         async with self._sf() as s:
             ids = list((await s.execute(normal)).scalars().all())
             ids += list((await s.execute(recovery)).scalars().all())
+            if ids:
+                # Пауза ставится ЗДЕСЬ, до фактической публикации: даже если sweeper упадёт
+                # между выборкой и publish, запись вернётся через REPUBLISH_PAUSE_MIN, а не
+                # будет выгребаться каждые 5 минут. Потерять её нельзя — она так и остаётся
+                # с processed_at IS NULL.
+                await s.execute(
+                    update(NewsItem)
+                    .where(NewsItem.id.in_(ids))
+                    .values(
+                        retry_after=func.now()
+                        + sa.literal(self.REPUBLISH_PAUSE_MIN) * sa.text("interval '1 minute'")
+                    )
+                )
+                await s.commit()
         return ids
 
     # --- Phase 6: профиль и аффинити ---

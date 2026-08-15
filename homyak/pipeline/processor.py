@@ -7,6 +7,7 @@ import signal
 from contextlib import suppress
 
 import structlog
+from nats.js.api import DeliverPolicy
 
 from homyak.core.config import settings
 from homyak.core.events import NatsBus
@@ -77,7 +78,14 @@ async def main_async() -> None:
     log.info("processor_starting", analyzers=[a.name for a in analyzers])
 
     handler = make_handler(repo, bus, analyzers)
-    consume_task = asyncio.create_task(bus.consume_ingested(handler, durable="processor"))
+    # DeliverPolicy.NEW действует только при СОЗДАНИИ durable; существующий продолжает со своей
+    # позиции, поэтому простой процессора ничего не теряет. Нужно это для восстановления: когда
+    # консюмер захлебнулся (у нас накопилось 266 000 сообщений на 4872 записи), его удаляют — и
+    # пересозданный обязан начать с конца потока, а не проигрывать полмиллиона сообщений заново.
+    # Непрочёсанное не теряется: оно лежит в Postgres с processed_at IS NULL, и sweeper вернёт его.
+    consume_task = asyncio.create_task(
+        bus.consume_ingested(handler, durable="processor", deliver_policy=DeliverPolicy.NEW)
+    )
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
