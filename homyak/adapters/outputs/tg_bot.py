@@ -12,7 +12,7 @@ import json
 import re
 import time
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import structlog
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
@@ -491,15 +491,30 @@ async def weekly_digest_loop() -> None:
             log.info("weekly_digest_sent")
 
 
+VERTICAL_WINDOW_H = 72  # окно ленты вертикали
+
+
 async def _send_vertical(m: Message, vertical: str, n: int = 8) -> None:
+    """Топ вертикали ЗА ОКНО, а не за всё время.
+
+    Без окна сортировка по personal_score отдавала вечный топ корпуса: записи со score 1.00
+    выигрывают всегда, и лента не менялась, сколько её ни открывай, — «в боте ничего нового».
+    Если за окно пусто (простой пайплайна), откатываемся на всё время, чтобы не выдать
+    пустой экран вместо ленты.
+    """
     # Переключение вертикали: активная лента = пуши. Жмёшь 💻 IT → и лента IT, и пуши IT.
     await _repo.save_cursor(PUSH_VERTICALS_KEY, vertical)
     lbl = LABELS[vertical]
-    result = await _repo.feed(FeedQuery(sort="personal", vertical=vertical, limit=n))
+    since = datetime.now(timezone.utc) - timedelta(hours=VERTICAL_WINDOW_H)
+    result = await _repo.feed(FeedQuery(sort="personal", vertical=vertical, since=since, limit=n))
+    window = f" · за {VERTICAL_WINDOW_H}ч"
+    if not result.items:
+        result = await _repo.feed(FeedQuery(sort="personal", vertical=vertical, limit=n))
+        window = " · свежего нет, показываю топ за всё время"
     if not result.items:
         await m.answer(f"{lbl}: пока пусто — копится. 🔔 Пуши переключены на {lbl}.")
         return
-    await m.answer(f"{lbl} — топ под твой профиль. 🔔 Пуши теперь только {lbl} (🔔 → сменить):")
+    await m.answer(f"{lbl} — топ под твой профиль{window}. 🔔 Пуши теперь только {lbl} (🔔 → сменить):")
     for it in result.items:
         await m.answer(_fmt(it), reply_markup=_kb(it.id, it.url))
         await _repo.mark_pushed(it.id)
