@@ -42,8 +42,11 @@ tscrapper-контейнер (`~/tscrapper`, MTProto через `TG_PROXY`) + м
   master` → `docker compose up -d --build <сервис>`.
 - **Telegram-сессия tscrapper живёт ТОЛЬКО на VM.** Запуск копии с Мака = Telegram отзывает ключ
   («used under two different IP addresses», уже дважды). Релогин — `login.py` на VM (см. его докстринг).
-- LLM: основной — 5090-бокс `white` (192.168.100.235:11434, qwen3.6:27b), фолбэк на Mac Metal
+- LLM: основной — 5090-бокс `white` (192.168.100.235:11434, **qwen3.8:27b**), фолбэк на Mac Metal
   (qwen3.5:9b) — только у локального стека, через `.env`.
+- Смена модели на боксе: новые теги требуют свежей Ollama (на 0.32.9 qwen3.8 давала 412
+  «requires a newer version»). Обновление — `curl -fsSL https://ollama.com/install.sh | sh`,
+  но **sudo там с паролем**, поэтому этот шаг за владельцем.
 
 **Локально (Mac) — только dev**: тот же compose через **Podman** (`podman compose up -d / down`).
 ⚠️ Локальный tgbot конфликтует с VM-ботом за getUpdates (один токен!) — не поднимай полный стек,
