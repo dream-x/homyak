@@ -26,7 +26,10 @@ class ArticleFetchAnalyzer:
         # у полноконтентных фидов текст уже есть — не дёргаем сеть зря
         if item.text and len(item.text) > 1200:
             return
-        text, title = await fetch_page(url)
+        # За твитом идём, только если текста нет вовсе: у записей из RSSHub он уже есть,
+        # а зеркало API — чужой публичный сервис, и сотни твиттер-источников его положат.
+        bare = len((item.text or "").strip()) < 200
+        text, title = await fetch_page(url, allow_social=bare)
         if text and len(text) > len(item.text or ""):
             item.text = text
             log.info("article_fetched", item=ctx.item_id, chars=len(text))

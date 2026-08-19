@@ -64,3 +64,15 @@ def test_meta_unescapes_entities():
 
     html = '<meta property="og:title" content="Rust &amp; Go: 1&#39;000 запросов">'
     assert _meta(html, "og:title") == "Rust & Go: 1'000 запросов"
+
+
+def test_tweet_url_is_recognised_across_hosts():
+    from homyak.core.article import _TWEET_RE
+
+    for u in ("https://x.com/ClaudeDevs/status/2089798442306711646",
+              "https://twitter.com/ClaudeDevs/status/123",
+              "https://mobile.twitter.com/user/status/456",
+              "https://www.x.com/user/status/789"):
+        assert _TWEET_RE.match(u), u
+    for u in ("https://x.com/ClaudeDevs", "https://example.com/x/status/1"):
+        assert _TWEET_RE.match(u) is None, u

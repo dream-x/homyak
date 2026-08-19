@@ -1234,8 +1234,12 @@ async def _star_manual(item_id: int) -> None:
     item = await _repo.get_by_id(item_id)
     if item is None or item.source_type != "manual":
         return
+    # Проверяем ДО записи: record_feedback — переключатель, и на повторной доставке
+    # processed он снял бы звезду вместо того, чтобы подтвердить её.
+    if await _repo.has_feedback(item_id, "save"):
+        return
     action, _ = await _repo.record_feedback(item_id, "save", None)
-    if action != "added":  # уже отмечена — повторная обработка не должна слать второй раз
+    if action != "added":
         return
     with suppress(Exception):
         await _bus.publish_feedback(item_id, "save", None, action=action)

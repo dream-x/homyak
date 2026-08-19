@@ -408,6 +408,23 @@ class NewsRepo:
             await s.commit()
             return "added", topic
 
+    async def has_feedback(self, news_item_id: int, signal: str) -> bool:
+        """Стоит ли уже такая реакция. Нужно там, где реакцию ставит АВТОМАТ, а не палец:
+        record_feedback — переключатель, и повторный вызов снял бы её вместо подтверждения.
+        """
+        async with self._sf() as s:
+            return bool(
+                await s.scalar(
+                    select(Feedback.id)
+                    .where(
+                        Feedback.news_item_id == news_item_id,
+                        Feedback.signal == signal,
+                        Feedback.topic.is_(None),
+                    )
+                    .limit(1)
+                )
+            )
+
     async def bump_tag_affinity(
         self, vertical: str, tags: list[str], direction: int, lr: float
     ) -> None:

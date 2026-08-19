@@ -59,6 +59,40 @@ def _rewrite(url: str) -> str:
     return url
 
 
+# x.com отвечает нам таймаутом и живёт в ARTICLE_SKIP_HOSTS: твиты и так приходили текстом
+# из RSSHub, тянуть их было незачем. У ссылки, принесённой руками, этого текста нет — берём
+# через публичное зеркало API (авторизации не требует; vxtwitter с VM недоступен).
+_TWEET_RE = re.compile(
+    r"^https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([^/]+)/status/(\d+)", re.IGNORECASE
+)
+_FX = "https://api.fxtwitter.com/{user}/status/{sid}"
+
+
+async def _fetch_tweet(url: str, timeout: float) -> str | None:
+    m = _TWEET_RE.match(url or "")
+    if not m:
+        return None
+    user, sid = m.group(1), m.group(2)
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=_HEADERS) as c:
+            resp = await c.get(_FX.format(user=user, sid=sid))
+            resp.raise_for_status()
+            tweet = (resp.json() or {}).get("tweet") or {}
+    except Exception as e:
+        log.debug("tweet_fetch_failed", url=url, error=f"{type(e).__name__}: {e}"[:120])
+        return None
+
+    parts = [tweet.get("text") or ""]
+    quoted = tweet.get("quote") or {}
+    if quoted.get("text"):  # цитируемый твит — половина смысла обычно в нём
+        author = ((quoted.get("author") or {}).get("screen_name")) or "?"
+        parts.append(f"\n\nЦитирует @{author}:\n{quoted['text']}")
+    text = "".join(parts).strip()
+    if text:
+        log.info("tweet_fetched", url=url[:100], chars=len(text))
+    return text or None
+
+
 _META_PATTERNS = (
     r'<meta[^>]+(?:property|name)=["\']{key}["\'][^>]+content=["\']([^"\']*)["\']',
     r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']{key}["\']',
@@ -116,12 +150,23 @@ async def _reader_fallback(url: str, timeout: float) -> str | None:
         return None
 
 
-async def fetch_page(url: str, timeout: float = 20.0) -> tuple[str | None, str | None]:
+async def fetch_page(
+    url: str, timeout: float = 20.0, allow_social: bool = False
+) -> tuple[str | None, str | None]:
     """URL → (текст, заголовок). Заголовок — только из og:/twitter:, если он там есть.
 
     Заголовок возвращаем отдельно, потому что он ценнее сгенерированного: og:title — это то,
     как страницу назвал автор, и ровно его показывает Telegram в превью ссылки.
+
+    allow_social включает поход за твитом через зеркало API. По умолчанию выключен: твиты
+    приходят текстом из RSSHub, и дёргать чужой публичный сервис на каждый из сотен
+    твиттер-источников незачем. Включаем там, где текста нет вовсе.
     """
+    if allow_social:
+        tweet = await _fetch_tweet(url, timeout)
+        if tweet:
+            return tweet, None
+
     if not url or _skipped(url):  # известная бот-стена — не тратим попытки
         return None, None
 

@@ -80,3 +80,20 @@ async def test_manual_link_is_deduped_by_normalized_url(session_factory):
     )
     assert new1 is True
     assert second == first and new2 is False
+
+
+async def test_auto_star_does_not_toggle_itself_off(session_factory):
+    """Звезду ставит автомат, а record_feedback — переключатель.
+
+    На повторной доставке processed (JetStream её допускает) наивный вызов снял бы звезду.
+    has_feedback отвечает на вопрос «уже стоит?», ничего не меняя.
+    """
+    repo = NewsRepo(session_factory)
+    id_, _ = await repo.upsert_item(
+        NewsItemDTO(source_type="manual", source_id="m-2", url="https://example.com/y", title="Y")
+    )
+    assert await repo.has_feedback(id_, "save") is False
+    await repo.record_feedback(id_, "save", None)
+    assert await repo.has_feedback(id_, "save") is True
+    assert await repo.has_feedback(id_, "up") is False  # другой сигнал не путаем
+    assert await repo.has_feedback(id_, "save") is True  # проверка не мутирует
