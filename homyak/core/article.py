@@ -88,17 +88,20 @@ def _strip_reader(md: str | None) -> str | None:
     return body.strip() or None
 
 
-async def _fetch_html(url: str, timeout: float) -> str | None:
+async def _fetch_html(url: str, timeout: float) -> tuple[str | None, str]:
+    """(html, конечный url после редиректов). Конечный нужен, чтобы знать НАСТОЯЩИЙ адрес:
+    короткие ссылки-шаринги вида reddit.com/r/X/s/ABC живут только в новом интерфейсе, и
+    переписывать на old надо уже развёрнутый /comments/-адрес, иначе там 404."""
     try:
         async with httpx.AsyncClient(
             timeout=timeout, follow_redirects=True, headers=_HEADERS
         ) as client:
             resp = await client.get(url)
             resp.raise_for_status()
-            return resp.text
+            return resp.text, str(resp.url)
     except Exception as e:
         log.debug("article_fetch_failed", url=url, error=str(e))
-        return None
+        return None, url
 
 
 async def _reader_fallback(url: str, timeout: float) -> str | None:
@@ -130,7 +133,15 @@ async def fetch_page(url: str, timeout: float = 20.0) -> tuple[str | None, str |
         return readme, None
 
     text, title = "", None
-    html = await _fetch_html(_rewrite(url), timeout)
+    # Сначала обычный адрес — он же разворачивает редиректы. Если это оказался Reddit,
+    # перезапрашиваем УЖЕ РАЗВЁРНУТЫЙ url через старый интерфейс: там нормальный HTML.
+    html, final_url = await _fetch_html(url, timeout)
+    upgraded = _rewrite(final_url)
+    if upgraded != final_url:
+        alt, _ = await _fetch_html(upgraded, timeout)
+        if alt and len(alt) > len(html or ""):
+            html = alt
+            log.info("article_via_old_interface", url=upgraded[:120], chars=len(alt))
     if html:
         title = _meta(html, "og:title") or _meta(html, "twitter:title")
         if trafilatura is not None:
