@@ -37,10 +37,11 @@ from homyak.core.article import fetch_article
 from homyak.core.config import settings
 from homyak.core.events import SUBJECT_PROCESSED, NatsBus
 from homyak.core.interests import weights as interest_weights
-from homyak.core.interfaces import FeedQuery
+from homyak.core.interfaces import FeedQuery, NewsItemDTO
 from homyak.core.razbor import build_razbor
 from homyak.core.scoring import freshness, weights_from_interests
 from homyak.core.textutils import fmt_age, fmt_when, hashtags, strip_html
+from homyak.core.urls import normalize_url
 from homyak.core.verticals import LABELS, VERTICALS
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
@@ -106,6 +107,7 @@ BOT_COMMANDS = [
     BotCommand(command="trends", description="📈 Тренды: день/неделя/месяц"),
     BotCommand(command="ask", description="🧭 Выжимка по ленте: /ask <вопрос>"),
     BotCommand(command="find", description="🔎 Найти в базе: /find <запрос>"),
+    BotCommand(command="star", description="⭐ Ссылку в звёздный канал: /star <url>"),
     BotCommand(command="why", description="🔍 Разбор скоринга: /why <id>"),
     BotCommand(command="sources", description="📡 Источники в ленте"),
     BotCommand(command="mute", description="🔇 Замьютить тему: /mute <тема>"),
@@ -707,6 +709,56 @@ async def cmd_find(m: Message, command: CommandObject) -> None:
         await m.answer(chunk, disable_web_page_preview=True)
 
 
+# --- ⭐ добавить ссылку руками ---
+
+_URL_RE = re.compile(r"https?://\S+")
+
+
+async def _add_link(m: Message, url: str) -> None:
+    """Ссылка от человека → обычный пайплайн → авто-⭐ → карточка в канал.
+
+    Ничего не публикуем здесь сами: айтем проходит те же стадии, что и всё остальное
+    (дотягивание текста, теги, вертикаль, саммари, скоринг), а карточку соберёт starchan.
+    Иначе пришлось бы держать вторую копию логики карточки и потерять запись в ленте,
+    поиске и вике.
+    """
+    url = url.strip()
+    dto = NewsItemDTO(source_type="manual", source_id=normalize_url(url) or url, url=url,
+                      title=None, published_at=datetime.now(timezone.utc))
+    item_id, was_new = await _repo.upsert_item(dto)
+    if not was_new:
+        item = await _repo.get_by_id(item_id)
+        if item is not None and item.star_posted_at is not None:
+            await m.answer(f"Уже в канале: <code>#{item_id}</code>")
+            return
+    await _bus.publish_ingested(item_id)
+    await m.answer(
+        f"⭐ Принял, <code>#{item_id}</code> — читаю страницу и собираю карточку.\n"
+        "<i>Как обработается, уйдёт в канал и вернётся сюда.</i>"
+    )
+    log.info("manual_link_added", item=item_id, url=url[:120])
+
+
+@dp.message(Command("star"))
+async def cmd_star(m: Message, command: CommandObject) -> None:
+    """⭐ Добавить ссылку в звёздный канал: /star <url>."""
+    arg = (command.args or "").strip()
+    if not arg:
+        await m.answer("Ссылку в ⭐-канал: <code>/star https://…</code>\nМожно просто прислать ссылку.")
+        return
+    found = _URL_RE.search(arg)
+    if not found:
+        await m.answer("Это не похоже на ссылку.")
+        return
+    await _add_link(m, found.group(0))
+
+
+@dp.message(F.text.regexp(r"^\s*https?://\S+\s*$"))
+async def on_bare_link(m: Message) -> None:
+    """Просто присланная ссылка — то же самое, без команды."""
+    await _add_link(m, _URL_RE.search(m.text).group(0))
+
+
 @dp.message(Command("threshold"))
 async def cmd_threshold(m: Message, command: CommandObject) -> None:
     if not command.args:
@@ -1169,6 +1221,31 @@ async def on_profile_suggestion(cq: CallbackQuery) -> None:
 # --- push loop ---
 
 
+async def _star_manual(item_id: int) -> None:
+    """Обработалась ссылка, принесённая человеком → ставим ⭐ за него.
+
+    Звезду ставим здесь, а не в момент приёма ссылки: starchan строит карточку по тексту и
+    тегам, а на входе их ещё нет — есть только URL. Дождавшись processed, мы отдаём ему
+    запись с полным текстом, вертикалью и саммари.
+
+    Побочный эффект намеренный: ⭐ — это ещё и обучение ранкера и материал для вики. Человек,
+    добавивший ссылку руками, ровно это и имеет в виду.
+    """
+    item = await _repo.get_by_id(item_id)
+    if item is None or item.source_type != "manual":
+        return
+    action, _ = await _repo.record_feedback(item_id, "save", None)
+    if action != "added":  # уже отмечена — повторная обработка не должна слать второй раз
+        return
+    with suppress(Exception):
+        await _bus.publish_feedback(item_id, "save", None, action=action)
+    chat = await _repo.get_cursor(CHAT_KEY)
+    if chat:
+        with suppress(Exception):
+            await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))
+    log.info("manual_starred", item=item_id, vertical=item.vertical)
+
+
 async def _maybe_push(item_id: int) -> None:
     chat = await _repo.get_cursor(CHAT_KEY)
     if not chat:
@@ -1248,6 +1325,7 @@ async def push_loop() -> None:
         with suppress(Exception):
             await msg.ack()
             data = json.loads(msg.data)
+            await _star_manual(data["news_item_id"])  # ссылка от человека → ⭐ автоматически
             await _maybe_push(data["news_item_id"])  # личный пуш в DM (pushonly/порог)
             await _publish_channel(data["news_item_id"])  # общая лента в канал (все вертикали)
 

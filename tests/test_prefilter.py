@@ -11,6 +11,7 @@ from homyak.core.config import settings
 class _Item:
     watch_topics: list
     skip_reason: str | None = None
+    source_type: str = "rss"  # 'manual' (ссылка от человека) гейт пропускает безусловно
 
 
 @dataclass

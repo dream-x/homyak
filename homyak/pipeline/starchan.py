@@ -129,8 +129,11 @@ async def publish_star(item_id: int, repo: NewsRepo, bot: Bot, llm: OllamaLLM) -
     item = await repo.get_by_id(item_id)
     if item is None or item.star_posted_at is not None:  # повторная звезда → без дубля
         return False
+    # Фильтр вертикали — про АВТОМАТИЧЕСКИЕ звёзды: он держит канал в IT-теме. Ссылку,
+    # принесённую человеком через бота, он резать не должен: её тему выбрал человек, и
+    # молча не опубликовать её — худшее из возможных поведений.
     want = settings.star_vertical.strip()
-    if want and (item.vertical or "") != want:
+    if want and item.source_type != "manual" and (item.vertical or "") != want:
         log.info("starchan_skipped_vertical", item=item_id, vertical=item.vertical)
         return False
     text = await ensure_text(item, repo)
