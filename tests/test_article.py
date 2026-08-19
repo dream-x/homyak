@@ -30,3 +30,37 @@ def test_skip_matches_host_boundary_not_substring():
     # регресс: 'x.com' НЕ должен ловить phoronix.com / netflix.com
     assert not _skipped("https://www.phoronix.com/news/x")
     assert not _skipped("https://netflix.com/title/1")
+
+
+# --- Reddit и og-разметка: поймано на живой ссылке из бота ---
+
+
+def test_reddit_is_rewritten_to_the_old_interface():
+    """Новый Reddit отдаёт JS-заглушку на 8 КБ без единого og-тега; old — серверный HTML."""
+    from homyak.core.article import _rewrite
+
+    assert _rewrite("https://www.reddit.com/r/LocalLLaMA/s/8GSuHDbTtU") == \
+        "https://old.reddit.com/r/LocalLLaMA/s/8GSuHDbTtU"
+    assert _rewrite("https://reddit.com/r/rust/comments/1") == \
+        "https://old.reddit.com/r/rust/comments/1"
+    # чужие хосты не трогаем, в том числе похожие по имени
+    assert _rewrite("https://notreddit.com/x") == "https://notreddit.com/x"
+    assert _rewrite("https://old.reddit.com/r/x") == "https://old.reddit.com/r/x"
+
+
+def test_meta_is_read_in_both_attribute_orders():
+    """Порядок property/content в разметке произволен — шаблона два не для красоты."""
+    from homyak.core.article import _meta
+
+    a = '<meta property="og:title" content="Заголовок статьи">'
+    b = '<meta content="Другой заголовок" property="og:title">'
+    assert _meta(a, "og:title") == "Заголовок статьи"
+    assert _meta(b, "og:title") == "Другой заголовок"
+    assert _meta(a, "og:description") is None
+
+
+def test_meta_unescapes_entities():
+    from homyak.core.article import _meta
+
+    html = '<meta property="og:title" content="Rust &amp; Go: 1&#39;000 запросов">'
+    assert _meta(html, "og:title") == "Rust & Go: 1'000 запросов"

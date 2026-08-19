@@ -9,6 +9,8 @@ Best-effort — при любой проблеме None.
 from __future__ import annotations
 
 import asyncio
+import re
+from html import unescape
 from urllib.parse import urlparse
 
 import httpx
@@ -42,6 +44,38 @@ def _skipped(url: str) -> bool:
     # Матч по границе хоста, НЕ по подстроке: иначе 'x.com' поймает 'phoronix.com'/'netflix.com'.
     host = (urlparse(url).hostname or "").lower()
     return any(host == h or host.endswith("." + h) for h in _SKIP_HOSTS)
+
+
+# Reddit современному клиенту отдаёт JS-заглушку: 8 КБ без единого og-тега (проверено на
+# посте из r/LocalLLaMA). Старый интерфейс отдаёт серверный HTML на 600 КБ, из которого
+# всё извлекается штатно. API .json там же отвечает 403.
+_REDDIT_HOSTS = ("reddit.com", "www.reddit.com", "np.reddit.com", "new.reddit.com")
+
+
+def _rewrite(url: str) -> str:
+    parsed = urlparse(url)
+    if (parsed.hostname or "").lower() in _REDDIT_HOSTS:
+        return url.replace(f"//{parsed.hostname}", "//old.reddit.com", 1)
+    return url
+
+
+_META_PATTERNS = (
+    r'<meta[^>]+(?:property|name)=["\']{key}["\'][^>]+content=["\']([^"\']*)["\']',
+    r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']{key}["\']',
+)
+
+
+def _meta(html: str, key: str) -> str | None:
+    """og:/twitter: разметка — последний рубеж, когда экстрактор не взял ничего.
+
+    Атрибуты в разметке идут в любом порядке, поэтому шаблона два. Именно эти теги читает
+    Telegram, когда рисует превью ссылки, — то есть данные есть даже там, где текста нет.
+    """
+    for pattern in _META_PATTERNS:
+        m = re.search(pattern.format(key=re.escape(key)), html, re.IGNORECASE)
+        if m and m.group(1).strip():
+            return unescape(m.group(1)).strip()
+    return None
 
 
 def _strip_reader(md: str | None) -> str | None:
@@ -79,22 +113,27 @@ async def _reader_fallback(url: str, timeout: float) -> str | None:
         return None
 
 
-async def fetch_article(url: str, timeout: float = 20.0) -> str | None:
-    """Скачивает URL и извлекает основной текст. Фолбэк на reader при неудаче. None при провале."""
+async def fetch_page(url: str, timeout: float = 20.0) -> tuple[str | None, str | None]:
+    """URL → (текст, заголовок). Заголовок — только из og:/twitter:, если он там есть.
+
+    Заголовок возвращаем отдельно, потому что он ценнее сгенерированного: og:title — это то,
+    как страницу назвал автор, и ровно его показывает Telegram в превью ссылки.
+    """
     if not url or _skipped(url):  # известная бот-стена — не тратим попытки
-        return None
+        return None, None
 
     # Репозиторий — особый случай: у страницы GitHub общий экстрактор берёт обвязку вместо
     # содержания, поэтому README запрашиваем напрямую. Здесь, а не в ⭐-канале: полный текст
     # нужен всем — теггеру, саммари, судье, поиску и вике.
     readme = await fetch_readme(url, timeout)
     if readme and len(readme) >= _MIN_CHARS:
-        return readme
+        return readme, None
 
-    text = ""
-    if trafilatura is not None:
-        html = await _fetch_html(url, timeout)
-        if html:
+    text, title = "", None
+    html = await _fetch_html(_rewrite(url), timeout)
+    if html:
+        title = _meta(html, "og:title") or _meta(html, "twitter:title")
+        if trafilatura is not None:
             try:
                 extracted = await asyncio.to_thread(
                     trafilatura.extract,
@@ -113,4 +152,19 @@ async def fetch_article(url: str, timeout: float = 20.0) -> str | None:
         if reader and len(reader) > len(text):
             text = reader
 
-    return text or None
+    # Ни экстрактор, ни reader ничего не дали — собираем хоть что-то из og-разметки.
+    # Куцая карточка с настоящим заголовком лучше, чем «(без заголовка)» и пустота.
+    if len(text) < _MIN_CHARS and html:
+        desc = _meta(html, "og:description") or _meta(html, "twitter:description")
+        fallback = "\n\n".join(x for x in (title, desc) if x)
+        if len(fallback) > len(text):
+            text = fallback
+            log.info("article_from_meta", url=url[:120], chars=len(text))
+
+    return (text or None), title
+
+
+async def fetch_article(url: str, timeout: float = 20.0) -> str | None:
+    """Только текст — для мест, где заголовок не нужен (⭐-канал, бэкфиллы)."""
+    text, _ = await fetch_page(url, timeout)
+    return text
