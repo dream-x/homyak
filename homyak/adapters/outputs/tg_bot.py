@@ -1247,6 +1247,10 @@ async def _star_manual(item_id: int) -> None:
     if chat:
         with suppress(Exception):
             await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))
+    # Отмечаем пушнутым СРАЗУ: следом в том же цикле идёт _maybe_push, и он видит
+    # pushed_at=NULL при скоре выше порога — то есть присылает ту же карточку вторым
+    # сообщением. Ссылку человек и так только что прислал сам, пуш ему не нужен.
+    await _repo.mark_pushed(item.id)
     log.info("manual_starred", item=item_id, vertical=item.vertical)
 
 
@@ -1295,6 +1299,11 @@ async def _publish_channel(item_id: int) -> None:
         return
     item = await _repo.get_by_id(item_id)
     if item is None or item.personal_score is None or item.channel_posted_at is not None:
+        return
+    # У ссылки, принесённой руками, свой адрес — ⭐-канал. Этот канал показывает, что НАШЛА
+    # система; отправлять туда же выбранное человеком значит publish одного и того же дважды
+    # по двум своим каналам.
+    if item.source_type == "manual":
         return
     if item.personal_score < settings.channel_min_score:
         return

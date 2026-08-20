@@ -97,3 +97,25 @@ async def test_auto_star_does_not_toggle_itself_off(session_factory):
     assert await repo.has_feedback(id_, "save") is True
     assert await repo.has_feedback(id_, "up") is False  # другой сигнал не путаем
     assert await repo.has_feedback(id_, "save") is True  # проверка не мутирует
+
+
+async def test_manual_item_is_marked_pushed_so_it_is_not_sent_twice(session_factory):
+    """В цикле push_loop за _star_manual сразу идёт _maybe_push.
+
+    Тот отбирает записи по `pushed_at IS NULL` и скору выше порога — то есть ручная ссылка
+    прилетала в личку вторым сообщением сразу за карточкой. Отметка pushed это закрывает.
+    """
+    repo = NewsRepo(session_factory)
+    id_, _ = await repo.upsert_item(
+        NewsItemDTO(source_type="manual", source_id="m-3", url="https://example.com/z", title="Z")
+    )
+    from homyak.core.models import NewsItem as NI
+
+    async with session_factory() as s:
+        item = await s.get(NI, id_)
+        item.personal_score = 0.9  # заведомо выше любого порога
+        await s.commit()
+
+    await repo.mark_pushed(id_)
+    async with session_factory() as s:
+        assert (await s.get(NI, id_)).pushed_at is not None
