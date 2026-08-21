@@ -148,9 +148,18 @@ rss:
   - {name: gh_repos_charmbracelet, url: "http://rsshub:1200/github/repos/charmbracelet", category: tech, interval_seconds: 21600, weight: 0.9}
   - {name: gh_repos_jart,          url: "http://rsshub:1200/github/repos/jart",          category: tech, interval_seconds: 21600, weight: 0.9}
   # -- что звёздят люди (высокий сигнал «нашли интересное») --
+  # REST-маршрут RSSHub жив и БЕЗ токена — в отличие от поиска. После того как поиск по темам
+  # умер, это второй канал добычи нишевых проектов: кто звёздит агентные харнесы, тот их и
+  # находит раньше трендов.
   - {name: gh_stars_simonw,    url: "http://rsshub:1200/github/starred_repos/simonw",    category: tech, interval_seconds: 10800, weight: 0.9}
   - {name: gh_stars_ggerganov, url: "http://rsshub:1200/github/starred_repos/ggerganov", category: tech, interval_seconds: 14400, weight: 0.9}
   - {name: gh_stars_karpathy,  url: "http://rsshub:1200/github/starred_repos/karpathy",  category: tech, interval_seconds: 21600, weight: 0.9}
+  - {name: gh_stars_swyxio,    url: "http://rsshub:1200/github/starred_repos/swyxio",    category: tech, interval_seconds: 14400, weight: 0.9}
+  - {name: gh_stars_hwchase17, url: "http://rsshub:1200/github/starred_repos/hwchase17", category: tech, interval_seconds: 14400, weight: 0.9}
+  - {name: gh_stars_jerryjliu, url: "http://rsshub:1200/github/starred_repos/jerryjliu", category: tech, interval_seconds: 21600, weight: 0.8}
+  - {name: gh_stars_yohei,     url: "http://rsshub:1200/github/starred_repos/yoheinakajima", category: tech, interval_seconds: 21600, weight: 0.8}
+  - {name: gh_stars_mlabonne,  url: "http://rsshub:1200/github/starred_repos/mlabonne",  category: tech, interval_seconds: 21600, weight: 0.8}
+  - {name: gh_stars_transitive, url: "http://rsshub:1200/github/starred_repos/transitive-bullshit", category: tech, interval_seconds: 21600, weight: 0.8}
   # -- trending: включится, когда задашь GITHUB_ACCESS_TOKEN в .env (без токена RSSHub отдаёт 503) --
   - {name: gh_trend_daily,     url: "http://rsshub:1200/github/trending/daily/any/en",   category: tech, interval_seconds: 21600, weight: 0.9}
   - {name: gh_trend_weekly,    url: "http://rsshub:1200/github/trending/weekly/any/en",  category: tech, interval_seconds: 43200, weight: 1.0}
@@ -434,3 +443,18 @@ rss:
   - {name: tw_naturebiotech, url: "http://rsshub:1200/twitter/user/NatureBiotech", category: medical, interval_seconds: 7200, weight: 0.4}
   - {name: tw_cellcellpress, url: "http://rsshub:1200/twitter/user/CellCellPress", category: medical, interval_seconds: 7200, weight: 0.4}
   - {name: tw_retractionwatch, url: "http://rsshub:1200/twitter/user/RetractionWatch", category: medical, interval_seconds: 7200, weight: 0.4}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Темы GitHub — читаются напрямую со страницы github.com/topics/<name>, без токена
+#  и без RSSHub. Появились 21.08 взамен умерших gh_search_* (GitHub закрыл search
+#  API для анонимных запросов), потому что зеркало трендов ищет по ЯЗЫКАМ: нишевый
+#  агентный харнес в общеязыковой тренд не попадает никогда.
+#  Источник берёт два списка на тему — заметное и недавно обновлённое.
+# ═══════════════════════════════════════════════════════════════════════════════
+github_topics:
+  - {name: ai-agents,   interval_seconds: 21600}
+  - {name: llm,         interval_seconds: 21600}
+  - {name: mcp,         interval_seconds: 21600}
+  - {name: agent,       interval_seconds: 43200}
+  - {name: rag,         interval_seconds: 43200}
+  - {name: observability, interval_seconds: 43200}

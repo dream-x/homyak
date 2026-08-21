@@ -17,6 +17,7 @@ from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
 from homyak.adapters.analyzers.title_gen import TitleGenAnalyzer
 from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
 from homyak.adapters.analyzers.watchlist_matcher import WatchlistAnalyzer
+from homyak.adapters.sources.github_topic import GithubTopicSource
 from homyak.adapters.sources.miniflux import MinifluxSource
 from homyak.adapters.sources.rss import RSSSource
 from homyak.core.config import SourcesConfig
@@ -31,6 +32,8 @@ def build_poll_sources(cfg: SourcesConfig) -> list[PollSource]:
         sources.append(MinifluxSource(cfg.miniflux))
     for feed in cfg.rss:
         sources.append(RSSSource(feed))
+    for topic in cfg.github_topics:
+        sources.append(GithubTopicSource(topic.name, topic.interval_seconds))
     return sources
 
 

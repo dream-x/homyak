@@ -161,9 +161,17 @@ class RSSFeedConfig(BaseModel):
     weight: float = 1.0
 
 
+class GithubTopicConfig(BaseModel):
+    """Тема GitHub (github.com/topics/<name>) как источник — читается напрямую, без токена."""
+
+    name: str
+    interval_seconds: int = 21600
+
+
 class SourcesConfig(BaseModel):
     miniflux: MinifluxConfig | None = None
     rss: list[RSSFeedConfig] = Field(default_factory=list)
+    github_topics: list[GithubTopicConfig] = Field(default_factory=list)
 
 
 def load_sources_config(path: str | None = None) -> SourcesConfig:
