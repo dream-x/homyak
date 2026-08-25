@@ -53,6 +53,29 @@ THRESHOLD_KEY = "tgbot:threshold"
 PAUSED_KEY = "tgbot:paused_until"
 PUSH_VERTICALS_KEY = "tgbot:push_verticals"  # csv разрешённых вертикалей для пуша; пусто = все
 
+
+def owner_id(owner_raw: str, allowed_raw: str) -> int | None:
+    """Владелец ленты: TELEGRAM_OWNER_ID, иначе ПЕРВЫЙ id из allowlist.
+
+    Состояние у бота общее на всех — chat_id пушей, порог, скоуп вертикалей, пауза. Пока
+    владельца не было, `/start` любого из allowlist переписывал chat_id на себя: 22.08 так и
+    случилось, и владелец три дня не получал ничего, а пуши уходили другому человеку.
+    """
+    for raw in (owner_raw, allowed_raw):
+        for part in (raw or "").replace(" ", "").split(","):
+            if part:
+                try:
+                    return int(part)
+                except ValueError:
+                    continue
+    return None
+
+
+def is_owner(user_id: int | None) -> bool:
+    """Нет владельца (allowlist пуст) — бот и так никого не пускает, гейт не нужен."""
+    own = owner_id(settings.telegram_owner_id, settings.telegram_allowed_ids)
+    return own is None or user_id == own
+
 # алиасы для /pushonly (ru/en/сокращения) → каноническая вертикаль
 _V_ALIAS = {
     "business": "business", "biz": "business", "бизнес": "business", "б": "business",
@@ -238,7 +261,9 @@ def _in_quiet(hour: int, quiet: str) -> bool:
 
 @dp.message(Command("start"))
 async def cmd_start(m: Message) -> None:
-    await _repo.save_cursor(CHAT_KEY, str(m.chat.id))
+    # chat_id переписывает ТОЛЬКО владелец: у остальных /start не должен уводить пуши себе.
+    if is_owner(m.from_user.id if m.from_user else None):
+        await _repo.save_cursor(CHAT_KEY, str(m.chat.id))
     await m.answer(
         "Homyak на связи 🐹\nТри тематические ленты — 💼 Business, 💻 IT, 🩺 Medical — каждая учится "
         "отдельно на твоих 👍/👎.\n\n"
@@ -761,6 +786,9 @@ async def on_bare_link(m: Message) -> None:
 
 @dp.message(Command("threshold"))
 async def cmd_threshold(m: Message, command: CommandObject) -> None:
+    if not is_owner(m.from_user.id if m.from_user else None):
+        await m.answer("Эта настройка общая на всю ленту — менять её может только владелец.")
+        return
     if not command.args:
         cur = await _repo.get_cursor(THRESHOLD_KEY)
         await m.answer(f"Порог пуша: {cur or interest_weights().push_threshold}")
@@ -776,6 +804,9 @@ async def cmd_threshold(m: Message, command: CommandObject) -> None:
 
 @dp.message(Command("pause"))
 async def cmd_pause(m: Message, command: CommandObject) -> None:
+    if not is_owner(m.from_user.id if m.from_user else None):
+        await m.answer("Эта настройка общая на всю ленту — менять её может только владелец.")
+        return
     hours = int(command.args) if command.args and command.args.strip().isdigit() else 8
     await _repo.save_cursor(PAUSED_KEY, str(time.time() + hours * 3600))
     await m.answer(f"⏸ Пауза пушей на {hours}ч.")
@@ -783,6 +814,9 @@ async def cmd_pause(m: Message, command: CommandObject) -> None:
 
 @dp.message(Command("mute"))
 async def cmd_mute(m: Message, command: CommandObject) -> None:
+    if not is_owner(m.from_user.id if m.from_user else None):
+        await m.answer("Эта настройка общая на всю ленту — менять её может только владелец.")
+        return
     if not command.args:
         await m.answer("Использование: /mute &lt;тема&gt;")
         return
@@ -938,6 +972,9 @@ async def on_push(cq: CallbackQuery) -> None:
 
 @dp.message(Command("pushonly"))
 async def cmd_pushonly(m: Message, command: CommandObject) -> None:
+    if not is_owner(m.from_user.id if m.from_user else None):
+        await m.answer("Эта настройка общая на всю ленту — менять её может только владелец.")
+        return
     if not command.args:
         await m.answer(await _push_scope_text(), reply_markup=_push_kb())
         return
@@ -955,6 +992,9 @@ async def cmd_pushonly(m: Message, command: CommandObject) -> None:
 
 @dp.message(Command("pushall"))
 async def cmd_pushall(m: Message) -> None:
+    if not is_owner(m.from_user.id if m.from_user else None):
+        await m.answer("Эта настройка общая на всю ленту — менять её может только владелец.")
+        return
     await _repo.save_cursor(PUSH_VERTICALS_KEY, "")
     await m.answer("🔔 Пуши по всем вертикалям.")
 

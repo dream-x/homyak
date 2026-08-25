@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     # любой, кто знает @username, читает твои ленты, портит обучение и /start'ом угоняет пуши
     # себе. Пусто → бот НИКОГО не пускает (fail-closed), а не всех.
     telegram_allowed_ids: str = Field(default="", alias="TELEGRAM_ALLOWED_IDS")
+    # Владелец ленты. Пусто = ПЕРВЫЙ id из allowlist. Остальные читают ленту и жмут 👍/👎,
+    # но не могут увести пуши себе и не крутят общие настройки. Без этого разделения любой
+    # /start переписывал chat_id на нажавшего: 22.08 так и вышло, и владелец три дня не
+    # получал ничего, пока пуши уходили другому человеку.
+    telegram_owner_id: str = Field(default="", alias="TELEGRAM_OWNER_ID")
     # HTTP-прокси для Bot API (api.telegram.org). Нужен на хостах без прямого доступа к
     # Telegram (VM за роутером). Bot API проходит через обычный HTTP-прокси (в отличие от
     # MTProto-DC у tscrapper). Пусто = напрямую.
