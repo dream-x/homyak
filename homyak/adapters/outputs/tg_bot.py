@@ -30,12 +30,12 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
-from nats.js.api import ConsumerConfig, DeliverPolicy
+from nats.js.api import DeliverPolicy
 
 from homyak.core import telegraph
 from homyak.core.article import fetch_article
 from homyak.core.config import settings
-from homyak.core.events import SUBJECT_PROCESSED, NatsBus
+from homyak.core.events import NatsBus
 from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import FeedQuery, NewsItemDTO
 from homyak.core.razbor import build_razbor
@@ -1261,8 +1261,11 @@ async def on_profile_suggestion(cq: CallbackQuery) -> None:
 # --- push loop ---
 
 
-async def _star_manual(item_id: int) -> None:
+async def _star_manual(item_id: int, *, notify: bool = True) -> None:
     """Обработалась ссылка, принесённая человеком → ставим ⭐ за него.
+
+    notify=False — звезда без карточки в личку: так разбирается старый бэклог после простоя,
+    где ⭐ (обучение, вика, ⭐-канал) ещё в силе, а DM двухнедельной давности — уже спам.
 
     Звезду ставим здесь, а не в момент приёма ссылки: starchan строит карточку по тексту и
     тегам, а на входе их ещё нет — есть только URL. Дождавшись processed, мы отдаём ему
@@ -1283,15 +1286,18 @@ async def _star_manual(item_id: int) -> None:
         return
     with suppress(Exception):
         await _bus.publish_feedback(item_id, "save", None, action=action)
+    log.info("manual_starred", item=item_id, vertical=item.vertical)
+    if not notify:
+        return
     chat = await _repo.get_cursor(CHAT_KEY)
     if chat:
-        with suppress(Exception):
-            await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))
-    # Отмечаем пушнутым СРАЗУ: следом в том же цикле идёт _maybe_push, и он видит
+        # Ошибка отправки — наружу, в nak. На редоставке has_feedback вернёт нас выше, а
+        # карточку по порогу дошлёт _maybe_push: pushed_at мы ещё не ставили.
+        await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))
+    # Отмечаем пушнутым после отправки: следом в том же цикле идёт _maybe_push, и он видит
     # pushed_at=NULL при скоре выше порога — то есть присылает ту же карточку вторым
     # сообщением. Ссылку человек и так только что прислал сам, пуш ему не нужен.
     await _repo.mark_pushed(item.id)
-    log.info("manual_starred", item=item_id, vertical=item.vertical)
 
 
 async def _maybe_push(item_id: int) -> None:
@@ -1357,30 +1363,70 @@ async def _publish_channel(item_id: int) -> None:
         return
     chan = settings.feed_channel_id
     target = int(chan) if chan.lstrip("-").isdigit() else chan  # -100… (id) или @username
-    try:
-        await _bot.send_message(target, _fmt(item))
-        await _repo.mark_channel_posted(item.id)
-        log.info("channel_posted", item=item.id, score=round(item.personal_score, 3))
-    except Exception as e:
-        log.warning("channel_publish_failed", item=item_id, error=str(e)[:120])
+    # Ошибку отправки НЕ глотаем: она уходит в consume → nak с backoff, и после того как
+    # прокси/Telegram оживут, запись всё-таки попадёт в канал (дедуп по channel_posted_at).
+    await _bot.send_message(target, _fmt(item))
+    await _repo.mark_channel_posted(item.id)
+    log.info("channel_posted", item=item.id, score=round(item.personal_score, 3))
+
+
+PUSH_DURABLE = "tgbot-push"
+# Один item = до трёх запросов к Bot API (⭐-карточка, пуш, канал) + несколько запросов к БД.
+# Меньше ack_wait (300 по умолчанию), чтобы повисший хендлер не обрабатывался параллельно
+# со своей же редоставкой.
+PUSH_HANDLE_TIMEOUT = 90.0
+# Сколько раз JetStream отдаёт item, пока отправка падает. Backoff в _consume: 60, 120, 240,
+# 480, 960, 1920 с, дальше по часу — 12 доставок ≈ 7 ч, то есть больше PUSH_MAX_AGE: пока
+# прокси лежит, item живёт в ретраях, а протухшее хендлер подтверждает сам. Дефолтных 5
+# хватало на полчаса — после часового обрыва всё из этого часа выбывало бы навсегда.
+PUSH_MAX_DELIVER = 12
+# Durable-консюмер после простоя отдаёт всё накопившееся. Свежий хвост (прокси моргнул на час)
+# доставить надо, а 12 дней старья после долгого обрыва — залп в канал и в личку. Старше —
+# молча подтверждаем.
+PUSH_MAX_AGE = timedelta(hours=6)
+
+
+def is_stale(processed_at: datetime | None, now: datetime, max_age: timedelta) -> bool:
+    """Старше max_age — в пуш/канал не идёт. Без processed_at считаем свежим (не теряем)."""
+    if processed_at is None:
+        return False
+    if processed_at.tzinfo is None:
+        processed_at = processed_at.replace(tzinfo=timezone.utc)
+    return now - processed_at > max_age
+
+
+async def handle_processed(data: dict) -> None:
+    """Один processed-item: ⭐ за ручную ссылку → личный пуш → общий канал.
+
+    Каждый шаг идемпотентен по своей колонке (feedback, pushed_at, channel_posted_at), поэтому
+    редоставка после сбоя доделывает только то, что не успело.
+    """
+    item_id = int(data["news_item_id"])
+    item = await _repo.get_by_id(item_id)
+    if item is None:
+        return
+    stale = is_stale(item.processed_at, datetime.now(timezone.utc), PUSH_MAX_AGE)
+    # ссылка от человека → ⭐ автоматически (своя защита от повтора); старью — без карточки
+    await _star_manual(item_id, notify=not stale)
+    if stale:
+        log.info("push_skipped_stale", item=item_id, processed_at=str(item.processed_at))
+        return
+    await _maybe_push(item_id)  # личный пуш в DM (pushonly/порог)
+    await _publish_channel(item_id)  # общая лента в канал (все вертикали)
 
 
 async def push_loop() -> None:
-    sub = await _bus.js.subscribe(
-        SUBJECT_PROCESSED, config=ConsumerConfig(deliver_policy=DeliverPolicy.NEW)
+    log.info("push_loop_started", channel=settings.feed_channel_id or "off", durable=PUSH_DURABLE)
+    # batch=1: после простоя накопившееся уходит по одному, а не залпом в лимиты Telegram.
+    # NEW действует только при первом создании durable — дальше позиция своя, простой не теряет.
+    await _bus.consume_processed(
+        handle_processed,
+        durable=PUSH_DURABLE,
+        batch=1,
+        deliver_policy=DeliverPolicy.NEW,
+        handler_timeout=PUSH_HANDLE_TIMEOUT,
+        max_deliver=PUSH_MAX_DELIVER,
     )
-    log.info("push_loop_started", channel=settings.feed_channel_id or "off")
-    while True:
-        try:
-            msg = await sub.next_msg(timeout=30)
-        except Exception:
-            continue
-        with suppress(Exception):
-            await msg.ack()
-            data = json.loads(msg.data)
-            await _star_manual(data["news_item_id"])  # ссылка от человека → ⭐ автоматически
-            await _maybe_push(data["news_item_id"])  # личный пуш в DM (pushonly/порог)
-            await _publish_channel(data["news_item_id"])  # общая лента в канал (все вертикали)
 
 
 def _parse_allowed(raw: str) -> frozenset[int]:
@@ -1486,7 +1532,10 @@ async def main_async() -> None:
     dp.update.outer_middleware(AllowlistMiddleware(allowed))
     log.info("tg_allowlist", allowed=sorted(allowed))
     # На VM за роутером к api.telegram.org напрямую не пробиться → гоним Bot API через HTTP-прокси.
-    session = AiohttpSession(proxy=settings.telegram_bot_proxy) if settings.telegram_bot_proxy else None
+    # Таймаут явный: с мёртвым прокси дефолтные 60с на запрос превращали цикл пушей в 1 item/мин.
+    session = AiohttpSession(
+        proxy=settings.telegram_bot_proxy or None, timeout=settings.telegram_api_timeout
+    )
     _bot = Bot(
         settings.telegram_bot_token,
         session=session,

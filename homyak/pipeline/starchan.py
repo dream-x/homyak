@@ -287,7 +287,9 @@ async def main_async() -> None:
     if not settings.star_channel_id:
         log.warning("starchan_disabled", reason="STAR_CHANNEL_ID пуст")
     repo = NewsRepo(SessionFactory)
-    session = AiohttpSession(proxy=settings.telegram_bot_proxy) if settings.telegram_bot_proxy else None
+    session = AiohttpSession(
+        proxy=settings.telegram_bot_proxy or None, timeout=settings.telegram_api_timeout
+    )
     bot = Bot(
         settings.telegram_bot_token or "",
         session=session,

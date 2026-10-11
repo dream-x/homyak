@@ -181,6 +181,22 @@ class NatsBus:
     ) -> None:
         await self._consume(SUBJECT_PROFILE_SUGGESTION, handler, durable=durable, **kw)
 
+    async def consume_processed(
+        self,
+        handler: Callable[[dict], Awaitable[None]],
+        *,
+        durable: str = "tgbot-push",
+        **kw,
+    ) -> None:
+        """Durable-потребитель processed для выходов с внешним эффектом (пуши, канал).
+
+        Эфемерная push-подписка здесь не годится: пока отправка в Telegram висит на мёртвом
+        прокси, сервер редоставляет неподтверждённое по кругу, клиентская очередь
+        переполняется, и бот пишет `slow consumer` десятки раз в секунду (29.09–11.10.2026:
+        13 ГБ лога). Pull-consumer забирает ровно столько, сколько успевает обработать.
+        """
+        await self._consume(SUBJECT_PROCESSED, handler, durable=durable, **kw)
+
     async def _consume(
         self,
         subject: str,
@@ -192,16 +208,22 @@ class NatsBus:
         max_deliver: int = 5,
         fetch_timeout: float = 5.0,
         deliver_policy: DeliverPolicy = DeliverPolicy.ALL,
+        handler_timeout: float | None = None,
     ) -> None:
         """Pull-consumer: handler(dict) → успех=ack; исключение=nak+backoff.
+
+        `handler_timeout` (сек) обязан быть меньше `ack_wait`: иначе повисший handler ещё
+        работает, когда JetStream уже редоставил сообщение, и один item обрабатывается дважды.
 
         Несколько инстансов с одним `durable` делят нагрузку. После `max_deliver` доставок
         JetStream перестаёт передавать сообщение (dead-letter — Phase 2.5).
 
-        deliver_policy действует ТОЛЬКО при создании durable; дальше consumer продолжает
-        со своей позиции, и простой сервиса ничего не теряет. NEW нужен потребителям с
-        внешним эффектом (⭐-канал): по умолчанию новый durable проигрывает всю историю
-        стрима — для публикации в канал это залп сотни старых постов.
+        Весь ConsumerConfig (deliver_policy, ack_wait, max_deliver) действует ТОЛЬКО при
+        создании durable: существующий consumer nats-py не перенастраивает, а продолжает со
+        своей позиции (простой сервиса ничего не теряет). Поменял параметры — удаляй consumer
+        руками (`nats consumer rm HOMYAK <durable>`), и помни, что пересозданный с NEW стартует
+        с конца потока. NEW нужен потребителям с внешним эффектом (⭐-канал, пуши): по умолчанию
+        новый durable проигрывает всю историю стрима — для канала это залп сотни старых постов.
         """
         psub = await self.js.pull_subscribe(
             subject,
@@ -232,7 +254,10 @@ class NatsBus:
                     await msg.term()  # неразбираемое — не реквеуим
                     return
                 try:
-                    await handler(data)
+                    if handler_timeout is not None:
+                        await asyncio.wait_for(handler(data), handler_timeout)
+                    else:
+                        await handler(data)
                     await msg.ack()
                 except Exception as e:
                     delivered = msg.metadata.num_delivered or 1
@@ -240,6 +265,7 @@ class NatsBus:
                     log.warning(
                         "handler_error",
                         error=str(e),
+                        kind=type(e).__name__,  # str(TimeoutError()) == '' — иначе таймаут невидим
                         delivered=delivered,
                         nak_delay=delay,
                         **data if isinstance(data, dict) else {},

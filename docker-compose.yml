@@ -3,8 +3,17 @@
 # Инфра: postgres, qdrant, nats. App: migrate + ingest-poll, telegram-ingest, processor, learner,
 # sweeper, tgbot, api (один образ, разные команды).
 
+# Ротация логов. Без неё один зациклившийся warning (29.09–11.10.2026: `nats: slow consumer`
+# 25 раз/с) за 12 дней нарастил json-лог tgbot до 13 ГБ. Докер по умолчанию не ротирует вообще.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 x-app: &app
   build: .
+  logging: *logging
   env_file:
     - .env
   environment:
@@ -30,6 +39,7 @@ x-app: &app
 services:
   postgres:
     image: postgres:17-alpine
+    logging: *logging
     restart: unless-stopped  # инфра без политики не переживала рестарт docker-демона/ребут
     environment:
       POSTGRES_USER: homyak
@@ -47,6 +57,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    logging: *logging
     restart: unless-stopped
     ports:
       - "6333:6333"
@@ -56,6 +67,7 @@ services:
 
   nats:
     image: nats:2.10-alpine
+    logging: *logging
     restart: unless-stopped
     command: ["-js", "-sd", "/data", "-m", "8222"]
     ports:
@@ -69,6 +81,7 @@ services:
   # (PAT classic, без скоупов достаточно для чтения публичного) — задать в .env, иначе trending 503.
   rsshub:
     image: diygod/rsshub:latest
+    logging: *logging
     ports:
       - "1200:1200"
     environment:

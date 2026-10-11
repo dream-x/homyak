@@ -131,6 +131,9 @@ class Settings(BaseSettings):
     # Telegram (VM за роутером). Bot API проходит через обычный HTTP-прокси (в отличие от
     # MTProto-DC у tscrapper). Пусто = напрямую.
     telegram_bot_proxy: str = Field(default="", alias="TELEGRAM_BOT_PROXY")
+    # Таймаут одного запроса к Bot API, сек. Дефолт aiogram — 60: с мёртвым прокси каждая
+    # отправка висела минуту, и цикл пушей разбирал одно сообщение в минуту.
+    telegram_api_timeout: float = Field(default=20.0, alias="TELEGRAM_API_TIMEOUT")
     telegram_outbox_path: str = Field(
         default="/var/lib/tscrapper/outbox.jsonl", alias="TELEGRAM_OUTBOX_PATH"
     )

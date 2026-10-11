@@ -82,7 +82,7 @@
 - `homyak.feedback.recorded` — реакции 👍/👎/⭐/🔇 из бота. Консюмер `learner` двигает вкус/веса.
 - `homyak.profile.suggestion` — предложение правки профиля (от learner раз в N фидбеков) → бот показывает карточку.
 
-**Durable consumers:** `processor` (on `items.ingested`, pull, ack/nak+backoff, max_deliver=5), `learner` (on `feedback.recorded`), `telegram-ingest` (on `telegram.raw`), `profile-suggest` (бот, on `profile.suggestion`); TG-бот push и SSE — ephemeral consumers на `items.processed` (deliver=new).
+**Durable consumers:** `processor` (on `items.ingested`, pull, ack/nak+backoff, max_deliver=5), `learner` (on `feedback.recorded`), `telegram-ingest` (on `telegram.raw`), `profile-suggest` (бот, on `profile.suggestion`), `tgbot-push` (бот, on `items.processed`, batch=1, max_deliver=12, создаётся с deliver=new — см. Failure modes); SSE — ephemeral consumer на `items.processed` (deliver=new) на каждое соединение.
 
 **Почему JetStream, а не Kafka/Redis Streams:**
 - Один 15MB бинарь, поднимается в docker-compose одной строкой.

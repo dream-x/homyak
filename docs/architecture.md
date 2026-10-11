@@ -51,8 +51,9 @@ Two architectural pillars:
 - `homyak.profile.suggestion` — profile-refinement proposal (from learner every N reactions) → the bot shows a card.
 
 **Durable consumers:** `processor` (on `items.ingested`, pull, ack/nak+backoff, max_deliver=5), `learner`
-(on `feedback.recorded`), `telegram-ingest` (on `telegram.raw`), `profile-suggest` (bot, on `profile.suggestion`).
-The bot push and SSE are ephemeral consumers on `items.processed` (deliver=new).
+(on `feedback.recorded`), `telegram-ingest` (on `telegram.raw`), `profile-suggest` (bot, on `profile.suggestion`),
+`tgbot-push` (bot, on `items.processed`, batch=1, max_deliver=12, created with deliver=new; see Failure modes).
+SSE is an ephemeral per-connection consumer on `items.processed` (deliver=new).
 
 **Fallback sweep:** every 5 min a sweep job finds `processed_at IS NULL AND fetched_at < now()-5min AND
 attempts < 5` and re-publishes `items.ingested` — protects against event loss while NATS/processor is down.
@@ -308,6 +309,7 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
 | A feed works locally but not in production | Check it **from the VM**: `redis.io` answers it 403 and `brooker.co.za`, `danluu.com`, `netflixtechblog.com` time out there while opening fine on the laptop. |
 | LLM unreachable on a ⭐ | The star is nak'd and retried rather than published bare — the article text is already in hand, so a stripped card would be a permanent loss for a transient outage. |
 | Telegram send fails in the ⭐ channel | Exception reaches the consumer's nak+backoff instead of being swallowed with the ack. The 44-hour proxy outage would otherwise have eaten every star in the window. |
+| Bot API proxy dead for days | The push loop is a durable pull consumer (`tgbot-push`) with a 20s request timeout and a 90s handler timeout: a failed send is nak'd, not swallowed, and the backlog drains one item at a time when the proxy returns, skipping anything processed more than `PUSH_MAX_AGE` (6h) ago. The old ephemeral push subscription redelivered 1000 unacked messages in a loop, logged `slow consumer` 25×/s and grew the container log to 13 GB over 12 days (29.09–11.10.2026). Container logs now rotate (`x-logging`, 20 MB × 5). |
 
 ---
 
