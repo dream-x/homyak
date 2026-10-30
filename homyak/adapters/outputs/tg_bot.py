@@ -1336,7 +1336,11 @@ async def _maybe_push(item_id: int) -> None:
     threshold = min(base, settings.twitter_push_threshold) if is_tweet else base
     if item.personal_score < threshold:
         return
-    await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))
+    # ⭐ уже стоит (ручная ссылка, у которой упала отправка карточки и её доделывает редоставка,
+    # или звезда из /lenta) → клавиатура «после ⭐»: живая кнопка её бы только сняла.
+    starred = await _repo.has_feedback(item.id, "save")
+    kb = _kb_done(item.id, "⭐ учтено", item.url) if starred else _kb(item.id, item.url)
+    await _bot.send_message(int(chat), _fmt(item), reply_markup=kb)
     await _repo.mark_pushed(item.id)
     log.info("pushed", item=item.id, score=round(item.personal_score, 3))
 
