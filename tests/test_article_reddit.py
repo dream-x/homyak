@@ -70,3 +70,29 @@ async def test_dead_atom_falls_back_to_the_slug_title(monkeypatch):
     assert await article.fetch_page(_SHARE) == (None, None)
     # адрес без слага: id постом не назовёшь
     assert await article.fetch_page("https://www.reddit.com/r/rust/comments/1abc") == (None, None)
+
+
+async def test_blocked_post_page_still_resolves_the_share_link(monkeypatch):
+    """share → 302 → страница поста отвечает 403 → Atom всё равно запрашивается по развёрнутому
+    адресу: редирект пройден, и конечный URL известен даже при ошибке (находка Астры #004)."""
+    import httpx
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "/s/" in request.url.path:
+            return httpx.Response(302, headers={"location": _POST + "?share_id=x"})
+        if request.url.path.endswith("/.rss"):
+            return httpx.Response(200, text=_ATOM)
+        return httpx.Response(403, text="<html><title>Blocked</title></html>")
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=transport, **kw))
+
+    text, title = await article.fetch_page(_SHARE)
+
+    assert title and title.startswith("The Ultimate 2026")
+    assert text and len(text) > 400
+    assert [u.split("?")[0] for u in seen] == [_SHARE, _POST, _ATOM_URL]

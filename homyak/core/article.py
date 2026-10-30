@@ -186,6 +186,11 @@ async def _fetch_html(url: str, timeout: float) -> tuple[str | None, str]:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.text, str(resp.url)
+    except httpx.HTTPStatusError as e:
+        # Редиректы уже пройдены: конечный адрес известен и при 403/429, и он нужен —
+        # reddit-шаринг разворачивается в /comments/, даже когда сама страница закрыта.
+        log.debug("article_fetch_failed", url=url, error=str(e))
+        return None, str(e.response.url)
     except Exception as e:
         log.debug("article_fetch_failed", url=url, error=str(e))
         return None, url
