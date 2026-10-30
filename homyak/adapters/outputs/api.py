@@ -493,5 +493,12 @@ async def repoll(name: str) -> dict:
 
 @app.post("/admin/clusters/{cluster_id}/split")
 async def split_cluster(cluster_id: int) -> dict:
-    """Ручной split кластера (защита от false-positive similarity). Полноценно — в Phase 3."""
-    raise HTTPException(status_code=501, detail="split реализуется в Phase 3")
+    """Разобрать ложно склеенный кластер: по группам одинакового url_normalized.
+
+    Нужен, когда similarity_dedup слепил несвязанные записи (шаблонные «Запись @…»): после split
+    ln(size) в score и дедуп пушей по кластеру перестают наказывать всех его членов.
+    """
+    result = await repo.split_cluster(cluster_id)
+    if not result["items"]:
+        raise HTTPException(status_code=404, detail="кластер пуст или не существует")
+    return result

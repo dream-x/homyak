@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     embedding_version: int = Field(default=1, alias="EMBEDDING_VERSION")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
     similarity_threshold: float = Field(default=0.88, alias="SIMILARITY_THRESHOLD")
+    # Кластер — одна история, а история локальна во времени и конечна по размеру. Похожий по
+    # вектору item старше окна — другая новость о том же (или шаблонный пост «Запись @…»),
+    # и без этих двух пределов один кластер собрал 926 записей из 63 лент: ln(size) раздувал
+    # score, а дедуп пушей по кластеру глушил всех его членов. 0 = проверка выключена.
+    similarity_max_age_hours: int = Field(default=72, alias="SIMILARITY_MAX_AGE_HOURS")
+    similarity_max_cluster: int = Field(default=60, alias="SIMILARITY_MAX_CLUSTER")
     # Переэмбеддинг устаревших векторов — планировщиком в sweeper'е, а не руками.
     # Порция ограничена: разовый бэкфилл (сотни записей) не должен занимать хост на час.
     # 0 минут = выключить планировщик (остаётся ручной `homyak-reembed`).

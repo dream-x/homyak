@@ -96,3 +96,29 @@ async def test_blocked_post_page_still_resolves_the_share_link(monkeypatch):
     assert title and title.startswith("The Ultimate 2026")
     assert text and len(text) > 400
     assert [u.split("?")[0] for u in seen] == [_SHARE, _POST, _ATOM_URL]
+
+
+async def test_throttled_atom_is_retried(monkeypatch):
+    """Reddit отвечает 429 на второй запрос подряд — Atom просим ещё раз после паузы."""
+    import httpx
+
+    monkeypatch.setattr(article, "_REDDIT_RETRY_DELAY", 0.0)
+    atom_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal atom_calls
+        assert request.url.path.endswith("/.rss")
+        atom_calls += 1
+        if atom_calls == 1:
+            return httpx.Response(429, text="Too Many Requests")
+        return httpx.Response(200, text=_ATOM)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=transport, **kw))
+
+    text, title = await article.fetch_page(_POST)
+
+    assert atom_calls == 2
+    assert title and title.startswith("The Ultimate 2026")
+    assert text and len(text) > 400

@@ -115,7 +115,7 @@ Analyzers run sequentially in the `processor`, mutating a shared `AnalyzerContex
 | 1 | `url_dedup` | normalizes URL, finds/creates a cluster by normalized URL |
 | 2 | `watchlist_matcher` | marks `watch_topics` — before `prefilter`, which treats them as a whitelist |
 | 2 | `embedder` | bge-m3 via Ollama `/api/embed`, upsert to Qdrant, sets `embedding_model/version` |
-| 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters (advisory lock) |
+| 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters (advisory lock); a hit only counts if it is within `SIMILARITY_MAX_AGE_HOURS` (72) of the item, and a cluster at `SIMILARITY_MAX_CLUSTER` (60) takes no more members |
 | 3 | `prefilter` | noise gate against the taste centroid — cuts the cheap way before any LLM stage |
 | 3 | `title_gen` | headline from the text when the source gave none (LLM, heuristic fallback) |
 | 4 | `llm_tagger` | tags + **vertical** (business/it/medical/other), JSON |
@@ -301,6 +301,8 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
 | Consumer zombie | JetStream `ack_wait` redelivers to another instance. |
 | Duplicate on ingest | `ON CONFLICT DO UPDATE`, publish only when `was_new=true`. |
 | Qdrant out of sync with PG | The sweeper drains the re-embed queue every `REEMBED_EVERY_MINUTES` (below); `homyak-reembed` does the same in one go. |
+| Clusters glued by template posts | Vectors of "Запись @x" + two lines look alike regardless of the event: cluster 1400 collected 926 items from 63 feeds over three months, `ln(size)` inflated their score and the per-cluster push dedup silenced every member. Merges are now bounded in time and size (stage 3 above); an existing false cluster is taken apart with `POST /admin/clusters/{id}/split` (groups by `url_normalized`). |
+| Reddit page unreadable | www serves a JS shell, old.reddit wants a login, the proxy gets "Blocked", r.jina.ai answers 451. The post's Atom feed (`/r/<sub>/comments/<id>/.rss`, browser UA, one request at a time with a retry on 429) still carries title + selftext; share links are resolved through the www redirect first; a throttled feed leaves the title from the URL slug. `derive_title` skips stub-page boilerplate ("Skip to main content", "Just a moment") so a blocked page never names an item. |
 | Wiki LLM down on ingest | best-effort — source page + log still written; concept/entity extraction skipped. |
 | Wiki behind on history | `homyak-wiki-backfill` replays all ⭐/👍 from the `feedback` table (idempotent). |
 | Twitter bridge silent ≥6h | bot sends a one-off alert — `TWITTER_AUTH_TOKEN` likely expired (x.com via proxy, cookie in `.env`). |

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from homyak.core.config import settings
 from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
 from homyak.core.models import (
+    Cluster,
     Feedback,
     IngestState,
     MutedTag,
@@ -614,6 +615,47 @@ class NewsRepo:
                     .limit(1)
                 )
             )
+
+    async def split_cluster(self, cluster_id: int) -> dict:
+        """Разобрать кластер: каждая группа одинакового url_normalized — свой кластер.
+
+        Лекарство от ложных склеек similarity_dedup (кластер 1400: 926 записей из 63 лент под
+        шаблонным «Запись @…»). Первая группа остаётся под старым id, остальные получают новые
+        кластеры; size везде пересчитывается. Лок тот же, что у мержа (advisory по id), чтобы
+        не разъехаться с параллельной обработкой. Score уже обработанных записей не трогаем.
+        """
+        async with self._sf() as s:
+            await s.execute(sa.text("SELECT pg_advisory_xact_lock(:k)"), {"k": int(cluster_id)})
+            rows = (
+                await s.execute(
+                    select(NewsItem.id, NewsItem.url_normalized)
+                    .where(NewsItem.cluster_id == cluster_id)
+                    .order_by(NewsItem.id)
+                )
+            ).all()
+            if not rows:
+                return {"cluster_id": cluster_id, "items": 0, "clusters": 0}
+            groups: dict[str, list[int]] = {}
+            for iid, norm in rows:
+                groups.setdefault(norm or f"#{iid}", []).append(int(iid))
+            ordered = list(groups.values())
+            first, rest = ordered[0], ordered[1:]
+            await s.execute(
+                update(Cluster)
+                .where(Cluster.id == cluster_id)
+                .values(size=len(first), representative_id=first[0])
+            )
+            for members in rest:
+                cid = await s.scalar(
+                    sa.insert(Cluster)
+                    .values(representative_id=members[0], size=len(members))
+                    .returning(Cluster.id)
+                )
+                await s.execute(
+                    update(NewsItem).where(NewsItem.id.in_(members)).values(cluster_id=cid)
+                )
+            await s.commit()
+            return {"cluster_id": cluster_id, "items": len(rows), "clusters": len(ordered)}
 
     async def count_recent_by_feed_prefix(self, prefix: str, hours: int) -> int:
         """Сколько записей с feed_name LIKE prefix% пришло за последние N часов (мониторинг мостов)."""

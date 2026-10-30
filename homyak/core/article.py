@@ -93,15 +93,31 @@ def parse_reddit_atom(xml: str) -> tuple[str | None, str | None]:
     return (text or None), title
 
 
+# Reddit режет анонимов по частоте: два поста подряд из одной пачки процессора — и второй Atom
+# отвечает 429 (так ручная ссылка 31.10 осталась без текста, с заголовком из слага). Поэтому
+# запросы к reddit идут по одному и с повтором после паузы.
+_REDDIT_GATE = asyncio.Semaphore(1)
+_REDDIT_RETRIES = 3
+_REDDIT_RETRY_DELAY = 4.0
+
+
 async def _fetch_reddit(url: str, timeout: float) -> tuple[str | None, str | None]:
-    m = _REDDIT_POST_RE.match(url)
-    if not m:  # ссылка-шаринг /r/X/s/ABC: www отдаёт заглушку, но редирект на /comments/ честный
-        _, final = await _fetch_html(url, timeout)
-        m = _REDDIT_POST_RE.match(final)
-    if not m:
-        return None, None
-    sub, pid = m.group(1), m.group(2)
-    xml, _ = await _fetch_html(f"https://www.reddit.com/r/{sub}/comments/{pid}/.rss", timeout)
+    async with _REDDIT_GATE:
+        m = _REDDIT_POST_RE.match(url)
+        if not m:  # ссылка-шаринг /r/X/s/ABC: www отдаёт заглушку, но редирект на /comments/ честный
+            _, final = await _fetch_html(url, timeout)
+            m = _REDDIT_POST_RE.match(final)
+        if not m:
+            return None, None
+        sub, pid = m.group(1), m.group(2)
+        atom_url = f"https://www.reddit.com/r/{sub}/comments/{pid}/.rss"
+        xml = None
+        for attempt in range(_REDDIT_RETRIES):
+            if attempt:
+                await asyncio.sleep(_REDDIT_RETRY_DELAY * attempt)
+            xml, _ = await _fetch_html(atom_url, timeout)
+            if xml:
+                break
     text, title = await asyncio.to_thread(parse_reddit_atom, xml) if xml else (None, None)
     if text or title:
         log.info("reddit_via_atom", url=url[:100], chars=len(text or ""), title=(title or "")[:60])

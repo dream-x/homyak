@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import structlog
 from sqlalchemy import delete, func, select, text, update
 
@@ -18,6 +20,36 @@ from homyak.storage.qdrant import QdrantStore
 log = structlog.get_logger(__name__)
 
 
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def within_window(
+    item_published: datetime | None, hit_published: str | datetime | None, max_age_hours: int
+) -> bool:
+    """Похожий item попадает в ту же историю, только если они близки по времени.
+
+    Кластер 1400 («Запись @seeallochnaya», 926 записей из 63 лент за три месяца) слипся именно из
+    шаблонных постов, похожих по вектору, но никак не по событию. Нет даты у одного из двух —
+    проверять нечем, пропускаем (как и при max_age_hours=0).
+    """
+    if max_age_hours <= 0 or item_published is None or not hit_published:
+        return True
+    if isinstance(hit_published, str):
+        try:
+            other = datetime.fromisoformat(hit_published)
+        except ValueError:
+            return True
+    else:
+        other = hit_published
+    return abs(_aware(item_published) - _aware(other)) <= timedelta(hours=max_age_hours)
+
+
+def cluster_full(size: int, max_cluster: int) -> bool:
+    """Реальная история редко собирает больше нескольких десятков записей; дальше — склейка."""
+    return max_cluster > 0 and size >= max_cluster
+
+
 class SimilarityDedupAnalyzer:
     name = "similarity_dedup"
     stage = 3
@@ -25,6 +57,8 @@ class SimilarityDedupAnalyzer:
     def __init__(self, qdrant: QdrantStore, threshold: float | None = None) -> None:
         self._q = qdrant
         self._threshold = threshold if threshold is not None else settings.similarity_threshold
+        self._max_age_hours = settings.similarity_max_age_hours
+        self._max_cluster = settings.similarity_max_cluster
 
     async def analyze(self, ctx: AnalyzerContext) -> None:
         if ctx.embedding is None:
@@ -48,11 +82,17 @@ class SimilarityDedupAnalyzer:
         id_to_cluster = {r[0]: r[1] for r in rows}
 
         target: int | None = None
-        for hid, _score, _payload in hits:  # hits уже отсортированы по score desc
+        for hid, _score, payload in hits:  # hits уже отсортированы по score desc
             cluster = id_to_cluster.get(hid)
-            if cluster is not None:
-                target = cluster
-                break
+            if cluster is None:
+                continue
+            if not within_window(
+                ctx.item.published_at, (payload or {}).get("published_at"), self._max_age_hours
+            ):
+                log.info("similarity_merge_skipped", item=ctx.item_id, hit=hid, reason="too_old")
+                continue
+            target = cluster
+            break
         if target is None or target == ctx.cluster_id:
             return
 
@@ -65,8 +105,16 @@ class SimilarityDedupAnalyzer:
         for k in keys:
             await s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": k})
 
-        # после захвата убеждаемся, что целевой кластер ещё жив — его мог удалить встречный мерж
-        if await s.scalar(select(Cluster.id).where(Cluster.id == target)) is None:
+        # после захвата убеждаемся, что целевой кластер ещё жив — его мог удалить встречный мерж —
+        # и что он не переполнен (размер под локом уже не изменится)
+        size = await s.scalar(select(Cluster.size).where(Cluster.id == target))
+        if size is None:
+            return
+        if cluster_full(int(size), self._max_cluster):
+            log.info(
+                "similarity_merge_skipped", item=ctx.item_id, into_cluster=target,
+                reason=f"cluster_full:{size}",
+            )
             return
 
         ctx.cluster_id = target
