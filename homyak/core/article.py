@@ -13,11 +13,13 @@ import re
 from html import unescape
 from urllib.parse import urlparse
 
+import feedparser
 import httpx
 import structlog
 
 from homyak.core.config import settings
 from homyak.core.github import fetch_readme
+from homyak.core.titles import title_from_url
 
 try:
     import trafilatura
@@ -46,17 +48,68 @@ def _skipped(url: str) -> bool:
     return any(host == h or host.endswith("." + h) for h in _SKIP_HOSTS)
 
 
-# Reddit современному клиенту отдаёт JS-заглушку: 8 КБ без единого og-тега (проверено на
-# посте из r/LocalLLaMA). Старый интерфейс отдаёт серверный HTML на 600 КБ, из которого
-# всё извлекается штатно. API .json там же отвечает 403.
-_REDDIT_HOSTS = ("reddit.com", "www.reddit.com", "np.reddit.com", "new.reddit.com")
+# Reddit HTML нам больше не отдаёт ни в каком виде (проверено с VM 31.10.2026): www шлёт
+# JS-заглушку на 8 КБ, old.reddit требует логин (reason=lor2), через прокси — «Blocked»,
+# reader r.jina.ai отвечает 451. Раньше старый интерфейс брался «по длине ответа», и страница
+# логина на 190 КБ побеждала заглушку — из такой обвязки и родился заголовок «Skip to main
+# content» у двух ручных ссылок. Что отдаётся — Atom-лента поста /r/<sub>/comments/<id>/.rss
+# (с браузерным UA; с честным homyak/1.0 — 429). Первая запись — сам пост: заголовок, автор,
+# selftext между маркерами SC_OFF/SC_ON; дальше идут комментарии.
+_REDDIT_RE = re.compile(r"^https?://(?:(?:www|old|new|np)\.)?reddit\.com/", re.IGNORECASE)
+_REDDIT_POST_RE = re.compile(
+    r"^https?://(?:(?:www|old|new|np)\.)?reddit\.com/r/([^/?#]+)/comments/([a-z0-9]+)",
+    re.IGNORECASE,
+)
+_SC_BLOCK = re.compile(r"<!--\s*SC_OFF\s*-->(.*?)<!--\s*SC_ON\s*-->", re.DOTALL)
+_PREVIEW_TABLE = re.compile(r"<table>.*?</table>", re.DOTALL | re.IGNORECASE)
+_BLOCK_TAG = re.compile(r"</?(?:p|br|li|tr|h[1-6]|div|blockquote|pre)\b[^>]*>", re.IGNORECASE)
+_ANY_TAG = re.compile(r"<[^>]+>")
+_SUBMITTED = re.compile(r"^\s*submitted by\b.*$|^\s*\[link\]\s*\[comments\]\s*$", re.MULTILINE)
 
 
-def _rewrite(url: str) -> str:
-    parsed = urlparse(url)
-    if (parsed.hostname or "").lower() in _REDDIT_HOSTS:
-        return url.replace(f"//{parsed.hostname}", "//old.reddit.com", 1)
-    return url
+def _html_to_text(raw: str) -> str:
+    """HTML selftext → текст с абзацами. textutils.strip_html схлопывает и переводы строк,
+    а Разбору и саммари абзацы нужны."""
+    text = _BLOCK_TAG.sub("\n", raw)
+    text = unescape(_ANY_TAG.sub(" ", text))
+    text = _SUBMITTED.sub("", text)
+    text = re.sub(r"[ \t\xa0]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def parse_reddit_atom(xml: str) -> tuple[str | None, str | None]:
+    """(selftext, заголовок) из Atom-ленты поста. Пост-ссылка без текста → (None, заголовок)."""
+    parsed = feedparser.parse(xml)
+    if not parsed.entries:
+        return None, None
+    post = parsed.entries[0]
+    title = (post.get("title") or "").strip() or None
+    content = post.get("content") or []
+    raw = (content[0].get("value") if content else None) or post.get("summary") or ""
+    m = _SC_BLOCK.search(raw)
+    body = m.group(1) if m else _PREVIEW_TABLE.sub("", raw)
+    text = _html_to_text(body)
+    return (text or None), title
+
+
+async def _fetch_reddit(url: str, timeout: float) -> tuple[str | None, str | None]:
+    m = _REDDIT_POST_RE.match(url)
+    if not m:  # ссылка-шаринг /r/X/s/ABC: www отдаёт заглушку, но редирект на /comments/ честный
+        _, final = await _fetch_html(url, timeout)
+        m = _REDDIT_POST_RE.match(final)
+    if not m:
+        return None, None
+    sub, pid = m.group(1), m.group(2)
+    xml, _ = await _fetch_html(f"https://www.reddit.com/r/{sub}/comments/{pid}/.rss", timeout)
+    text, title = await asyncio.to_thread(parse_reddit_atom, xml) if xml else (None, None)
+    if text or title:
+        log.info("reddit_via_atom", url=url[:100], chars=len(text or ""), title=(title or "")[:60])
+        return text, title
+    # Лента не отдалась (429/блок). Заголовок есть хотя бы в слаге развёрнутого адреса —
+    # лучше «The ultimate 2026 opensource ai stack» из URL, чем обвязка страницы-заглушки.
+    slug = title_from_url(m.string)
+    return None, (slug if slug and slug.lower() != pid.lower() else None)
 
 
 # x.com отвечает нам таймаутом и живёт в ARTICLE_SKIP_HOSTS: твиты и так приходили текстом
@@ -124,8 +177,8 @@ def _strip_reader(md: str | None) -> str | None:
 
 async def _fetch_html(url: str, timeout: float) -> tuple[str | None, str]:
     """(html, конечный url после редиректов). Конечный нужен, чтобы знать НАСТОЯЩИЙ адрес:
-    короткие ссылки-шаринги вида reddit.com/r/X/s/ABC живут только в новом интерфейсе, и
-    переписывать на old надо уже развёрнутый /comments/-адрес, иначе там 404."""
+    короткие ссылки-шаринги вида reddit.com/r/X/s/ABC разворачиваются редиректом, и Atom-ленту
+    поста надо просить уже по развёрнутому /comments/-адресу."""
     try:
         async with httpx.AsyncClient(
             timeout=timeout, follow_redirects=True, headers=_HEADERS
@@ -177,16 +230,13 @@ async def fetch_page(
     if readme and len(readme) >= _MIN_CHARS:
         return readme, None
 
+    # Reddit — только через Atom-ленту поста: общий путь даёт заглушку, логин или «Blocked»,
+    # а reader — 451; ничего из этого текстом считать нельзя, и фолбэки ниже не для него.
+    if _REDDIT_RE.match(url):
+        return await _fetch_reddit(url, timeout)
+
     text, title = "", None
-    # Сначала обычный адрес — он же разворачивает редиректы. Если это оказался Reddit,
-    # перезапрашиваем УЖЕ РАЗВЁРНУТЫЙ url через старый интерфейс: там нормальный HTML.
-    html, final_url = await _fetch_html(url, timeout)
-    upgraded = _rewrite(final_url)
-    if upgraded != final_url:
-        alt, _ = await _fetch_html(upgraded, timeout)
-        if alt and len(alt) > len(html or ""):
-            html = alt
-            log.info("article_via_old_interface", url=upgraded[:120], chars=len(alt))
+    html, _ = await _fetch_html(url, timeout)
     if html:
         title = _meta(html, "og:title") or _meta(html, "twitter:title")
         if trafilatura is not None:

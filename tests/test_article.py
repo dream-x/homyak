@@ -35,19 +35,6 @@ def test_skip_matches_host_boundary_not_substring():
 # --- Reddit и og-разметка: поймано на живой ссылке из бота ---
 
 
-def test_reddit_is_rewritten_to_the_old_interface():
-    """Новый Reddit отдаёт JS-заглушку на 8 КБ без единого og-тега; old — серверный HTML."""
-    from homyak.core.article import _rewrite
-
-    assert _rewrite("https://www.reddit.com/r/LocalLLaMA/s/8GSuHDbTtU") == \
-        "https://old.reddit.com/r/LocalLLaMA/s/8GSuHDbTtU"
-    assert _rewrite("https://reddit.com/r/rust/comments/1") == \
-        "https://old.reddit.com/r/rust/comments/1"
-    # чужие хосты не трогаем, в том числе похожие по имени
-    assert _rewrite("https://notreddit.com/x") == "https://notreddit.com/x"
-    assert _rewrite("https://old.reddit.com/r/x") == "https://old.reddit.com/r/x"
-
-
 def test_meta_is_read_in_both_attribute_orders():
     """Порядок property/content в разметке произволен — шаблона два не для красоты."""
     from homyak.core.article import _meta

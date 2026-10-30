@@ -85,7 +85,9 @@ async def test_make_title_strips_think_leak():
 @pytest.mark.asyncio
 async def test_make_title_falls_back_to_heuristic_on_llm_error():
     llm = _FakeLLM(boom=True)
-    text = "Первая строка как заголовок\n\nдальше тело поста подлиннее чем восемьдесят символов ровно"
+    text = (
+        "Первая строка как заголовок\n\nдальше тело поста подлиннее чем восемьдесят символов ровно"
+    )
     assert await make_title(llm, text, "@ch") == "Первая строка как заголовок"
 
 
@@ -126,7 +128,9 @@ def test_title_from_url_root_or_junk_is_none():
 @pytest.mark.asyncio
 async def test_make_title_bare_link_uses_url_slug():
     # пост — только ссылка: заголовок из слага, а не «Запись @…»
-    got = await make_title(None, "https://www.group-ib.com/blog/clicklock-stealer-macos-malware/", "@ch")
+    got = await make_title(
+        None, "https://www.group-ib.com/blog/clicklock-stealer-macos-malware/", "@ch"
+    )
     assert got == "Clicklock stealer macos malware"
 
 
@@ -134,3 +138,10 @@ async def test_make_title_bare_link_uses_url_slug():
 async def test_make_title_link_with_no_slug_falls_back_to_channel():
     got = await make_title(None, "https://example.com/", "@cgevent")
     assert got == "Запись @cgevent"
+
+
+def test_boilerplate_first_line_is_skipped():
+    """«Skip to main content» со страницы-заглушки — не заголовок: берём следующую строку."""
+    assert derive_title("Skip to main content\nReal title here\n\nbody") == "Real title here"
+    assert derive_title("Just a moment...\nBlocked\nActual headline") == "Actual headline"
+    assert derive_title("Skip to main content") is None

@@ -22,6 +22,13 @@ _WS = re.compile(r"[ \t ]+")
 # ведущий мусор: эмодзи, буллеты, стрелки, разделители — до первого «содержательного» символа
 _LEAD_JUNK = re.compile(r"^[\s\W_]*?(?=[\w\"'«(])", re.UNICODE)
 _SENT_END = re.compile(r"[.!?…](?:\s|$)")
+# Обвязка, которую экстракторы снимают первой строкой со страниц-заглушек (reddit, cloudflare,
+# бот-стены): заголовком быть не может — пропускаем и берём следующую содержательную строку.
+# Именно так у двух ручных ссылок 21.10.2026 заголовком стало «Skip to main content».
+_JUNK_LINES = {
+    "skip to main content", "skip to content", "just a moment", "blocked", "access denied",
+    "reddit", "comments", "loading",
+}
 
 MAX_LEN = 90
 
@@ -40,7 +47,7 @@ def derive_title(text: str | None, *, fallback: str | None = None) -> str | None
     line = ""
     for chunk in raw.replace("\r", "").split("\n"):
         chunk = chunk.strip()
-        if chunk:
+        if chunk and chunk.lower().rstrip(" .…!") not in _JUNK_LINES:
             line = chunk
             break
     if not line:
