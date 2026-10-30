@@ -40,3 +40,23 @@ async def test_different_urls_get_different_clusters(session_factory):
     c1 = await _process(session_factory, repo, id1)
     c2 = await _process(session_factory, repo, id2)
     assert c1 != c2
+
+
+async def test_joining_a_cluster_increments_its_size(session_factory):
+    """Раньше присоединение по URL size не трогало — в проде 2483 кластера разошлись с фактом."""
+    from sqlalchemy import select
+
+    from homyak.core.models import Cluster
+
+    repo = NewsRepo(session_factory)
+    id1, _ = await repo.upsert_item(
+        NewsItemDTO(source_type="rss", source_id="a", url="https://x.com/same")
+    )
+    id2, _ = await repo.upsert_item(
+        NewsItemDTO(source_type="telegram", source_id="b", url="https://x.com/same")
+    )
+    c1 = await _process(session_factory, repo, id1)
+    assert await _process(session_factory, repo, id2) == c1
+    async with session_factory() as s:
+        assert await s.scalar(select(Cluster.size).where(Cluster.id == c1)) == 2
+        assert await s.scalar(select(NewsItem.cluster_id).where(NewsItem.id == id2)) == c1

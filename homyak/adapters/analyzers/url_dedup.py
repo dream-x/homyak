@@ -7,7 +7,7 @@ url_normalized уже проставлен репозиторием при upser
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from homyak.core.interfaces import AnalyzerContext
 from homyak.core.models import Cluster, NewsItem
@@ -33,6 +33,12 @@ class UrlDedupAnalyzer:
             )
             if found is not None:
                 ctx.cluster_id = int(found)
+                # членство и счётчик — в этой же транзакции: раньше size тут не рос (в проде
+                # 2483 кластера расходились с фактом), а cluster_id писался позже mark_processed'ом
+                ctx.item.cluster_id = int(found)
+                await s.execute(
+                    update(Cluster).where(Cluster.id == int(found)).values(size=Cluster.size + 1)
+                )
                 return
 
         # Нового кластера ещё нет — создаём с текущим item'ом как representative.
@@ -40,3 +46,4 @@ class UrlDedupAnalyzer:
         s.add(cluster)
         await s.flush()
         ctx.cluster_id = cluster.id
+        ctx.item.cluster_id = cluster.id

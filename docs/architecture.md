@@ -112,10 +112,10 @@ Analyzers run sequentially in the `processor`, mutating a shared `AnalyzerContex
 | Stage | Analyzer | What it does |
 |---|---|---|
 | 0 | `article_fetch` | full text by URL: **README via the GitHub API** for repos, trafilatura otherwise, `r.jina.ai` when the site blocks bots |
-| 1 | `url_dedup` | normalizes URL, finds/creates a cluster by normalized URL |
+| 1 | `url_dedup` | normalizes URL, finds/creates a cluster by normalized URL; joining an existing cluster writes the item's `cluster_id` and bumps `Cluster.size` in the stage transaction (it used to leave the counter alone: 2483 clusters drifted from the real member count) |
 | 2 | `watchlist_matcher` | marks `watch_topics` — before `prefilter`, which treats them as a whitelist |
 | 2 | `embedder` | bge-m3 via Ollama `/api/embed`, upsert to Qdrant, sets `embedding_model/version` |
-| 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters (advisory lock); a hit only counts if it is within `SIMILARITY_MAX_AGE_HOURS` (72) of the item, and a cluster at `SIMILARITY_MAX_CLUSTER` (60) takes no more members |
+| 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters (advisory lock on both ids, ascending); a hit only counts if it is within `SIMILARITY_MAX_AGE_HOURS` (72) of the item. Under the lock the decision is re-made from the table, not from the cache: the hit must still sit in the target cluster (a split may have moved it), and the merge *result* (target members + moved + the item, counted, not `Cluster.size`) must stay below `SIMILARITY_MAX_CLUSTER` (60). The item's `cluster_id` and the moved rows go in the same transaction; `mark_processed` only repeats it |
 | 3 | `prefilter` | noise gate against the taste centroid — cuts the cheap way before any LLM stage |
 | 3 | `title_gen` | headline from the text when the source gave none (LLM, heuristic fallback) |
 | 4 | `llm_tagger` | tags + **vertical** (business/it/medical/other), JSON |

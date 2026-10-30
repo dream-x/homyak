@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 
 from rich.console import Console
-from sqlalchemy import select, text, update
+from sqlalchemy import text, update
 
 from homyak.adapters.analyzers.llm_summarizer import LlmSummarizerAnalyzer
 from homyak.core.interfaces import AnalyzerContext

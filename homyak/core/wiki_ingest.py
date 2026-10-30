@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 
 import structlog
 
-from homyak.core.config import settings
 from homyak.core.llm import OllamaLLM
 from homyak.core.textutils import detect_lang, strip_html
 from homyak.core import wiki
