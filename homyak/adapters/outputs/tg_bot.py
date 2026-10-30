@@ -231,6 +231,25 @@ def _kb(item_id: int, url: str | None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[row1, row2, row3])
 
 
+def _kb_done(item_id: int, status: str, url: str | None) -> InlineKeyboardMarkup:
+    """Клавиатура карточки, по которой реакция уже стоит: строка-статус вместо 👍/👎/⭐.
+
+    Реакции — переключатели, и повторное нажатие их снимает. Поэтому после реакции кнопки
+    схлопываются до статуса, а карточка ручной ссылки (⭐ за неё ставит бот) рождается сразу
+    в таком виде: с живой ⭐ человек жал «подтвердить» и молча снимал звезду — 8 из 15 ручных
+    ⭐ так и пропали из feedback, оставшись в ⭐-канале и вике.
+    """
+    rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
+    tail = [
+        InlineKeyboardButton(text="📝 Разбор", callback_data=f"rz:{item_id}"),
+        InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}"),
+    ]
+    if url:
+        tail.append(InlineKeyboardButton(text="🔗 Источник", url=url))
+    rows.append(tail)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _chunks(s: str, n: int = 4000):
     """Бьёт длинный текст на куски <= n, по возможности по переносу строки/пробелу."""
     while s:
@@ -1137,22 +1156,14 @@ async def on_feedback(cq: CallbackQuery) -> None:
     await cq.answer(status)
 
     # схлопываем реакции, чтобы не нажать повторно: остаётся статус + ссылка
-    open_btn = None
+    url = None
     if cq.message and cq.message.reply_markup:
         for row in cq.message.reply_markup.inline_keyboard:
             for b in row:
                 if b.url:
-                    open_btn = b
-    rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
-    tail = [
-        InlineKeyboardButton(text="📝 Разбор", callback_data=f"rz:{item_id}"),
-        InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}"),
-    ]
-    if open_btn is not None:
-        tail.append(open_btn)
-    rows.append(tail)
+                    url = b.url
     with suppress(Exception):
-        await cq.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        await cq.message.edit_reply_markup(reply_markup=_kb_done(item_id, status, url))
 
 
 @dp.callback_query(F.data.startswith("mt:"))
@@ -1191,16 +1202,8 @@ async def on_mute_pick(cq: CallbackQuery) -> None:
     status = f"🔇 «{topic}» " + ("замьючено" if result == "added" else "снято")
     await cq.answer(status)
 
-    rows = [[InlineKeyboardButton(text=f"✓ {status}", callback_data="noop")]]
-    tail = [
-        InlineKeyboardButton(text="📝 Разбор", callback_data=f"rz:{item_id}"),
-        InlineKeyboardButton(text="📄 текст", callback_data=f"txt:{item_id}"),
-    ]
-    if url:
-        tail.append(InlineKeyboardButton(text="🔗 Источник", url=url))
-    rows.append(tail)
     with suppress(Exception):
-        await cq.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        await cq.message.edit_reply_markup(reply_markup=_kb_done(item_id, status, url))
 
 
 # --- profile refinement (предложения правок профиля) ---
@@ -1293,7 +1296,10 @@ async def _star_manual(item_id: int, *, notify: bool = True) -> None:
     if chat:
         # Ошибка отправки — наружу, в nak. На редоставке has_feedback вернёт нас выше, а
         # карточку по порогу дошлёт _maybe_push: pushed_at мы ещё не ставили.
-        await _bot.send_message(int(chat), _fmt(item), reply_markup=_kb(item.id, item.url))
+        # Клавиатура — уже «после ⭐»: звезда стоит, живая кнопка ⭐ её бы только сняла.
+        await _bot.send_message(
+            int(chat), _fmt(item), reply_markup=_kb_done(item.id, "⭐ учтено", item.url)
+        )
     # Отмечаем пушнутым после отправки: следом в том же цикле идёт _maybe_push, и он видит
     # pushed_at=NULL при скоре выше порога — то есть присылает ту же карточку вторым
     # сообщением. Ссылку человек и так только что прислал сам, пуш ему не нужен.
