@@ -1,0 +1,388 @@
+<title>Карта тем Хомяка</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working screen — filter row on top, the map takes the width, the theme list rides on the right
+   and stacks under the map on a phone. Colour: cool-grey neutrals, three validated series hues (one per
+   vertical), one gold accent reserved for the reader's own ⭐/👍. */
+:root{
+  --bg:#f4f5f7; --panel:#fcfcfb; --panel2:#eef0f3; --line:#dfe3e8; --line2:#c9cfd7;
+  --fg:#15181d; --dim:#5b6472; --faint:#8a93a1;
+  --it:#2a78d6; --business:#eb6834; --medical:#1baf7a; --star:#c98500;
+  --halo:rgba(252,252,251,.85);
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141619; --panel:#1a1a19; --panel2:#22252b; --line:#2b3038; --line2:#3a404a;
+  --fg:#eceef1; --dim:#a3abb8; --faint:#6f7886;
+  --it:#3987e5; --business:#d95926; --medical:#199e70; --star:#eda100;
+  --halo:rgba(26,26,25,.85); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141619; --panel:#1a1a19; --panel2:#22252b; --line:#2b3038; --line2:#3a404a;
+  --fg:#eceef1; --dim:#a3abb8; --faint:#6f7886;
+  --it:#3987e5; --business:#d95926; --medical:#199e70; --star:#eda100;
+  --halo:rgba(26,26,25,.85); color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:14px 20px}
+h1{font:600 20px/1.2 var(--sans);margin:0;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--dim);font:12.5px/1.5 var(--mono);margin-top:4px}
+.sub b{color:var(--fg);font-weight:500}
+header{display:flex;flex-wrap:wrap;gap:6px 24px;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 12px;background:var(--panel);
+  border:1px solid var(--line);border-radius:10px;margin-bottom:12px}
+.grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.lbl{color:var(--faint);font:11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;margin-right:2px}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid var(--line2);border-radius:999px;
+  background:transparent;color:var(--fg);font:13px/1 var(--sans);cursor:pointer;user-select:none}
+.chip:hover{background:var(--panel2)}
+.chip[aria-pressed="false"]{color:var(--faint);border-style:dashed}
+.chip[aria-pressed="false"] .sw{opacity:.25}
+.chip:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--it);outline-offset:2px}
+.sw{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
+.sw.ring{background:transparent;border:2.5px solid var(--star)}
+.n{color:var(--dim);font:11.5px/1 var(--mono);font-variant-numeric:tabular-nums}
+input[type=search]{font:13px/1.2 var(--sans);padding:6px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--panel);
+  color:var(--fg);min-width:200px;flex:1 1 180px}
+input[type=range]{accent-color:var(--it);width:120px;vertical-align:middle}
+button.b{font:12.5px/1 var(--sans);padding:6px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--panel);color:var(--fg);cursor:pointer}
+button.b:hover{background:var(--panel2)}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px}
+@media (max-width:860px){.wrap{grid-template-columns:minmax(0,1fr)}}
+.map{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-height:420px;height:min(72vh,760px)}
+@media (max-width:860px){.map{height:60vh}}
+canvas{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none}
+.hint{position:absolute;left:10px;bottom:8px;color:var(--faint);font:11px/1.3 var(--mono);pointer-events:none}
+.zoom{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:4px}
+.zoom button{width:30px;height:30px;font:16px/1 var(--mono);border:1px solid var(--line2);border-radius:7px;background:var(--panel);color:var(--fg);cursor:pointer}
+.shown{position:absolute;left:10px;top:8px;color:var(--dim);font:11.5px/1 var(--mono);background:var(--halo);padding:4px 7px;border-radius:6px;font-variant-numeric:tabular-nums}
+.tip{position:fixed;z-index:5;max-width:340px;background:var(--panel);color:var(--fg);border:1px solid var(--line2);border-radius:9px;
+  padding:9px 11px;box-shadow:0 6px 22px rgba(0,0,0,.18);pointer-events:none;font-size:12.5px;line-height:1.4}
+.tip.pin{pointer-events:auto}
+.tip .t{font-weight:600;margin-bottom:3px;text-wrap:balance}
+.tip .m{color:var(--dim);font:11.5px/1.5 var(--mono);display:flex;flex-wrap:wrap;gap:4px 10px}
+.tip .tg{color:var(--faint);font:11.5px/1.4 var(--mono)}
+.tip .cl{margin-top:5px;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim)}
+.tip a{color:var(--it);font-weight:500;text-decoration:none;display:inline-block;margin-top:6px}
+.tip a:hover{text-decoration:underline}
+.tip .x{position:absolute;right:6px;top:4px;border:0;background:transparent;color:var(--faint);cursor:pointer;font:14px/1 var(--mono)}
+aside{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0;max-height:min(72vh,760px)}
+@media (max-width:860px){aside{max-height:52vh}}
+aside .hd{padding:10px 12px 8px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;justify-content:space-between}
+aside .hd h2{margin:0;font:500 13px/1 var(--sans)}
+aside input[type=search]{min-width:0;flex:1}
+.list{overflow:auto;flex:1;min-height:0;padding:4px 0}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:7px 12px;cursor:pointer;border-left:3px solid transparent}
+.row:hover{background:var(--panel2)}
+.row.on{background:var(--panel2);border-left-color:var(--fg)}
+.row .lb{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.row .ct{color:var(--dim);font:11.5px/1.4 var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.row .ct b{color:var(--star);font-weight:500}
+.share{grid-column:1/-1;display:flex;height:3px;border-radius:2px;overflow:hidden;background:var(--line);gap:2px}
+.share i{display:block;height:100%;background:var(--c)}
+.tbl{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.tbl .hd{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:baseline;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tbl h2{margin:0;font:500 14px/1.3 var(--sans)}
+.tbl .sc{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 12px;border-top:1px solid var(--line);vertical-align:top}
+th{color:var(--faint);font:11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;border-top:0}
+td.num,th.num{text-align:right;font:12.5px/1.4 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.dt{font:12.5px/1.4 var(--mono);white-space:nowrap;color:var(--dim)}
+td a{color:var(--fg);text-decoration:none}
+td a:hover{color:var(--it);text-decoration:underline}
+td .fd{color:var(--faint);font:11.5px/1.4 var(--mono)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:middle}
+.foot{color:var(--faint);font:11.5px/1.6 var(--mono);margin-top:14px;max-width:72ch}
+.foot b{color:var(--dim);font-weight:500}
+.empty{padding:22px 12px;color:var(--faint);text-align:center;font:12.5px/1.4 var(--mono)}
+@media (prefers-reduced-motion:no-preference){.row,.chip,button.b{transition:background .12s}}
+</style>
+
+<header>
+  <div>
+    <h1>Карта тем Хомяка</h1>
+    <div class="sub" id="sub">загрузка…</div>
+  </div>
+  <div class="sub">bge-m3 → UMAP (cosine) → HDBSCAN · снимок <b id="gen">—</b></div>
+</header>
+
+<div class="bar" role="toolbar" aria-label="фильтры карты">
+  <div class="grp" id="verts"><span class="lbl">вертикаль</span></div>
+  <div class="grp"><span class="lbl">🎯 от</span><input type="range" id="minScore" min="0" max="95" step="5" value="0" aria-label="минимальный скоринг"><span class="n" id="minScoreV">0%</span></div>
+  <button class="chip" id="fbOnly" aria-pressed="false"><span class="sw ring"></span>только ⭐/👍<span class="n" id="fbN"></span></button>
+  <button class="chip" id="labels" aria-pressed="true">подписи тем</button>
+  <input type="search" id="q" placeholder="искать в заголовках и тегах…" aria-label="поиск">
+  <button class="b" id="reset">сброс вида</button>
+</div>
+
+<div class="wrap">
+  <div class="map" id="map">
+    <canvas id="c" aria-label="карта записей: каждая точка — одна новость, рядом лежат близкие по смыслу"></canvas>
+    <div class="shown" id="shown"></div>
+    <div class="zoom"><button id="zin" aria-label="приблизить">+</button><button id="zout" aria-label="отдалить">−</button></div>
+    <div class="hint">колесо — масштаб · тянуть — сдвиг · клик по точке — карточка со ссылкой</div>
+  </div>
+  <aside>
+    <div class="hd"><h2>Темы <span class="n" id="clN"></span></h2><input type="search" id="cq" placeholder="фильтр тем…" aria-label="фильтр тем"></div>
+    <div class="list" id="list"></div>
+  </aside>
+</div>
+
+<div class="tbl" id="tbl" hidden>
+  <div class="hd"><h2 id="tblH"></h2><div class="grp"><span class="n" id="tblN"></span><button class="b" id="tblX">закрыть</button></div></div>
+  <div class="sc"><table><thead><tr><th>запись</th><th>лента</th><th class="num">🎯</th><th>дата</th></tr></thead><tbody id="tblB"></tbody></table></div>
+</div>
+
+<p class="foot">Случайные <b>20 000</b> обработанных записей за последние 90 дней (из 244 тыс. в Qdrant). Расстояние на карте — близость
+векторов bge-m3, спроецированных UMAP (n_neighbors 15, min_dist 0.1); темы — кластеры HDBSCAN (min_cluster_size 30, leaf),
+подписаны тегами с наибольшим «лифтом» внутри кластера. Точки вне кластеров остаются на карте, но без подписи.
+Золотое кольцо — записи, которые ты отметил ⭐ или 👍. Карта статична: это снимок, а не живая лента.</p>
+
+<div class="tip" id="tip" hidden role="status"></div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const VL = {it:'IT', business:'Бизнес', medical:'Медицина'};
+const VORDER = ['it','business','medical']; // фиксированный порядок → фиксированные цвета, не по рангу
+let D, pts, clusters, grid, cellN = 96;
+let k = 1, tx = 0, ty = 0, W = 0, H = 0, dpr = 1, PAD = 28;
+let on = {it:true, business:true, medical:true}, minScore = 0, fbOnly = false, showLabels = true, q = '', cq = '';
+let hover = -1, pinned = -1, selCl = null, drag = null, raf = 0;
+const cv = $('c'), ctx = cv.getContext('2d'), tip = $('tip');
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let COL = {};
+function colors(){ COL = {it:css('--it'), business:css('--business'), medical:css('--medical'), star:css('--star'), fg:css('--fg'), halo:css('--halo'), faint:css('--faint'), dim:css('--dim'), panel:css('--panel')}; }
+
+// ---------- данные ----------
+fetch('topicmap.json').then(r => r.json()).then(d => {
+  D = d; pts = d.points; clusters = d.clusters;
+  const byCl = new Map(); clusters.forEach(c => byCl.set(c.id, c));
+  // пространственный индекс для поиска ближайшей точки под курсором
+  grid = new Map();
+  pts.forEach((p, i) => { const key = ((p[0]*cellN)|0) + ',' + ((p[1]*cellN)|0); (grid.get(key) || grid.set(key, []).get(key)).push(i); });
+  const nv = {it:0, business:0, medical:0}; pts.forEach(p => nv[d.verts[p[3]]]++);
+  $('sub').textContent = `${fmt(pts.length)} записей · 90 дней · ${clusters.length} тем · ${d.meta.fb} с твоей оценкой`;
+  $('gen').textContent = d.meta.generated;
+  $('fbN').textContent = d.meta.fb;
+  // легенда = фильтр: три серии, цвет закреплён за вертикалью
+  VORDER.forEach(v => {
+    const b = document.createElement('button'); b.className = 'chip'; b.setAttribute('aria-pressed', 'true'); b.dataset.v = v;
+    const sw = document.createElement('span'); sw.className = 'sw'; sw.style.setProperty('--c', `var(--${v})`);
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = fmt(nv[v]);
+    b.append(sw, document.createTextNode(VL[v]), n);
+    b.onclick = () => { on[v] = !on[v]; b.setAttribute('aria-pressed', String(on[v])); render(); renderList(); };
+    $('verts').appendChild(b);
+  });
+  renderList(); resize(); fit();
+}).catch(() => { $('sub').textContent = 'не удалось загрузить данные карты'; });
+
+const fmt = n => n.toLocaleString('ru-RU');
+
+// ---------- фильтры ----------
+function visible(p){
+  if (!on[D.verts[p[3]]]) return false;
+  if (p[4]*100 < minScore) return false;
+  if (fbOnly && !(p[11] === 's' || p[11] === 'u')) return false;
+  return true;
+}
+function matches(p){ if (!q) return true; return (p[6] + ' ' + p[9]).toLowerCase().includes(q); }
+$('minScore').oninput = e => { minScore = +e.target.value; $('minScoreV').textContent = minScore + '%'; render(); renderList(); };
+$('fbOnly').onclick = () => { fbOnly = !fbOnly; $('fbOnly').setAttribute('aria-pressed', String(fbOnly)); render(); renderList(); };
+$('labels').onclick = () => { showLabels = !showLabels; $('labels').setAttribute('aria-pressed', String(showLabels)); render(); };
+$('q').oninput = e => { q = e.target.value.trim().toLowerCase(); render(); };
+$('cq').oninput = e => { cq = e.target.value.trim().toLowerCase(); renderList(); };
+$('reset').onclick = () => { selCl = null; pinned = -1; tip.hidden = true; fit(); renderList(); };
+$('tblX').onclick = () => { $('tbl').hidden = true; };
+
+// ---------- геометрия ----------
+function resize(){
+  const r = $('map').getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = r.width; H = r.height; cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); colors(); render();
+}
+window.addEventListener('resize', resize);
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { colors(); render(); });
+new MutationObserver(() => { colors(); render(); }).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+const base = () => Math.min(W, H) - 2*PAD;
+const sx = x => tx + PAD + (W - base() - 2*PAD)/2 + x*base()*k;
+const sy = y => ty + PAD + (H - base() - 2*PAD)/2 + (1 - y)*base()*k;
+function fit(){ k = 1; tx = 0; ty = 0; render(); }
+function zoomAt(f, cx, cy){
+  const nk = Math.max(0.6, Math.min(40, k*f)); f = nk/k;
+  tx = cx - (cx - tx)*f; ty = cy - (cy - ty)*f; k = nk; render();
+}
+$('zin').onclick = () => zoomAt(1.6, W/2, H/2);
+$('zout').onclick = () => zoomAt(1/1.6, W/2, H/2);
+cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY*0.0015), e.clientX - r.left, e.clientY - r.top); }, {passive:false});
+cv.addEventListener('pointerdown', e => { drag = {x:e.clientX, y:e.clientY, tx, ty, moved:false}; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => {
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; tx = drag.tx + dx; ty = drag.ty + dy; render(); return; }
+  const i = nearest(mx, my); if (i !== hover) { hover = i; render(); }
+  if (pinned < 0) showTip(i, e.clientX, e.clientY, false);
+});
+cv.addEventListener('pointerup', e => {
+  const moved = drag && drag.moved; drag = null;
+  if (moved) return;
+  const r = cv.getBoundingClientRect(), i = nearest(e.clientX - r.left, e.clientY - r.top);
+  if (i >= 0) { pinned = i; showTip(i, e.clientX, e.clientY, true); } else { pinned = -1; tip.hidden = true; }
+  render();
+});
+cv.addEventListener('pointerleave', () => { hover = -1; if (pinned < 0) tip.hidden = true; render(); });
+cv.addEventListener('pointercancel', () => { drag = null; });
+
+// ближайшая видимая точка в радиусе ~14px: цель больше самой метки
+function nearest(mx, my){
+  if (!pts) return -1;
+  const R = 14, rr = R*R; let best = -1, bd = rr;
+  const s = base()*k; const x0 = (mx - sx(0))/s, y0 = 1 - (my - sy(1) )/s; // обратное преобразование
+  const c = Math.ceil(R/(s/cellN)) + 1, gx = (x0*cellN)|0, gy = (y0*cellN)|0;
+  for (let a = gx - c; a <= gx + c; a++) for (let b = gy - c; b <= gy + c; b++) {
+    const cell = grid.get(a + ',' + b); if (!cell) continue;
+    for (const i of cell) { const p = pts[i]; if (!visible(p) || !matches(p)) continue;
+      const dx = sx(p[0]) - mx, dy = sy(p[1]) - my, d2 = dx*dx + dy*dy; if (d2 < bd) { bd = d2; best = i; } }
+  }
+  return best;
+}
+
+// ---------- отрисовка ----------
+function render(){ if (raf) return; raf = requestAnimationFrame(draw); }
+function draw(){
+  raf = 0; if (!pts) return;
+  ctx.clearRect(0, 0, W, H);
+  const r = Math.max(1.4, Math.min(5, 1.5*Math.sqrt(k)));
+  let shown = 0; const dim = !!q || selCl !== null;
+  // 1. фон: точки, не прошедшие поиск/выбор темы — бледно
+  // 2. основной слой по вертикалям (один цвет — один проход, меньше смен стиля)
+  for (const pass of [0, 1]) {
+    for (const v of VORDER) {
+      if (!on[v]) continue;
+      ctx.fillStyle = COL[v]; ctx.globalAlpha = pass ? 0.78 : 0.10;
+      ctx.beginPath();
+      const vi = D.verts.indexOf(v);
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i]; if (p[3] !== vi || !visible(p)) continue;
+        const hit = matches(p) && (selCl === null || p[2] === selCl);
+        if (pass === 0 && (hit || !dim)) continue; if (pass === 1 && !hit) continue;
+        if (pass === 1) shown++;
+        const x = sx(p[0]), y = sy(p[1]); if (x < -r || y < -r || x > W + r || y > H + r) continue;
+        ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.2832);
+      }
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  // 3. твои оценки — золотое кольцо поверх
+  ctx.strokeStyle = COL.star; ctx.lineWidth = 1.8; ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) { const p = pts[i]; if (!(p[11] === 's' || p[11] === 'u') || !visible(p)) continue;
+    const x = sx(p[0]), y = sy(p[1]); ctx.moveTo(x + r + 3, y); ctx.arc(x, y, r + 3, 0, 6.2832); }
+  ctx.stroke();
+  // 4. подписи тем: крупные первыми, без наложений; при зуме всплывают мелкие
+  if (showLabels) {
+    const placed = []; const minN = 110/k;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    for (const c of clusters.slice().sort((a, b) => b.n - a.n)) {
+      if (c.n < minN && c.id !== selCl) continue;
+      if (!Object.keys(c.verts).some(v => on[v])) continue;
+      const fs = Math.max(11, Math.min(17, 11 + 3*Math.log10(c.n/30)));
+      ctx.font = `${c.id === selCl ? 600 : 500} ${fs}px ${css('--sans')}`;
+      const x = sx(c.x), y = sy(c.y), w = ctx.measureText(c.label).width + 10, h = fs + 6;
+      if (x < 0 || y < 0 || x > W || y > H) continue;
+      if (placed.some(b => Math.abs(b.x - x) < (b.w + w)/2 && Math.abs(b.y - y) < (b.h + h)/2)) continue;
+      placed.push({x, y, w, h});
+      ctx.lineWidth = 4; ctx.strokeStyle = COL.halo; ctx.strokeText(c.label, x, y);
+      ctx.fillStyle = c.id === selCl ? COL.fg : COL.dim; ctx.fillText(c.label, x, y);
+    }
+  }
+  // 5. наведённая / закреплённая точка — крупнее, с кольцом цвета поверхности
+  for (const i of [hover, pinned]) if (i >= 0) {
+    const p = pts[i], x = sx(p[0]), y = sy(p[1]);
+    ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, 6.2832); ctx.fillStyle = COL.panel; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, 6.2832); ctx.fillStyle = COL[D.verts[p[3]]]; ctx.fill();
+  }
+  $('shown').textContent = `показано ${fmt(shown)} из ${fmt(pts.length)}`;
+}
+
+// ---------- карточка ----------
+function showTip(i, cx, cy, pin){
+  if (i < 0) { tip.hidden = true; return; }
+  const p = pts[i]; tip.textContent = ''; tip.classList.toggle('pin', pin);
+  const t = el('div', 'tip-t', p[6]); t.className = 't';
+  const m = el('div', 'm'); m.append(el('span', '', p[8] || '—'), el('span', '', p[10]), el('span', '', '🎯 ' + Math.round(p[4]*100) + '%'));
+  if (p[11] === 's') m.append(el('span', '', '⭐ сохранено')); else if (p[11] === 'u') m.append(el('span', '', '👍')); else if (p[11] === 'd') m.append(el('span', '', '👎'));
+  tip.append(t, m);
+  if (p[9]) tip.append(el('div', 'tg', p[9].split('|').map(x => '#' + x).join(' ')));
+  const cl = clusters.find(c => c.id === p[2]);
+  const cd = el('div', 'cl'); const sw = el('span', 'sw'); sw.style.setProperty('--c', `var(--${D.verts[p[3]]})`);
+  cd.append(sw, document.createTextNode(cl ? 'тема: ' + cl.label : 'вне тем'));
+  tip.append(cd);
+  if (pin) {
+    if (p[7]) { const a = el('a', '', 'открыть источник →'); a.href = p[7]; a.target = '_blank'; a.rel = 'noopener'; tip.append(a); }
+    const x = el('button', 'x', '×'); x.setAttribute('aria-label', 'закрыть'); x.onclick = () => { pinned = -1; tip.hidden = true; render(); }; tip.append(x);
+  }
+  tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = cx + 14, top = cy + 14;
+  if (left + tw > window.innerWidth - 8) left = cx - tw - 14;
+  if (top + th > window.innerHeight - 8) top = cy - th - 14;
+  tip.style.left = Math.max(8, left) + 'px'; tip.style.top = Math.max(8, top) + 'px';
+}
+function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+// ---------- список тем ----------
+function renderList(){
+  if (!clusters) return;
+  const list = $('list'); list.textContent = '';
+  const rows = clusters.filter(c => Object.keys(c.verts).some(v => on[v]) && (!cq || c.label.includes(cq) || c.tags.some(t => t.includes(cq))))
+    .sort((a, b) => b.n - a.n);
+  $('clN').textContent = rows.length;
+  if (!rows.length) { list.append(el('div', 'empty', 'ни одной темы под фильтр')); return; }
+  for (const c of rows) {
+    const r = el('div', 'row' + (c.id === selCl ? ' on' : '')); r.tabIndex = 0; r.setAttribute('role', 'button');
+    r.append(el('div', 'lb', c.label));
+    const ct = el('div', 'ct'); ct.append(document.createTextNode(fmt(c.n)));
+    if (c.fb) { ct.append(document.createTextNode(' · ')); ct.append(el('b', '', '★' + c.fb)); }
+    r.append(ct);
+    const sh = el('div', 'share');
+    for (const v of VORDER) { const n = c.verts[v] || 0; if (!n) continue; const i = document.createElement('i'); i.style.setProperty('--c', `var(--${v})`); i.style.width = (100*n/c.n) + '%'; i.title = `${VL[v]} ${n}`; sh.append(i); }
+    r.append(sh);
+    r.onclick = () => select(c); r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(c); } };
+    list.append(r);
+  }
+}
+function select(c){
+  if (selCl === c.id) { selCl = null; $('tbl').hidden = true; fit(); renderList(); return; }
+  selCl = c.id; pinned = -1; tip.hidden = true;
+  // подлететь к кластеру: его разброс → масштаб
+  const m = pts.filter(p => p[2] === c.id); let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+  for (const p of m) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  const span = Math.max(x1 - x0, y1 - y0, 0.02);
+  k = Math.max(1, Math.min(14, 0.6/span)); tx = 0; ty = 0;
+  const cxs = sx((x0 + x1)/2), cys = sy((y0 + y1)/2); tx = W/2 - cxs; ty = H/2 - cys;
+  render(); renderList(); renderTable(c, m);
+  $('list').querySelector('.row.on')?.scrollIntoView({block:'nearest'});
+}
+// табличный двойник карты: та же тема списком, со ссылками
+function renderTable(c, m){
+  $('tblH').textContent = 'Тема: ' + c.label;
+  const rows = m.slice().sort((a, b) => (b[11] ? 1 : 0) - (a[11] ? 1 : 0) || b[4] - a[4]).slice(0, 150);
+  $('tblN').textContent = `${fmt(m.length)} записей${m.length > 150 ? ', показаны 150 лучших по 🎯' : ''}`;
+  const tb = $('tblB'); tb.textContent = '';
+  for (const p of rows) {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); const dot = el('span', 'dot'); dot.style.setProperty('--c', `var(--${D.verts[p[3]]})`); td1.append(dot);
+    if (p[7]) { const a = el('a', '', p[6]); a.href = p[7]; a.target = '_blank'; a.rel = 'noopener'; td1.append(a); } else td1.append(document.createTextNode(p[6]));
+    if (p[11] === 's') td1.append(document.createTextNode(' ⭐')); else if (p[11] === 'u') td1.append(document.createTextNode(' 👍'));
+    const td2 = document.createElement('td'); td2.append(el('span', 'fd', p[8] || '—'));
+    const td3 = el('td', 'num', Math.round(p[4]*100) + '%');
+    const td4 = el('td', 'dt', p[10]);
+    tr.append(td1, td2, td3, td4); tb.append(tr);
+  }
+  $('tbl').hidden = false;
+}
+})();
+</script>
