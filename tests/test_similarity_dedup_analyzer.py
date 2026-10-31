@@ -6,9 +6,10 @@
 между чтением и локом, мерж отменяет.
 """
 
+import asyncio
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, text, update
 
 from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
 from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
@@ -229,3 +230,64 @@ async def test_mark_processed_does_not_undo_a_split(session_factory):
 async def _cluster_of(session_factory, item_id: int) -> int | None:
     async with session_factory() as s:
         return await s.scalar(select(NewsItem.cluster_id).where(NewsItem.id == item_id))
+
+
+async def test_a_concurrent_merge_may_delete_the_joined_cluster_before_our_lock(session_factory):
+    """Стадия 1 выбрала C по близнецу, тело item'а уже сброшено в БД (autoflush), а встречный мерж
+    в другой транзакции уносит C в E и УДАЛЯЕТ C. Раньше FK item→C, поставленный до лока, держал
+    строку C (KEY SHARE) — мерж ждал нас, мы — его advisory-лок. Теперь мерж проходит сразу, а мы
+    под локом видим, что близнец уехал, и сами уходим в E по вектору."""
+    repo = NewsRepo(session_factory)
+    (twin,) = await _items(repo, 1, "t", url="https://x.test/same")
+    (e0,) = await _items(repo, 1, "e")
+    (new_id,) = await _items(repo, 1, "n", url="https://x.test/same")
+    c = await _cluster(session_factory, [twin])
+    e = await _cluster(session_factory, [e0])
+    analyzer = SimilarityDedupAnalyzer(_Qdrant([(e0, 0.95, {})]), max_age_hours=0)
+
+    async def merge_c_into_e():
+        async with session_factory() as b:
+            for k in sorted((c, e)):
+                await b.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": k})
+            await b.execute(update(NewsItem).where(NewsItem.cluster_id == c).values(cluster_id=e))
+            await b.execute(delete(Cluster).where(Cluster.id == c))
+            await b.execute(update(Cluster).where(Cluster.id == e).values(size=2))
+            await b.commit()
+
+    async with session_factory() as s:
+        ctx = await _stage1(s, new_id)
+        ctx.item.title = "flushed body"
+        await s.flush()  # как autoflush перед SELECT в _pick_target
+        await asyncio.wait_for(merge_c_into_e(), 5)  # не должен ждать нашу транзакцию
+        await analyzer.analyze(ctx)
+        await s.commit()
+        assert ctx.cluster_id == e
+
+    assert await _members(session_factory, e) == sorted([twin, e0, new_id])
+    assert await _size(session_factory, e) == 3
+    assert await _size(session_factory, c) is None
+
+
+async def test_a_rerun_leaves_membership_alone_even_with_a_similar_hit(session_factory):
+    """Повторная обработка уже кластеризованной записи: split между чтением и стадией 3 увёл её
+    в D, вектор зовёт в E. Ни группа, оставшаяся в C, ни сама запись никуда не едут."""
+    repo = NewsRepo(session_factory)
+    (x,) = await _items(repo, 1, "x", url="https://x.test/first")
+    (item,) = await _items(repo, 1, "i", url="https://x.test/second")
+    (e0,) = await _items(repo, 1, "e")
+    c = await _cluster(session_factory, [x, item])
+    e = await _cluster(session_factory, [e0])
+    analyzer = SimilarityDedupAnalyzer(_Qdrant([(e0, 0.95, {})]), max_age_hours=0)
+
+    async with session_factory() as s:
+        ctx = await _stage1(s, item)
+        assert ctx.cluster_kept and ctx.cluster_id == c
+        await repo.split_cluster(c)
+        await analyzer.analyze(ctx)
+        await s.commit()
+
+    d = await _cluster_of(session_factory, item)
+    assert d not in (c, e)
+    assert await _members(session_factory, c) == [x]
+    assert await _members(session_factory, d) == [item]
+    assert await _members(session_factory, e) == [e0]

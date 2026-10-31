@@ -12,8 +12,14 @@
 - хит засчитывается только в окне по времени, а слияние — только если РЕЗУЛЬТАТ (цель +
   переносимые + текущий) не превышает потолка; считаем членов, а не Cluster.size (он врал);
 - под локом перечитываем принадлежность хита и существование цели;
-- членство текущего item'а — в транзакции стадий, mark_processed его потом не перекрывает.
+- членство текущего item'а — в транзакции стадий, mark_processed его потом не перекрывает;
+- FK item→чужой кластер ставится только здесь, под локом: поставленный раньше, он через autoflush
+  держал бы строку кластера (KEY SHARE) и не давал встречному мержу удалить её — тот ждал бы нас,
+  а мы — его advisory-лок.
 Свежий кластер, созданный url_dedup для одинокого item'а, никто не видит — для него лок не нужен.
+Повторная обработка (cluster_kept) членство не трогает и не мержит: строка item'а уже видна
+split'у, а flush тела на ранних стадиях держит её — лок на кластер после этого = взаимная
+блокировка. Это не потеря: кластер у записи уже есть с первого прохода.
 """
 
 from __future__ import annotations
@@ -149,12 +155,14 @@ class SimilarityDedupAnalyzer:
 
     async def analyze(self, ctx: AnalyzerContext) -> None:
         s = ctx.session
+        if ctx.cluster_kept:
+            return  # повторная обработка: членство оставляем как есть (см. докстринг модуля)
         target, chosen_hit = await self._pick_target(ctx)
         old = ctx.cluster_id
         if target == old:
             target = None
         if target is None and not ctx.cluster_joined:
-            return  # свой свежий (или давно свой) кластер, ни с кем не делимся — лочить нечего
+            return  # свой свежий кластер, ни с кем не делимся — лочить нечего
 
         # Лочим ВСЕ затронутые кластеры разом, по возрастанию id: с параллельной обработкой два
         # item'а могут мержить встречно (A: 1→2, B: 2→1), и лока только на target не хватало —
@@ -164,12 +172,15 @@ class SimilarityDedupAnalyzer:
             await s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": int(k)})
 
         # Под локом решения принимаются заново по таблице, не по тому, что читали до него.
-        if ctx.cluster_joined and old is not None and not await self._twin_still_in(ctx, old):
-            # split увёл близнеца между стадией 1 и локом: присоединение устарело, item — в свой
-            # кластер (его кластер мы не лочили и под чужой лок не лезем)
-            log.info("url_join_stale", item=ctx.item_id, cluster=old)
-            old = await self._fresh_cluster(ctx)
-            ctx.cluster_joined = False
+        if ctx.cluster_joined and old is not None:
+            if await self._twin_still_in(ctx, old):
+                ctx.item.cluster_id = old  # FK — только теперь, под локом
+            else:
+                # split/мерж увёл близнеца между стадией 1 и локом: присоединение устарело, item —
+                # в свой кластер (кластер близнеца мы не лочили и под чужой лок не лезем)
+                log.info("url_join_stale", item=ctx.item_id, cluster=old)
+                old = await self._fresh_cluster(ctx)
+                ctx.cluster_joined = False
 
         final, merged = old, False
         if target is not None:

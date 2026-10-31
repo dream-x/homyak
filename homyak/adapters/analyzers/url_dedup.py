@@ -4,11 +4,12 @@
 иначе создаёт новый кластер с item'ом как representative. Мутирует ctx.cluster_id.
 url_normalized уже проставлен репозиторием при upsert'е.
 
-Присоединение к чужому кластеру здесь только РЕШАЕТСЯ (ctx.cluster_joined): счётчик size и
-перепроверка, что близнец всё ещё там, — в similarity_dedup под advisory-локом. Трогать строку
-Cluster на стадии 1 нельзя: row-lock повис бы до коммита всех стадий, а advisory-лок на тот же
-кластер берётся позже (стадия 3) — split, идущий в обратном порядке (advisory → строка),
-вставал бы с процессором во взаимную блокировку (ревью #007).
+Присоединение к чужому кластеру здесь только РЕШАЕТСЯ (ctx.cluster_joined): FK item→кластер,
+счётчик size и перепроверка, что близнец всё ещё там, — в similarity_dedup под advisory-локом.
+Ни строку Cluster, ни FK на неё до лока трогать нельзя: и UPDATE size, и autoflush FK берут
+блокировку строки кластера до коммита всех стадий, а advisory-лок на тот же кластер берётся
+позже (стадия 3) — split или встречный мерж, идущие в правильном порядке (advisory → строки),
+вставали бы с процессором во взаимную блокировку (ревью #007/#008).
 """
 
 from __future__ import annotations
@@ -26,9 +27,10 @@ class UrlDedupAnalyzer:
     async def analyze(self, ctx: AnalyzerContext) -> None:
         s = ctx.session
         if ctx.item.cluster_id is not None:
-            # повторная обработка (resummarize, сброс processed_at): кластер уже есть, не трогаем —
-            # иначе item уходил в свежий кластер, а старый оставался со стухшим size
+            # повторная обработка (resummarize, сброс processed_at): кластер уже есть, членство
+            # не трогаем — раньше item уходил в свежий кластер, а старый оставался со стухшим size
             ctx.cluster_id = int(ctx.item.cluster_id)
+            ctx.cluster_kept = True
             return
         norm = ctx.item.url_normalized
 
@@ -43,8 +45,7 @@ class UrlDedupAnalyzer:
                 .limit(1)
             )
             if found is not None:
-                ctx.cluster_id = int(found)
-                ctx.item.cluster_id = int(found)  # строка item'а — наша, остальное под локом в стадии 3
+                ctx.cluster_id = int(found)  # FK поставит стадия 3 под локом
                 ctx.cluster_joined = True
                 return
 

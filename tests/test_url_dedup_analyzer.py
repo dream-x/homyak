@@ -71,7 +71,9 @@ async def test_joining_by_url_only_decides_and_marks_the_context(session_factory
         item = await s.get(NewsItem, id2)
         ctx = AnalyzerContext(item_id=id2, item=item, session=s)
         await UrlDedupAnalyzer().analyze(ctx)
-        assert ctx.cluster_joined and ctx.cluster_id == c1 and item.cluster_id == c1
+        assert ctx.cluster_joined and ctx.cluster_id == c1
+        assert item.cluster_id is None  # FK — только под локом в стадии 3
         await s.commit()
     async with session_factory() as s:
         assert await s.scalar(select(Cluster.size).where(Cluster.id == c1)) == 1
+        assert await s.scalar(select(NewsItem.cluster_id).where(NewsItem.id == id2)) is None
