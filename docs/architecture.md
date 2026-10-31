@@ -200,7 +200,7 @@ rebuild. Ollama stays on the host (Metal).
 | `learner` | learning + profile refinement |
 | `sweeper` | re-publish stuck items · drain the re-embed queue |
 | `tgbot` | Telegram bot |
-| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/trends`, `/timeline`, `/dashboard`) |
+| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/trends`, `/timeline`, `/pulse`, `/dashboard`) |
 | `wiki` | LLM knowledge base from ⭐/👍 (below) |
 | `starchan` | ⭐ channel: starred items + daily digest (below) |
 
@@ -267,6 +267,17 @@ Pure helpers (`pick_unit`, `tsquery_for`, `resolve_watch`, `peaks`, `sparkline`)
 the SQL has a DB test. Surfaces: `/timeline` page (bars per window, hover tooltip, peak labels,
 list of windows with the top story), `GET /timeline/api?q=&days=&vertical=`, bot `/timeline`
 (sparkline + peaks with links).
+
+## Pulse (`/pulse`, bot `/pulse [vertical] [hours]`, `core/pulse.py`)
+
+One screen for a vertical (business by default) over a window (24 h by default), no LLM:
+- **Обсуждают все** — stories (clusters) ranked by *breadth*: the number of independent feeds that
+  carried them, then by members, then by `personal_score`. One feed with ten posts is not an event;
+  five feeds with one post each is. `wide` = 3+ feeds.
+- **Watch list** — stories mentioning each `watch_topics` entry in the window vs the mean of the
+  seven previous windows (`growth`/`direction` from `core/trends.py`); a row links to its timeline.
+- **Темы за сутки** — the top of the day's trends for the same vertical.
+`GET /pulse/api?hours=&vertical=`; pure ranking/delta helpers are unit-tested, the SQL has a DB test.
 
 ## Curated export (`GET /saved`)
 

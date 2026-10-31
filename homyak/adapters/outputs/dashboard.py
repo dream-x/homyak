@@ -98,6 +98,7 @@ NAV_ITEMS = [
     ("/search", "🔎 Поиск"),
     ("/trends", "📈 Тренды"),
     ("/timeline", "📆 Таймлайн"),
+    ("/pulse", "💓 Пульс"),
     ("/wiki", "📚 База знаний"),
 ]
 NAV_MARK = "<!--NAV-->"  # плейсхолдер в шапке каждой страницы
@@ -1428,5 +1429,75 @@ $('f').onsubmit=e=>{e.preventDefault();load();};
 (async()=>{const p=new URLSearchParams(location.search);if(p.get('days'))$('days').value=p.get('days');if(p.get('v'))$('vert').value=p.get('v');$('q').value=p.get('q')||'';
   try{const d=await(await fetch('/timeline/api?q=')).json();watchTopics=d.watch_topics||[];}catch(e){}
   load();})();
+</script>
+"""
+
+
+PULSE_PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>💓 Пульс — Homyak</title>
+<style>
+/*BASE*/
+.wrap{max-width:1160px;margin:0 auto;padding:14px 20px 40px}
+.tabs{display:flex;gap:3px;margin-bottom:8px;flex-wrap:wrap}
+.tab{font:12px/1 var(--mono);color:var(--dim);background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 11px;cursor:pointer;user-select:none}
+.tab:hover{color:var(--txt);background:var(--panel)}
+.tab.on{color:var(--accent);border-color:var(--accent-dim);background:var(--panel)}
+.cols{display:grid;grid-template-columns:2fr 1fr;gap:22px;margin-top:12px}
+@media(max-width:860px){.cols{grid-template-columns:1fr}}
+.h{margin:6px 0 10px;font:11px/1 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:1px}
+.st{display:grid;grid-template-columns:52px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.st .w{font:12px/1.3 var(--mono);color:var(--dim);text-align:center;padding-top:2px}
+.st .w b{display:block;font-size:16px;color:var(--txt)}
+.st.wide .w b{color:var(--accent)}
+.st .ttl{font-size:13.5px;font-weight:500}
+.st .ttl a{color:var(--txt);text-decoration:none}.st .ttl a:hover{color:var(--accent)}
+.st .sm{color:var(--dim);font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.st .mt{color:var(--faint);font:11px/1 var(--mono);margin-top:5px}
+.wl{display:flex;flex-direction:column;gap:6px}
+.wr{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font:12px/1 var(--mono);cursor:pointer}
+.wr:hover{border-color:var(--accent-dim)}
+.wr .n{color:var(--txt);font-weight:600;flex:1}
+.wr .c{color:var(--txt)}.wr .b{color:var(--faint)}
+.wr .up{color:var(--up)}.wr .down{color:var(--down)}
+.tr{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:12px/1 var(--mono);margin:0 6px 6px 0;cursor:pointer}
+.tr:hover{border-color:var(--accent-dim)}
+.tr .tag{color:var(--txt);font-weight:600}.tr .g{color:var(--up)}
+.muted{color:var(--faint);font-size:13px;padding:10px 0}
+</style>
+<div class="top"><h1>💓 Пульс</h1><span class="st">что обсуждают все · вотчлист · темы дня</span><!--NAV--></div>
+<div class="wrap">
+  <div class="tabs" id="vtabs"></div>
+  <div class="tabs" id="htabs"></div>
+  <div class="cols">
+    <div><div class="h" id="sh">Обсуждают все</div><div id="stories"><div class="muted">Загрузка…</div></div></div>
+    <div>
+      <div class="h">Вотчлист · в окне / обычно</div><div class="wl" id="watch"></div>
+      <div class="h" style="margin-top:18px">Темы за сутки</div><div id="trends"></div>
+    </div>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
+const VERTS=[['business','💼 Бизнес'],['it','💻 IT'],['medical','🩺 Медицина'],['all','🌐 Все']];
+const HOURS=[[6,'6 ч'],[12,'12 ч'],[24,'24 ч'],[48,'48 ч'],[168,'неделя']];
+let vertical='business',hours=24;
+const fmtAge=s=>{if(s==null)return '';s=Math.max(0,s|0);const m=Math.floor(s/60);if(m<60)return m+'м';const h=Math.floor(m/60);if(h<24)return h+'ч';return Math.floor(h/24)+'д';};
+function srcLabel(it){const f=it.feed||'';if(f.startsWith('tw_'))return '🐦 @'+f.slice(3);if(f.startsWith('gh_'))return '🐙 '+f.slice(3);if(f.startsWith('@'))return '✈️ '+f;return '📡 '+(f||it.vertical||'');}
+function tabs(id,list,cur,set){$(id).innerHTML=list.map(([k,l])=>`<span class="tab ${String(k)===String(cur)?'on':''}" data-k="${k}">${esc(l)}</span>`).join('');[...$(id).children].forEach(c=>c.onclick=()=>{set(c.dataset.k);load();});}
+function render(){tabs('vtabs',VERTS,vertical,v=>vertical=v);tabs('htabs',HOURS,hours,h=>hours=+h);}
+async function load(){render();$('stories').innerHTML='<div class="muted">…</div>';
+  const url=new URL(location);url.searchParams.set('v',vertical);url.searchParams.set('h',hours);history.replaceState(null,'',url);
+  try{const d=await(await fetch(`/pulse/api?hours=${hours}&vertical=${vertical}`)).json();
+    $('sh').textContent=`Обсуждают все · ${d.hours} ч`;
+    $('stories').innerHTML=(d.stories||[]).map(s=>{const u=safeUrl(s.url);const sc=s.score!=null?Math.round(s.score*100)+'%':'—';
+      return `<div class="st ${s.wide?'wide':''}" title="${s.feeds} лент · ${s.items} записей"><div class="w"><b>${s.feeds}</b>лент</div><div><div class="ttl">${u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(s.title||'—')}</a>`:esc(s.title||'—')}</div>${s.summary?`<div class="sm">${esc(s.summary)}</div>`:''}<div class="mt">🎯 ${sc} · ${esc(srcLabel(s))} · ${s.items} зап.${s.age_s!=null?' · 🕒 '+fmtAge(s.age_s):''}${s.tags&&s.tags.length?' · '+s.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
+    }).join('')||'<div class="muted">за это окно историй нет</div>';
+    $('watch').innerHTML=(d.watch||[]).map(w=>`<div class="wr" onclick="location.href='/timeline?q=${encodeURIComponent(w.name)}&days=30&v=${vertical}'"><span>${w.direction}</span><span class="n">${esc(w.name)}</span><span class="c">${w.count}</span><span class="b">/ ${w.base}</span>${w.growth>0.25?`<span class="up">+${Math.round(w.growth*100)}%</span>`:(w.growth<-0.25?`<span class="down">${Math.round(w.growth*100)}%</span>`:'')}</div>`).join('')||'<div class="muted">тихо</div>';
+    $('trends').innerHTML=(d.trends||[]).map(t=>`<span class="tr" onclick="location.href='/trends'"><span>${t.direction}</span><span class="tag">#${esc(t.tag)}</span><span>${t.count}</span>${t.growth>0?`<span class="g">+${Math.round(t.growth*100)}%</span>`:''}</span>`).join('')||'<div class="muted">—</div>';
+  }catch(e){$('stories').innerHTML='<div class="muted">ошибка</div>';}}
+(()=>{const p=new URLSearchParams(location.search);if(p.get('v'))vertical=p.get('v');if(p.get('h'))hours=+p.get('h')||24;load();})();
 </script>
 """

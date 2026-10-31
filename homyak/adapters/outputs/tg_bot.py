@@ -729,6 +729,54 @@ async def cmd_ask(m: Message, command: CommandObject) -> None:
         await m.answer(chunk)
 
 
+@dp.message(Command("pulse"))
+async def cmd_pulse(m: Message, command: CommandObject) -> None:
+    """💓 Пульс вертикали: /pulse [business|it|medical|all] [часов] — обсуждают все, вотчлист, темы."""
+    from homyak.core.pulse import pulse
+
+    args = (command.args or "").split()
+    hours = 24
+    if args and args[-1].isdigit():
+        hours = int(args.pop())
+    vertical = args[0].lower() if args else "business"
+    if vertical not in ("business", "it", "medical", "all"):
+        await m.answer("Пульс, напр.: <code>/pulse</code> · <code>/pulse it 12</code> · <code>/pulse all 48</code>")
+        return
+    try:
+        d = await pulse(hours, None if vertical == "all" else vertical, limit=8)
+    except Exception as e:
+        log.warning("pulse_failed", error=str(e)[:150])
+        await m.answer("Пульс недоступен (БД). Попробуй позже.")
+        return
+    for chunk in _chunks(_pulse_text(d), 4000):
+        await m.answer(chunk, disable_web_page_preview=True)
+
+
+def _pulse_text(d: dict) -> str:
+    ve = _VBTN.get(d.get("vertical") or "all", "🌐")
+    lines = [f"💓 <b>Пульс {ve} · {d.get('hours')} ч</b>"]
+    stories = d.get("stories") or []
+    if stories:
+        lines.append("\n<b>Обсуждают все</b> <i>(лент · записей)</i>")
+        for s in stories:
+            title = _esc(s.get("title") or "—")
+            head = f'<a href="{_esc(s["url"])}">{title}</a>' if s.get("url") else title
+            mark = "🔥" if s.get("wide") else "•"
+            lines.append(f"{mark} <b>{s['feeds']}</b>·{s['items']} {head}")
+    else:
+        lines.append("\nЗа это окно историй нет.")
+    watch = d.get("watch") or []
+    if watch:
+        lines.append("\n<b>Вотчлист</b> <i>(в окне / обычно)</i>")
+        lines += [f"{w['direction']} {_esc(w['name'])}: {w['count']} / {w['base']}" for w in watch[:8]]
+    trends = d.get("trends") or []
+    if trends:
+        lines.append("\n<b>Темы за сутки:</b> " + " · ".join(
+            f"{t['direction']}#{_esc(t['tag'])} {t['count']}" for t in trends
+        ))
+    return "\n".join(lines)
+
+
 @dp.message(Command("timeline"))
 async def cmd_timeline(m: Message, command: CommandObject) -> None:
     """📆 История темы: /timeline <тема> [дней] → спарклайн по окнам + пики с главными записями."""

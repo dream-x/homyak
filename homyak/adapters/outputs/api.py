@@ -90,6 +90,19 @@ async def timeline_api(q: str = "", days: int = 90, vertical: str = "all") -> di
     return data
 
 
+@app.get("/pulse", response_class=HTMLResponse)
+async def pulse_page() -> str:
+    """Пульс вертикали: что обсуждают все, вотчлист против базы, темы дня."""
+    return dashboard.page(dashboard.PULSE_PAGE, "/pulse")
+
+
+@app.get("/pulse/api")
+async def pulse_api(hours: int = 24, vertical: str = "business") -> dict:
+    from homyak.core.pulse import pulse
+
+    return await pulse(hours, _vertical(vertical))
+
+
 def _vertical(v: str) -> str | None:
     return v if v in ("business", "it", "medical") else None
 
