@@ -40,3 +40,23 @@ def test_short_card_untouched():
     card = _fmt(_Item(summary="Коротко и по делу."))
     assert "Коротко и по делу." in card
     assert "…" not in card
+
+
+def test_card_links_wiki_pages(monkeypatch):
+    """Совпавшие страницы вики — строкой «📚 в базе знаний» со ссылками; пусто → строки нет."""
+    import homyak.adapters.outputs.tg_bot as bot
+
+    pages = [
+        {"kind": "entities", "slug": "ollama", "title": "ollama", "url": "http://h/wiki?kind=entities&slug=ollama"},
+        {"kind": "concepts", "slug": "self-hosting", "title": "self hosting", "url": "http://h/wiki?kind=concepts&slug=self-hosting"},
+    ]
+    monkeypatch.setattr(bot, "related_pages", lambda title, tags: pages)
+    card = _fmt(_Item(summary="x"))
+    assert '📚 в базе знаний: <a href="http://h/wiki?kind=entities&amp;slug=ollama">ollama</a>, ' in card
+    assert "self hosting</a>" in card
+    # длинная карточка режет саммари, а вика остаётся в подвале
+    long_card = _fmt(_Item(summary="б" * 9000))
+    assert len(long_card) <= _TG_LIMIT and "📚 в базе знаний" in long_card
+
+    monkeypatch.setattr(bot, "related_pages", lambda title, tags: [])
+    assert "📚" not in _fmt(_Item(summary="x"))

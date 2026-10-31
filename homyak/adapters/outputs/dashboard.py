@@ -18,6 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 from homyak.core.config import settings
 from homyak.core.events import SUBJECT_INGESTED, SUBJECT_PROCESSED
 from homyak.core.models import NewsItem
+from homyak.core.wiki_link import related_pages
 from homyak.storage.db import SessionFactory
 
 log = structlog.get_logger(__name__)
@@ -406,6 +407,7 @@ async def item_detail(item_id: int) -> dict:
         "bucket": _bucket(it.source_type, it.feed_name),
         "vertical": it.vertical,
         "tags": list(it.tags or []),
+        "wiki": related_pages(it.title, list(it.tags or [])),
         "watch": list(it.watch_topics or []),
         "summary": it.summary,
         "score": it.personal_score,
@@ -494,6 +496,7 @@ async def feed_snapshot(kind: str = "all", limit: int = 50, sort: str = "time", 
                 "vertical": r.vertical,
                 "score": r.personal_score,
                 "tags": list(r.tags or [])[:4],
+                "wiki": related_pages(r.title, list(r.tags or [])),
                 "watch": list(r.watch_topics or []),
                 "published": r.published,
                 "age_s": r.age_s,
@@ -953,6 +956,7 @@ async function openItem(id,fromQueue){try{
   h+=`<h3>${esc(it.title||'(без заголовка)')}</h3>`;
   h+=`<div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
+  if(it.wiki&&it.wiki.length)h+=`<div class="mmeta"><span>📚 в базе знаний: ${it.wiki.map(w=>`<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a>`).join(', ')}</span></div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
   if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
   h+=`<div style="margin:12px 0 4px"><span class="vbtn" onclick="openRazbor(${it.id})">📝 Разбор</span></div><div id="razbor-${it.id}"></div>`;
@@ -1043,7 +1047,7 @@ async function loadFeed(){try{
     return `<div class="row" style="--p:${pct||0}%">`
       +`<span class="rel" data-lvl="${lvl(pct||0)}" title="релевантность ${pct!=null?pct+'%':'—'}"></span>`
       +`<span class="src" title="${esc(nm)}">${be} ${esc(nm)}</span>`
-      +`<span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}">${esc(it.title||'—')}</span>`
+      +`<span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}${(it.wiki&&it.wiki.length)?' · 📚 в базе знаний: '+esc(it.wiki.map(w=>w.title).join(', ')):''}">${(it.wiki&&it.wiki.length)?'📚 ':''}${esc(it.title||'—')}</span>`
       +`<span class="tm" title="${fmtFull(whenOf(it))}">${fmtWhen(whenOf(it))}<span style="opacity:.5"> ${fmtAge(it.age_s)}</span></span>`
       +`<span class="sc">${pct!=null?pct+'%':'—'}</span>`
       +`<span class="act"><button class="b up ${on('up')}" title="нравится" onclick="vote(${it.id},'up',this)">👍</button>`
@@ -1062,6 +1066,7 @@ async function openItem(id){try{
   const meta=[src,when,it.vertical?VLABEL[it.vertical]:'',(it.watch&&it.watch.length)?'👁 '+it.watch.join(', '):'',it.score!=null?'🎯 '+Math.round(it.score*100)+'%':''].filter(Boolean);
   let h=`<h3>${esc(it.title||'(без заголовка)')}</h3><div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
+  if(it.wiki&&it.wiki.length)h+=`<div class="mmeta"><span>📚 в базе знаний: ${it.wiki.map(w=>`<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a>`).join(', ')}</span></div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
   if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
   h+=`<div style="margin:12px 0 4px"><span class="vbtn" onclick="openRazbor(${it.id})">📝 Разбор</span></div><div id="razbor-${it.id}"></div>`;
@@ -1256,7 +1261,10 @@ async function openPage(k,slug){
   }catch(e){$('main').innerHTML='<div class="muted">не удалось открыть</div>';}
 }
 $('q').addEventListener('input',renderList);
-loadStats();renderTabs();loadList();
+(()=>{const p=new URLSearchParams(location.search);const k0=p.get('kind'),s0=p.get('slug');
+  if(k0&&KINDS.some(([k])=>k===k0))kind=k0;
+  loadStats();renderTabs();loadList();
+  if(s0&&k0)openPage(kind,s0);})();
 </script>
 """
 

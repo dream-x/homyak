@@ -43,6 +43,7 @@ from homyak.core.scoring import freshness, weights_from_interests
 from homyak.core.textutils import fmt_age, fmt_when, hashtags, strip_html
 from homyak.core.urls import normalize_url
 from homyak.core.verticals import LABELS, VERTICALS
+from homyak.core.wiki_link import related_pages
 from homyak.storage.db import SessionFactory
 from homyak.storage.postgres import NewsRepo
 
@@ -200,6 +201,13 @@ def _fmt(item) -> str:
         src = _esc(item.source_type + (f"/{item.author}" if item.author else ""))
     tags = hashtags(item.tags)  # кликабельные #хэштеги — по ним ищется весь чат
     foot = src + (f"\n{tags}" if tags else "")
+    # «почему это тебе»: страницы твоей же вики, совпавшие с тегами/заголовком. Ранкер этого
+    # не видит — только объяснение на карточке; ссылка ведёт в /wiki на дашборде.
+    wiki = related_pages(item.title, item.tags)
+    if wiki:
+        foot += "\n📚 в базе знаний: " + ", ".join(
+            f'<a href="{_esc(w["url"])}">{_esc(w["title"])}</a>' for w in wiki
+        )
     card = f"{head}\n\n{body}\n\n{foot}"
     if len(card) > _TG_SAFE:
         # Обрезаем САММАРИ, а не хвост: иначе потеряем ссылку и теги. Без этого карточка
