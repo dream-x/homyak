@@ -71,6 +71,25 @@ async def trends_page() -> str:
     return dashboard.page(dashboard.TRENDS_PAGE, "/trends")
 
 
+@app.get("/timeline", response_class=HTMLResponse)
+async def timeline_page() -> str:
+    """Таймлайн темы: истории по окнам, пики, лучшая запись окна."""
+    return dashboard.page(dashboard.TIMELINE_PAGE, "/timeline")
+
+
+@app.get("/timeline/api")
+async def timeline_api(q: str = "", days: int = 90, vertical: str = "all") -> dict:
+    from homyak.core.interests import load_interests
+    from homyak.core.timeline import timeline
+
+    watch = [t.name for t in load_interests().watch]
+    if not q.strip():
+        return {"query": "", "modes": [], "buckets": [], "total": 0, "watch_topics": watch}
+    data = await timeline(q, days, _vertical(vertical))
+    data["watch_topics"] = watch
+    return data
+
+
 def _vertical(v: str) -> str | None:
     return v if v in ("business", "it", "medical") else None
 

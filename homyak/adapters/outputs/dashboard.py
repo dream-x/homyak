@@ -97,6 +97,7 @@ NAV_ITEMS = [
     ("/lenta", "🗂 Лента"),
     ("/search", "🔎 Поиск"),
     ("/trends", "📈 Тренды"),
+    ("/timeline", "📆 Таймлайн"),
     ("/wiki", "📚 База знаний"),
 ]
 NAV_MARK = "<!--NAV-->"  # плейсхолдер в шапке каждой страницы
@@ -1338,5 +1339,94 @@ async function openTag(tag){curTag=tag;renderTrends();$('picked').innerHTML=`П�
   }catch(e){$('items').innerHTML='<div class="muted">ошибка</div>';}}
 function renderTrends(){[...$('trends').children].forEach(c=>{if(c.dataset.t)c.classList.toggle('on',c.dataset.t===curTag);});}
 renderTabs();renderVtabs();loadTrends();
+</script>
+"""
+
+
+TIMELINE_PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>📆 Таймлайн — Homyak</title>
+<style>
+/*BASE*/
+.wrap{max-width:1160px;margin:0 auto;padding:14px 20px 40px}
+.qrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.qrow input{flex:1;min-width:220px;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:14px}
+.qrow input:focus{outline:none;border-color:var(--accent-dim)}
+.qrow select{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:12px var(--mono)}
+.qrow button{background:var(--accent);color:#1a1408;border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 16px}
+.chip{font:12px/1 var(--mono);color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 10px;cursor:pointer}
+.chip:hover{border-color:var(--accent-dim);color:var(--txt)}
+.chip.on{color:var(--accent);border-color:var(--accent)}
+.hd{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin:6px 0 8px;font:12px/1.4 var(--mono);color:var(--dim)}
+.hd b{color:var(--txt);font-size:15px}
+.hd .m{color:var(--faint)}
+.chart{position:relative;display:flex;align-items:flex-end;gap:2px;height:150px;padding:0 0 22px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.bar{flex:1;min-width:3px;background:var(--accent-dim);border-radius:4px 4px 0 0;cursor:pointer;position:relative;min-height:0}
+.bar.peak{background:var(--accent)}
+.bar.z{background:transparent;border-top:2px solid var(--line);border-radius:0}
+.bar:hover{filter:brightness(1.15)}
+.bar .lbl{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font:11px var(--mono);color:var(--txt);white-space:nowrap}
+.bar .x{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font:10px var(--mono);color:var(--faint);white-space:nowrap}
+.tip{position:fixed;pointer-events:none;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:12px/1.5 var(--mono);color:var(--txt);max-width:360px;display:none;z-index:9}
+.tip .t{color:var(--dim);white-space:normal}
+.rows{display:grid;grid-template-columns:150px 60px 1fr;gap:10px;font-size:13px}
+.rows .r{display:contents}
+.rows .r>span{padding:7px 0;border-bottom:1px solid var(--line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rows .r.peak>span:first-child{color:var(--accent)}
+.rows .n{font:12px var(--mono);color:var(--dim);text-align:right}
+.rows .d{font:12px var(--mono);color:var(--faint)}
+.rows a{color:var(--txt);text-decoration:none}
+.rows a:hover{color:var(--accent)}
+.rows .sc{color:var(--faint);font:11px var(--mono);margin-left:6px}
+.muted{color:var(--faint);font-size:13px;padding:10px 0}
+</style>
+<div class="top"><h1>📆 Таймлайн</h1><span class="st">история темы: сколько историй в каждом окне, где пики</span><!--NAV--></div>
+<div class="wrap">
+  <form class="qrow" id="f">
+    <input id="q" placeholder="тема: имя из вотчлиста, тег или просто слова (Iran, rust, «ставка ЦБ»)" autocomplete="off">
+    <select id="days"><option value="30">30 дней</option><option value="90" selected>90 дней</option><option value="180">полгода</option><option value="365">год</option></select>
+    <select id="vert"><option value="all">все вертикали</option><option value="business">💼 бизнес</option><option value="it">💻 IT</option><option value="medical">🩺 медицина</option></select>
+    <button type="submit">Показать</button>
+  </form>
+  <div class="chips" id="chips"></div>
+  <div class="hd" id="hd"></div>
+  <div class="chart" id="chart"></div>
+  <div class="rows" id="rows"></div>
+  <div class="tip" id="tip"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
+const UNIT={day:'по дням',week:'по неделям',month:'по месяцам'};
+const MODE={watch:'вотчлист',tag:'тег',text:'текст'};
+let watchTopics=[],cur='';
+function fmtStart(iso,unit){const d=new Date(iso);if(unit==='month')return d.toLocaleString('ru-RU',{month:'short',year:'2-digit'});return d.toLocaleString('ru-RU',{day:'numeric',month:'short'});}
+function renderChips(){$('chips').innerHTML=watchTopics.map(n=>`<span class="chip ${n===cur?'on':''}">${esc(n)}</span>`).join('');[...$('chips').children].forEach((c,i)=>c.onclick=()=>{$('q').value=watchTopics[i];load();});}
+function srcLabel(it){const f=it.feed||'';if(f.startsWith('tw_'))return '🐦 @'+f.slice(3);if(f.startsWith('gh_'))return '🐙 '+f.slice(3);return f||it.vertical||'';}
+async function load(){const q=$('q').value.trim();cur=q;renderChips();
+  const url=new URL(location);url.searchParams.set('q',q);url.searchParams.set('days',$('days').value);url.searchParams.set('v',$('vert').value);history.replaceState(null,'',url);
+  if(!q){$('hd').innerHTML='';$('chart').innerHTML='';$('rows').innerHTML='<div class="muted">введи тему или выбери из вотчлиста</div>';return;}
+  $('rows').innerHTML='<div class="muted">…</div>';
+  try{const d=await(await fetch(`/timeline/api?q=${encodeURIComponent(q)}&days=${$('days').value}&vertical=${$('vert').value}`)).json();
+    watchTopics=d.watch_topics||watchTopics;cur=d.watch||q;renderChips();
+    const b=d.buckets||[];const max=Math.max(1,...b.map(x=>x.count));const peaks=b.filter(x=>x.peak).length;
+    $('hd').innerHTML=`<b>${esc(d.query)}</b><span>${d.total} историй · ${d.days} дней · ${UNIT[d.unit]||''}</span><span class="m">как искали: ${(d.modes||[]).map(m=>MODE[m]||m).join(' + ')||'—'}</span>${peaks?`<span class="m">пиков: ${peaks}</span>`:''}`;
+    if(!b.length||!d.total){$('chart').innerHTML='';$('rows').innerHTML='<div class="muted">за этот период историй нет</div>';return;}
+    const step=Math.max(1,Math.round(b.length/8));
+    $('chart').innerHTML=b.map((x,i)=>`<div class="bar ${x.peak?'peak':''} ${x.count?'':'z'}" data-i="${i}" style="height:${x.count?Math.max(3,Math.round(x.count/max*100)):0}%">${x.peak?`<span class="lbl">${x.count}</span>`:''}${i%step===0?`<span class="x">${esc(fmtStart(x.start,d.unit))}</span>`:''}</div>`).join('');
+    const tip=$('tip');[...$('chart').children].forEach(el=>{const x=b[+el.dataset.i];
+      el.onmousemove=e=>{tip.style.display='block';tip.style.left=Math.min(innerWidth-380,e.clientX+12)+'px';tip.style.top=(e.clientY+12)+'px';
+        tip.innerHTML=`<b>${esc(fmtStart(x.start,d.unit))}</b> · ${x.count} ${x.count===1?'история':'историй'}${x.peak?' · пик':''}${x.top?`<div class="t">${esc(x.top.title||'')}</div>`:''}`;};
+      el.onmouseleave=()=>{tip.style.display='none';};
+      el.onclick=()=>{const r=document.querySelector(`.rows .r[data-i="${el.dataset.i}"]`);if(r)r.scrollIntoView({block:'center'});};});
+    $('rows').innerHTML=b.filter(x=>x.count).reverse().map(x=>{const t=x.top||{};const u=t.url?safeUrl(t.url):null;const i=b.indexOf(x);
+      return `<div class="r ${x.peak?'peak':''}" data-i="${i}"><span class="d">${esc(fmtStart(x.start,d.unit))}${x.peak?' · пик':''}</span><span class="n">${x.count}</span><span>${u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t.title||'—')}</a>`:esc(t.title||'—')}<span class="sc">${esc(srcLabel(t))}${t.score!=null?' · 🎯 '+Math.round(t.score*100)+'%':''}</span></span></div>`;}).join('');
+  }catch(e){$('rows').innerHTML='<div class="muted">ошибка</div>';}}
+$('f').onsubmit=e=>{e.preventDefault();load();};
+(async()=>{const p=new URLSearchParams(location.search);if(p.get('days'))$('days').value=p.get('days');if(p.get('v'))$('vert').value=p.get('v');$('q').value=p.get('q')||'';
+  try{const d=await(await fetch('/timeline/api?q=')).json();watchTopics=d.watch_topics||[];}catch(e){}
+  load();})();
 </script>
 """

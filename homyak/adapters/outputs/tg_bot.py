@@ -729,6 +729,64 @@ async def cmd_ask(m: Message, command: CommandObject) -> None:
         await m.answer(chunk)
 
 
+@dp.message(Command("timeline"))
+async def cmd_timeline(m: Message, command: CommandObject) -> None:
+    """📆 История темы: /timeline <тема> [дней] → спарклайн по окнам + пики с главными записями."""
+    from homyak.core.interests import load_interests
+    from homyak.core.timeline import timeline
+
+    args = (command.args or "").split()
+    days = 90
+    if args and args[-1].isdigit():
+        days = int(args.pop())
+    q = " ".join(args).strip()
+    if not q:
+        names = " · ".join(t.name for t in load_interests().watch)
+        await m.answer(
+            "История темы, напр.:\n<code>/timeline Iran</code> · <code>/timeline rust 30</code>\n"
+            f"Вотчлист: {_esc(names)}"
+        )
+        return
+    try:
+        d = await timeline(q, days)
+    except Exception as e:
+        log.warning("timeline_failed", error=str(e)[:150])
+        await m.answer("Таймлайн недоступен (БД). Попробуй позже.")
+        return
+    await m.answer(_timeline_text(d), disable_web_page_preview=True)
+
+
+_UNIT_LABEL = {"day": "по дням", "week": "по неделям", "month": "по месяцам"}
+
+
+def _timeline_text(d: dict) -> str:
+    """Шапка + спарклайн + пики (главная запись окна) + последнее окно с историями."""
+    head = f"📆 <b>{_esc(d.get('query'))}</b> · {d.get('total', 0)} историй · {d.get('days')} дн."
+    buckets = d.get("buckets") or []
+    if not buckets or not d.get("total"):
+        return head + "\n\nЗа этот период историй нет."
+    unit = d.get("unit", "week")
+    lines = [head, f"<code>{d.get('spark', '')}</code> <i>{_UNIT_LABEL.get(unit, '')}</i>"]
+
+    def when(b: dict) -> str:
+        dt = datetime.fromisoformat(b["start"])
+        return dt.strftime("%b %y") if unit == "month" else dt.strftime("%d.%m")
+
+    def story(b: dict) -> str:
+        t = b.get("top") or {}
+        title = _esc(t.get("title") or "—")
+        return f'<a href="{_esc(t["url"])}">{title}</a>' if t.get("url") else title
+
+    peaks = [b for b in buckets if b.get("peak")]
+    if peaks:
+        lines.append("\n<b>Пики:</b>")
+        lines += [f"• {when(b)} — {b['count']} · {story(b)}" for b in peaks[-6:]]
+    last = next((b for b in reversed(buckets) if b.get("count")), None)
+    if last and last not in peaks:
+        lines.append(f"\n<b>Последнее</b> ({when(last)}): {story(last)}")
+    return "\n".join(lines)
+
+
 @dp.message(Command("find"))
 async def cmd_find(m: Message, command: CommandObject) -> None:
     """🔎 Гибридный поиск по базе знаний: /find <запрос> → топ-результаты ссылками."""

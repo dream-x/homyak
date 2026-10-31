@@ -200,7 +200,7 @@ rebuild. Ollama stays on the host (Metal).
 | `learner` | learning + profile refinement |
 | `sweeper` | re-publish stuck items · drain the re-embed queue |
 | `tgbot` | Telegram bot |
-| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/trends`, `/dashboard`) |
+| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/trends`, `/timeline`, `/dashboard`) |
 | `wiki` | LLM knowledge base from ⭐/👍 (below) |
 | `starchan` | ⭐ channel: starred items + daily digest (below) |
 
@@ -252,6 +252,21 @@ vertical. Pure functions (`growth`, `share_growth`, `strength`, `direction`, `me
 Surfaces: `/trends` page (`TRENDS_PAGE`), `GET /trends/api/list?period=&vertical=` → `{trends, fading}`,
 `GET /trends/api/items?tag=` (top stories carrying the tag in the window, one per cluster), bot
 `/trends` with period/vertical buttons; the weekly digest appends the week's trends.
+
+## Timeline (`/timeline`, bot `/timeline <тема> [дней]`, `core/timeline.py`)
+
+History of one topic: how many stories per window, where the peaks are, what the top story of each
+window was. The topic is resolved three ways at once, OR-ed in one SQL: a watch-list name or alias
+(`config/interests.yaml`) → exact `watch_topics @> …`; a tag → SQL canon of both the query and the
+resolved watch name (so «иран» also finds the `iran` tag); free text → FTS over `search_tsv`, AND of
+the words with prefixes for words of 4+ letters (`иран:*` catches «иранский»). A story is a cluster
+(`coalesce(cluster_id, -id)`), counted once in the window of its best member. Windows are generated
+with zeros (`generate_series`), unit by range: ≤ 35 days by day, ≤ 200 by week, else by month.
+A peak is a window with at least three times the median of non-empty windows (and ≥ 3 stories).
+Pure helpers (`pick_unit`, `tsquery_for`, `resolve_watch`, `peaks`, `sparkline`) are unit-tested;
+the SQL has a DB test. Surfaces: `/timeline` page (bars per window, hover tooltip, peak labels,
+list of windows with the top story), `GET /timeline/api?q=&days=&vertical=`, bot `/timeline`
+(sparkline + peaks with links).
 
 ## Curated export (`GET /saved`)
 
