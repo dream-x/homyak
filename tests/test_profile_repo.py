@@ -1,3 +1,5 @@
+import pytest
+
 from homyak.storage.postgres import NewsRepo
 
 
@@ -115,3 +117,90 @@ async def test_mute_button_does_not_touch_declaration(session_factory):
     await repo.unmute_topic("medical", "medical")  # повторное 🔇 = отмена
     assert await repo.get_muted_tags("medical") == set()
     assert (await repo.get_active_profile("medical"))[0] == v1
+
+
+# --- канонические группы: исторические ключи (golang) и новые (go) — одна тема ---------------
+
+
+async def _historical_state(session_factory):
+    """Как в проде до канона: активный профиль golang/love и ВЫУЧЕННАЯ строка golang."""
+    from homyak.core.models import Profile, TagAffinity
+
+    async with session_factory() as s:
+        s.add(
+            Profile(
+                vertical="it", version=1, description="old",
+                topics=[{"name": "golang", "polarity": "love"}], active=True,
+            )
+        )
+        s.add(TagAffinity(vertical="it", tag="golang", weight=0.2, n_pos=9, n_neg=0))
+        await s.commit()
+
+
+async def test_reapply_with_a_historical_alias_does_not_seed_a_second_row(session_factory):
+    """Переприменение (та же полярность) не сеет `go` рядом с выученным `golang`: чтение
+    усредняет группу, и посев сдвигал бы выученный вес."""
+    repo = NewsRepo(session_factory)
+    await _historical_state(session_factory)
+
+    await repo.set_profile("it", "desc правленый", [{"name": "golang", "polarity": "love"}])
+
+    assert (await repo.get_tag_affinities("it", ["go"]))["go"] == pytest.approx(0.2)
+    assert await _rows(session_factory) == {("golang", 0.2, 9)}
+
+
+async def test_changed_polarity_overrides_the_whole_canonical_group(session_factory):
+    """Смена полярности — приказ всей группе: исторический golang тоже получает новый вес,
+    свидетельства (n_pos) остаются."""
+    repo = NewsRepo(session_factory)
+    await _historical_state(session_factory)
+
+    await repo.set_profile("it", "desc", [{"name": "go", "polarity": "dislike"}])
+
+    assert (await repo.get_tag_affinities("it", ["go"]))["go"] == pytest.approx(-0.5)
+    assert await _rows(session_factory) == {("golang", -0.5, 9)}
+
+
+async def test_orphan_sweep_recognises_historical_spellings(session_factory):
+    """Посев `self-hosted` (нетронутый) уходит из декларации под именем selfhosted — выметается."""
+    from homyak.core.models import TagAffinity
+
+    repo = NewsRepo(session_factory)
+    async with session_factory() as s:
+        s.add(TagAffinity(vertical="it", tag="self-hosted", weight=0.8, n_pos=0, n_neg=0))
+        await s.commit()
+    await repo.set_profile("it", "desc", [{"name": "rust", "polarity": "like"}])
+    assert await _rows(session_factory) == {("rust", 0.5, 0)}
+
+
+async def test_unmute_clears_every_spelling_of_the_topic(session_factory):
+    repo = NewsRepo(session_factory)
+    from homyak.core.models import MutedTag
+
+    async with session_factory() as s:  # исторический ключ, как писала старая кнопка
+        s.add(MutedTag(vertical="it", tag="golang"))
+        await s.commit()
+    assert await repo.get_muted_tags("it") == {"go"}
+    assert await repo.unmute_topic("it", "go") == 1
+    assert await repo.get_muted_tags("it") == set()
+
+    await repo.mute_topic("it", "go")  # новая кнопка пишет канон
+    assert await repo.unmute_topic("it", "golang") == 1
+    assert await repo.get_muted_tags("it") == set()
+
+    async with session_factory() as s:  # оба ключа сразу
+        s.add_all([MutedTag(vertical="it", tag="golang"), MutedTag(vertical="it", tag="go")])
+        await s.commit()
+    assert await repo.unmute_topic("it", "Go-Lang") == 2
+    assert await repo.get_muted_tags("it") == set()
+    assert await repo.unmute_topic("it", "go") == 0
+
+
+async def _rows(session_factory) -> set[tuple[str, float, int]]:
+    from sqlalchemy import select
+
+    from homyak.core.models import TagAffinity
+
+    async with session_factory() as s:
+        rows = (await s.execute(select(TagAffinity.tag, TagAffinity.weight, TagAffinity.n_pos))).all()
+    return {(r[0], round(float(r[1]), 3), int(r[2])) for r in rows}

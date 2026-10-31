@@ -306,6 +306,11 @@ class NewsRepo:
             #     стирал обучение начисто.
             #   полярность изменилась (или тема новая) → do_update: ты передумал, это приказ,
             #     и он должен подействовать — иначе правка файла молча ничего не делала бы.
+            # Политика действует на КАНОНИЧЕСКУЮ ГРУППУ строк (golang + go — одна тема): чтение
+            # усредняет группу, поэтому посев одного канонического ключа рядом с выученным
+            # историческим сдвигал бы вес при обычном переприменении, а смена полярности
+            # не перекрывала бы старую строку (ревью #011).
+            groups = await self._affinity_groups(s, vertical)
             names = [normalize_tag(t["name"]) or t["name"] for t in topics if t.get("name")]
             for t in topics:
                 name = t.get("name")
@@ -314,28 +319,49 @@ class NewsRepo:
                 name = normalize_tag(name) or name
                 pol = t.get("polarity", "like")
                 weight = _POLARITY_WEIGHT.get(pol, 0.0)
-                stmt = pg_insert(TagAffinity).values(vertical=vertical, tag=name, weight=weight)
-                if prev_pol.get(name) == pol:
-                    stmt = stmt.on_conflict_do_nothing(index_elements=["vertical", "tag"])
-                else:
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=["vertical", "tag"], set_={"weight": weight}
+                group = groups.get(name, [])
+                if not group:
+                    s.add(TagAffinity(vertical=vertical, tag=name, weight=weight))
+                elif prev_pol.get(name) != pol:
+                    # приказ — всей группе; счётчики свидетельств остаются
+                    await s.execute(
+                        update(TagAffinity)
+                        .where(TagAffinity.vertical == vertical, TagAffinity.tag.in_(group))
+                        .values(weight=weight)
                     )
-                await s.execute(stmt)
+            await s.flush()
 
             # Подчищаем сирот: тема ушла из декларации, а её посеянный вес остался и продолжал
             # влиять. Из-за этого `medical: -1` пережил снятие мьюта и штрафовал всю вертикаль.
             # Трогаем ТОЛЬКО нетронутые обучением строки (n_pos=n_neg=0) — выученное не наше.
-            await s.execute(
-                delete(TagAffinity).where(
-                    TagAffinity.vertical == vertical,
-                    TagAffinity.tag.notin_(names) if names else sa.true(),
-                    TagAffinity.n_pos == 0,
-                    TagAffinity.n_neg == 0,
+            orphans = [tag for canon, tags in groups.items() if canon not in names for tag in tags]
+            if orphans:
+                await s.execute(
+                    delete(TagAffinity).where(
+                        TagAffinity.vertical == vertical,
+                        TagAffinity.tag.in_(orphans),
+                        TagAffinity.n_pos == 0,
+                        TagAffinity.n_neg == 0,
+                    )
                 )
-            )
             await s.commit()
         return version
+
+    async def _affinity_groups(self, s: AsyncSession, vertical: str) -> dict[str, list[str]]:
+        """Строки tag_affinity вертикали по каноническому ключу: канон → [исторические теги]."""
+        rows = (
+            await s.execute(
+                sa.text(
+                    f"with {ALIAS_CTE} select a.tag, c.canon from tag_affinity a"
+                    f" {canon_lateral('a.tag')} where a.vertical = :v"
+                ),
+                {"v": vertical, **alias_params()},
+            )
+        ).all()
+        groups: dict[str, list[str]] = {}
+        for tag, canon in rows:
+            groups.setdefault(canon or tag, []).append(tag)
+        return groups
 
     async def get_tag_affinities(self, vertical: str, tags: list[str]) -> dict[str, float]:
         """Веса тем по каноническим тегам (ключ результата — канон).
@@ -506,17 +532,38 @@ class NewsRepo:
         — самый широкий. Итог: `medical: mute` в медицинской вертикали, 273 убитых айтема.
         """
         async with self._sf() as s:
-            stmt = pg_insert(MutedTag).values(vertical=vertical, tag=topic)
+            stmt = pg_insert(MutedTag).values(vertical=vertical, tag=normalize_tag(topic) or topic)
             await s.execute(stmt.on_conflict_do_nothing(index_elements=["vertical", "tag"]))
             await s.commit()
 
-    async def unmute_topic(self, vertical: str, topic: str) -> None:
-        """Снять мьют: повторное нажатие 🔇 — это отмена (record_feedback тоже toggle)."""
+    async def unmute_topic(self, vertical: str, topic: str) -> int:
+        """Снять мьют: повторное нажатие 🔇 — это отмена (record_feedback тоже toggle).
+
+        Снимает ВСЕ написания темы (golang и go — один мьют): ключи исторические, а тема одна.
+        Возвращает число снятых строк (0 — такого мьюта не было).
+        """
+        canon = normalize_tag(topic) or topic
         async with self._sf() as s:
+            tags = [
+                r[0]
+                for r in (
+                    await s.execute(
+                        sa.text(
+                            f"with {ALIAS_CTE} select m.tag from muted_tags m"
+                            f" {canon_lateral('m.tag')}"
+                            " where m.vertical = :v and coalesce(c.canon, m.tag) = :c"
+                        ),
+                        {"v": vertical, "c": canon, **alias_params()},
+                    )
+                ).all()
+            ]
+            if not tags:
+                return 0
             await s.execute(
-                delete(MutedTag).where(MutedTag.vertical == vertical, MutedTag.tag == topic)
+                delete(MutedTag).where(MutedTag.vertical == vertical, MutedTag.tag.in_(tags))
             )
             await s.commit()
+        return len(tags)
 
     async def get_muted_tags(self, vertical: str) -> set[str]:
         """Мьюты в каноническом написании: старый mute golang глушит новые записи с go."""

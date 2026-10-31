@@ -224,8 +224,12 @@ async def cmd_unmute(repo: NewsRepo) -> None:
         console.print(f"[green]снято мьютов: {len(muted)}[/green]")
     elif len(args) >= 2:
         vertical, tag = args[0], args[1]
-        await repo.unmute_topic(vertical, tag)
-        console.print(f"[green]🔇 снят: {vertical}/{tag}[/green]")
+        n = await repo.unmute_topic(vertical, tag)
+        if n:
+            console.print(f"[green]🔇 снят: {vertical}/{tag}[/green]")
+        else:
+            console.print(f"[yellow]такого мьюта нет: {vertical}/{tag}[/yellow]")
+            raise SystemExit(1)
     else:
         console.print("[red]нужно: unmute <вертикаль> <тег> | unmute all[/red]")
         raise SystemExit(2)
