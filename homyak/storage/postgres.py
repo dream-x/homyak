@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homyak.core.config import settings
 from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
+from homyak.core.tags import ALIAS_CTE, alias_params, canon_lateral, canonical_tags, normalize_tag
 from homyak.core.models import (
     Cluster,
     Feedback,
@@ -278,8 +279,10 @@ class NewsRepo:
                 )
                 or []
             )
+            # имена тем — в каноне (как теггер пишет теги), иначе посеянный golang не находил
+            # бы записи с go
             prev_pol = {
-                t["name"]: t.get("polarity", "like")
+                normalize_tag(t["name"]) or t["name"]: t.get("polarity", "like")
                 for t in prev_topics
                 if isinstance(t, dict) and t.get("name")
             }
@@ -303,11 +306,12 @@ class NewsRepo:
             #     стирал обучение начисто.
             #   полярность изменилась (или тема новая) → do_update: ты передумал, это приказ,
             #     и он должен подействовать — иначе правка файла молча ничего не делала бы.
-            names = [t["name"] for t in topics if t.get("name")]
+            names = [normalize_tag(t["name"]) or t["name"] for t in topics if t.get("name")]
             for t in topics:
                 name = t.get("name")
                 if not name:
                     continue
+                name = normalize_tag(name) or name
                 pol = t.get("polarity", "like")
                 weight = _POLARITY_WEIGHT.get(pol, 0.0)
                 stmt = pg_insert(TagAffinity).values(vertical=vertical, tag=name, weight=weight)
@@ -334,14 +338,28 @@ class NewsRepo:
         return version
 
     async def get_tag_affinities(self, vertical: str, tags: list[str]) -> dict[str, float]:
-        if not tags:
+        """Веса тем по каноническим тегам (ключ результата — канон).
+
+        Ключи в таблице исторические (golang, self-hosted, «ai agents»): теггер теперь пишет
+        канон, а переписывать выученное не хотим. Поэтому сводим в запросе тем же SQL-каноном,
+        что и тренды. Несколько строк на один канон (golang + go) → среднее, взвешенное
+        свидетельствами (n_pos + n_neg + 1): лучше выученная строка весит больше, диапазон
+        [-1, 1] сохраняется, простое сложение весов ранжирование не ломает.
+        """
+        wanted = canonical_tags(list(tags))
+        if not wanted:
             return {}
         async with self._sf() as s:
             rows = (
                 await s.execute(
-                    select(TagAffinity.tag, TagAffinity.weight).where(
-                        TagAffinity.vertical == vertical, TagAffinity.tag.in_(list(tags))
-                    )
+                    sa.text(
+                        f"with {ALIAS_CTE},"
+                        " rows as (select c.canon, a.weight, a.n_pos + a.n_neg + 1 n"
+                        f"   from tag_affinity a {canon_lateral('a.tag')} where a.vertical = :v)"
+                        " select canon, sum(weight * n) / sum(n) w from rows"
+                        " where canon = any(cast(:tags as text[])) group by canon"
+                    ),
+                    {"v": vertical, "tags": wanted, **alias_params()},
                 )
             ).all()
         return {r[0]: float(r[1]) for r in rows}
@@ -501,11 +519,12 @@ class NewsRepo:
             await s.commit()
 
     async def get_muted_tags(self, vertical: str) -> set[str]:
+        """Мьюты в каноническом написании: старый mute golang глушит новые записи с go."""
         async with self._sf() as s:
             rows = (
                 await s.execute(select(MutedTag.tag).where(MutedTag.vertical == vertical))
             ).all()
-        return {r[0] for r in rows}
+        return {normalize_tag(r[0]) or r[0] for r in rows}
 
     async def list_muted_tags(self) -> list[tuple[str, str, datetime]]:
         """Все мьюты (панель «Интересы»): что кнопка нарешала поверх декларации."""

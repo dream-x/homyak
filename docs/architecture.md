@@ -231,10 +231,20 @@ vertical. Pure functions (`growth`, `share_growth`, `strength`, `direction`, `me
   the mean day of the previous week, week vs the previous four, month vs the previous two).
 - **Growth is growth of share**, `count/total` vs `prev/prev_total`: a collection outage (proxy down,
   LLM box hung) otherwise reads as every topic collapsing and its recovery as every topic spiking.
-- **Tags are folded to canonical form** (`core/tags.py`): the tagger writes `canonical_tags` (`llms`,
-  `large-language-models` → `llm`; `agentic-ai` → `ai-agents`; `m&a` → `mergers` …), readers fold the
-  history on the way in and search items by every historical spelling (`variants`). Broad tags
-  (`ai`, `business`, `health` …) are excluded so narrow topics surface.
+- **Tags are folded to canonical form in SQL, before `distinct`** (`core/tags.py`): the tagger writes
+  `canonical_tags` (`llms`, `large-language-models` → `llm`; `agentic-ai` → `ai-agents`; `m&a` →
+  `mergers` …); history is not rewritten, so every reader canonicalizes in the query with the SQL twin
+  of `normalize_tag` (`form_sql` + `ALIASES` bound through `ALIAS_CTE`, `canon_lateral`). Folding
+  after aggregation counted one story twice (`llm` + `llms`); now (story, canon) is one row, and the
+  drill-down (`trend_items`) matches with the same expression, so what is counted is what is shown.
+  A DB test pins SQL canon == Python canon. Broad tags (`ai`, `business`, `health` …) are excluded so
+  narrow topics surface.
+- **Learned layer stays compatible**: `tag_affinity` and `muted_tags` keep their historical keys
+  (`golang`, `self-hosted`, `ai agents`); `get_tag_affinities` folds them with the same SQL canon
+  (several rows per canon → mean weighted by evidence `n_pos + n_neg + 1`), `get_muted_tags` and the
+  profile's mute topics come back canonical, the personalizer compares canonical tags on both sides
+  (so `homyak-interests backfill` over old items still works), and `set_profile` seeds canonical
+  names.
 - **Strength** = `count^0.6 · clamp(1+g, 0.1, 4)^1.5 · (0.4 + 0.6·avg personal_score)`: momentum, not
   volume. **Fading** = topics that had ≥ `min_prev` stories in a typical base period and lost half
   their share or more, ordered by stories lost.

@@ -13,6 +13,7 @@ import structlog
 from homyak.core.interests import MUTE_SKIP_PREFIX, no_boost_topics
 from homyak.core.interests import weights as interest_weights
 from homyak.core.interfaces import AnalyzerContext
+from homyak.core.tags import canonical_tags, normalize_tag
 from homyak.core.scoring import (
     PersonalWeights,
     cosine,
@@ -56,11 +57,11 @@ class PersonalizerAnalyzer:
             # isinstance + t.get("name"): профиль может прийти от LLM (refine) и одна тема без
             # "name" роняла бы КАЖДЫЙ айтем вертикали → mark_failed x5 → вертикаль вставала.
             muted |= {
-                t["name"]
+                normalize_tag(t["name"]) or t["name"]
                 for t in profile[2]
                 if isinstance(t, dict) and t.get("name") and t.get("polarity") == "mute"
             }
-        muted |= await self._repo.get_muted_tags(vertical)
+        muted |= await self._repo.get_muted_tags(vertical)  # уже в каноне
         return muted
 
     async def analyze(self, ctx: AnalyzerContext) -> None:
@@ -70,7 +71,9 @@ class PersonalizerAnalyzer:
             ctx.personal_score = None
             item.personal_score = None
             return
-        tags = ctx.tags or list(item.tags or [])
+        # Сравниваем в каноне с обеих сторон: новые теги канонические, но backfill гонит старые
+        # записи со старыми написаниями, а мьюты/профиль могли быть заданы как golang/self-hosted.
+        tags = canonical_tags(ctx.tags or list(item.tags or []))
 
         muted = await self._muted_tags(vertical)
         hit = next((t for t in tags if t in muted), None)

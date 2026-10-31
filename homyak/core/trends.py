@@ -12,15 +12,16 @@
   текущее окно и база несопоставимы;
 - рост — по ДОЛЕ темы в окне, а не по сырому числу: провал сбора (прокси лёг, бокс завис) иначе
   выглядит как спад всех тем разом, а возвращение — как всплеск всего.
-Теги сводятся к каноническим (core.tags): llm/llms/large-language-models — одна тема.
+Теги сводятся к каноническим (core.tags) В SQL, до distinct по историям: llm/llms/
+large-language-models — одна тема, и одна история с двумя написаниями — одна история.
 """
 
 from __future__ import annotations
 
 from sqlalchemy import text
 
-from homyak.core.tags import normalize_tag, variants
-from homyak.storage.db import SessionFactory
+from homyak.core.tags import ALIAS_CTE, alias_params, canon_lateral, normalize_tag
+from homyak.storage import db
 
 # period -> (hours окна, base_hours базы, base_div, min_count).
 # База = средний ТИПИЧНЫЙ период до текущего (день vs средний день прошлой недели и т.п.) —
@@ -77,9 +78,12 @@ def direction(count: float, prev: float, g: float | None = None) -> str:
 
 
 def merge_canonical(rows: list[tuple[str, float, float, float | None]]) -> dict[str, dict]:
-    """Сырые строки (tag, count, prev, avg_score) → по каноническому тегу, широкие теги вон.
+    """Строки (tag, count, prev, avg_score) → по каноническому тегу, широкие теги вон.
 
-    Счёт складывается, релевантность — среднее, взвешенное текущим счётом.
+    SQL (_windows) уже отдаёт канон и считает истории по нему; здесь свод — страховка для
+    строк из других источников (счёт складывается, релевантность — среднее, взвешенное count).
+    Пересечения множеств историй тут не видно, поэтому полагаться на этот свод для
+    распознавания синонимов нельзя — только SQL.
     """
     merged: dict[str, dict] = {}
     for tag, c, pc, s in rows:
@@ -134,11 +138,17 @@ def select_fading(
     return out[:limit]
 
 
-async def _windows(period: str, vertical: str | None) -> tuple[dict[str, dict], float, float, int]:
-    """Сырые счётчики по тегам за окно и базу + итоги историй (для доли) + min_count периода."""
+async def _windows(
+    period: str, vertical: str | None, sf=None
+) -> tuple[dict[str, dict], float, float, int]:
+    """Счётчики историй по каноническим тегам за окно и базу + итоги (для доли) + min_count.
+
+    Канон — в SQL до distinct: (история, канон) — одна строка, сколько бы написаний ни стояло на
+    записях кластера. Релевантность темы — среднее по историям (max personal_score в истории).
+    """
     hours, base_hours, base_div, min_count = PERIODS.get(period, PERIODS["day"])
     vcond = " and vertical = :v" if vertical in _VERTICALS else ""
-    params: dict = {"h": hours, "total": hours + base_hours, "bdiv": base_div}
+    params: dict = {"h": hours, "total": hours + base_hours, "bdiv": base_div, **alias_params()}
     if vcond:
         params["v"] = vertical
     cur_items = (
@@ -152,15 +162,19 @@ async def _windows(period: str, vertical: str | None) -> tuple[dict[str, dict], 
         + " and coalesce(published_at,fetched_at) <= now() - make_interval(hours=>:h)"
         + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:total)"
     )
-    async with SessionFactory() as s:
+    canon = canon_lateral("t")
+    async with (sf or db.SessionFactory)() as s:
         rows = (
             await s.execute(
                 text(
-                    f"with cur_items as ({cur_items}), base_items as ({base_items}),"
-                    " cur as (select tag, count(distinct story) c, avg(personal_score) s"
-                    "   from cur_items, unnest(tags) tag group by tag),"
-                    " base as (select tag, count(distinct story)::float / :bdiv c"
-                    "   from base_items, unnest(tags) tag group by tag)"
+                    f"with {ALIAS_CTE}, cur_items as ({cur_items}), base_items as ({base_items}),"
+                    " cur_tags as (select story, c.canon tag, max(personal_score) s"
+                    f"   from cur_items, unnest(tags) t {canon}"
+                    "   where c.canon is not null group by story, c.canon),"
+                    " base_tags as (select distinct story, c.canon tag"
+                    f"   from base_items, unnest(tags) t {canon} where c.canon is not null),"
+                    " cur as (select tag, count(*) c, avg(s) s from cur_tags group by tag),"
+                    " base as (select tag, count(*)::float / :bdiv c from base_tags group by tag)"
                     " select coalesce(cur.tag, base.tag) tag, coalesce(cur.c, 0) c,"
                     "   coalesce(base.c, 0) pc, cur.s"
                     " from cur full outer join base on base.tag = cur.tag"
@@ -182,7 +196,11 @@ async def _windows(period: str, vertical: str | None) -> tuple[dict[str, dict], 
 
 
 async def trend_report(
-    period: str = "day", vertical: str | None = None, limit: int = 8, fading_limit: int = 5
+    period: str = "day",
+    vertical: str | None = None,
+    limit: int = 8,
+    fading_limit: int = 5,
+    sf=None,
 ) -> tuple[list[dict], list[dict]]:
     """(что разгоняется, что затихло) за один проход по БД — окна общие для обоих списков.
 
@@ -190,7 +208,7 @@ async def trend_report(
     одной вертикалью (business|it|medical); широкие теги (_BROAD_TAGS) вон. «Затихло» пустое,
     если трендов нет: при пустом окне любой спад — артефакт сбора, а не темы.
     """
-    merged, total, prev_total, min_count = await _windows(period, vertical)
+    merged, total, prev_total, min_count = await _windows(period, vertical, sf)
     trends = rank_trends(merged, total, prev_total, min_count, limit)
     if not trends:
         return [], []
@@ -210,25 +228,31 @@ async def compute_fading(period: str = "day", vertical: str | None = None, limit
 
 
 async def trend_items(
-    tag: str, period: str = "day", vertical: str | None = None, limit: int = 10
+    tag: str, period: str = "day", vertical: str | None = None, limit: int = 10, sf=None
 ) -> list[dict]:
-    """Подборка по тренду: топ-истории с этим тегом (во всех его написаниях) за окно."""
+    """Подборка по тренду: топ-истории с этим тегом за окно — в любом историческом написании
+    (тот же SQL-канон, что считает тренд: что посчитано, то и показано)."""
     hours = PERIODS.get(period, PERIODS["day"])[0]
     vcond = " and vertical = :v" if vertical in _VERTICALS else ""
-    params: dict = {"tags": variants(tag), "h": hours, "win": limit * 3}
+    params: dict = {
+        "tag": normalize_tag(tag) or tag, "h": hours, "win": limit * 3, **alias_params()
+    }
     if vcond:
         params["v"] = vertical
-    async with SessionFactory() as s:
+    async with (sf or db.SessionFactory)() as s:
         raw = (
             await s.execute(
                 text(
-                    "select id, title, source_type, feed_name, vertical, personal_score, summary, url,"
-                    " cluster_id, tags,"
-                    " coalesce(published_at,fetched_at) published, extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
+                    f"with {ALIAS_CTE}"
+                    " select id, title, source_type, feed_name, vertical, personal_score, summary,"
+                    " url, cluster_id, tags, coalesce(published_at,fetched_at) published,"
+                    " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
                     " from news_items"
                     " where processed_at is not null and skip_reason is null"
-                    "   and personal_score is not null and tags && cast(:tags as text[])" + vcond +
+                    "   and personal_score is not null" + vcond +
                     "   and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
+                    f"   and exists (select 1 from unnest(tags) t {canon_lateral('t')}"
+                    "                where c.canon = :tag)"
                     " order by personal_score desc limit :win"
                 ),
                 params,

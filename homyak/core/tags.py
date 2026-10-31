@@ -136,6 +136,44 @@ def canonical_tags(tags: list[str] | None) -> list[str]:
 
 
 def variants(tag: str) -> list[str]:
-    """Все написания темы, которые в истории могли лечь как отдельные теги (для SQL `tags && …`)."""
+    """Канон + его словарные синонимы. Произвольные формы (ai_agents, «AI Agents») сюда не входят —
+    для поиска по истории нужен SQL-двойник (`canon_lateral`), а не список."""
     canon = normalize_tag(tag) or tag
     return [canon] + sorted(k for k, v in ALIASES.items() if v == canon and k != canon)
+
+
+# --- SQL-двойник normalize_tag ---------------------------------------------------------------
+# История тегов не переписывается, поэтому всё, что читает её по теме (тренды, подборка, affinity,
+# мьюты), обязано сводить к канону В ЗАПРОСЕ: свод после агрегации считал одну историю дважды
+# (llm + llms), а список синонимов не покрывает формы вроде ai_agents. Та же форма, тот же
+# словарь (ALIASES уходит параметрами в unnest), равенство с Python проверяется DB-тестом.
+
+ALIAS_CTE = (
+    "tag_alias as (select * from unnest(cast(:tag_alias_raw as text[]),"
+    " cast(:tag_alias_canon as text[])) as x(raw, canon))"
+)
+
+
+def alias_params() -> dict[str, list[str]]:
+    """Параметры для ALIAS_CTE."""
+    return {"tag_alias_raw": list(ALIASES), "tag_alias_canon": list(ALIASES.values())}
+
+
+def form_sql(col: str) -> str:
+    """Форма тега в SQL (регистр, #, разделители, мусор, длина) — без словаря. NULL для пустого."""
+    f = (
+        "trim(both '-.' from regexp_replace(regexp_replace(regexp_replace("
+        f"btrim(ltrim(lower(btrim({col})), '#')), '[\\s_/]+', '-', 'g'),"
+        " '[^0-9a-zа-яё+#.&-]+', '', 'g'), '-{2,}', '-', 'g'))"
+    )
+    return f"nullif(case when length({f}) <= {MAX_TAG_LEN} then {f} end, '')"
+
+
+def canon_lateral(col: str, name: str = "c") -> str:
+    """`cross join lateral (…) {name}` → `{name}.canon`: канон тега {col} (NULL для мусора).
+    Требует ALIAS_CTE в том же запросе и alias_params() в параметрах."""
+    return (
+        f"cross join lateral (select coalesce(al.canon, f.norm) canon"
+        f" from (select {form_sql(col)} norm) f"
+        f" left join tag_alias al on al.raw = f.norm) {name}"
+    )
