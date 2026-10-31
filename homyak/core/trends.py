@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from homyak.core.tags import ALIAS_CTE, alias_params, canon_lateral, normalize_tag
+from homyak.core.tags import normalize_tag, spelling_map, spellings_of
 from homyak.storage import db
 
 # period -> (hours окна, base_hours базы, base_div, min_count).
@@ -148,7 +148,7 @@ async def _windows(
     """
     hours, base_hours, base_div, min_count = PERIODS.get(period, PERIODS["day"])
     vcond = " and vertical = :v" if vertical in _VERTICALS else ""
-    params: dict = {"h": hours, "total": hours + base_hours, "bdiv": base_div, **alias_params()}
+    params: dict = {"h": hours, "total": hours + base_hours, "bdiv": base_div}
     if vcond:
         params["v"] = vertical
     cur_items = (
@@ -162,17 +162,24 @@ async def _windows(
         + " and coalesce(published_at,fetched_at) <= now() - make_interval(hours=>:h)"
         + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:total)"
     )
-    canon = canon_lateral("t")
+    # канон — по карте написаний окна (Python), в SQL — hash join по unnest(raws, canons)
+    canon = "join unnest(cast(:raws as text[]), cast(:canons as text[])) m(raw, canon) on m.raw = t"
     async with (sf or db.SessionFactory)() as s:
+        raws, canons = await spelling_map(
+            s,
+            _ITEM_FILTER + vcond
+            + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:total)",
+            params,
+        )
+        params = {**params, "raws": raws, "canons": canons}
         rows = (
             await s.execute(
                 text(
-                    f"with {ALIAS_CTE}, cur_items as ({cur_items}), base_items as ({base_items}),"
-                    " cur_tags as (select story, c.canon tag, max(personal_score) s"
-                    f"   from cur_items, unnest(tags) t {canon}"
-                    "   where c.canon is not null group by story, c.canon),"
-                    " base_tags as (select distinct story, c.canon tag"
-                    f"   from base_items, unnest(tags) t {canon} where c.canon is not null),"
+                    f"with cur_items as ({cur_items}), base_items as ({base_items}),"
+                    " cur_tags as (select story, m.canon tag, max(personal_score) s"
+                    f"   from cur_items, unnest(tags) t {canon} group by story, m.canon),"
+                    " base_tags as (select distinct story, m.canon tag"
+                    f"   from base_items, unnest(tags) t {canon}),"
                     " cur as (select tag, count(*) c, avg(s) s from cur_tags group by tag),"
                     " base as (select tag, count(*)::float / :bdiv c from base_tags group by tag)"
                     " select coalesce(cur.tag, base.tag) tag, coalesce(cur.c, 0) c,"
@@ -234,28 +241,29 @@ async def trend_items(
     (тот же SQL-канон, что считает тренд: что посчитано, то и показано)."""
     hours = PERIODS.get(period, PERIODS["day"])[0]
     vcond = " and vertical = :v" if vertical in _VERTICALS else ""
-    params: dict = {
-        "tag": normalize_tag(tag) or tag, "h": hours, "win": limit * 3, **alias_params()
-    }
+    params: dict = {"h": hours, "win": limit * 3}
     if vcond:
         params["v"] = vertical
+    window = (
+        _ITEM_FILTER + vcond
+        + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
+    )
     async with (sf or db.SessionFactory)() as s:
+        raws, canons = await spelling_map(s, window, params)
+        spellings = spellings_of(raws, canons, [normalize_tag(tag) or tag])
+        if not spellings:
+            return []
         raw = (
             await s.execute(
                 text(
-                    f"with {ALIAS_CTE}"
-                    " select id, title, source_type, feed_name, vertical, personal_score, summary,"
+                    "select id, title, source_type, feed_name, vertical, personal_score, summary,"
                     " url, cluster_id, tags, coalesce(published_at,fetched_at) published,"
                     " extract(epoch from (now()-coalesce(published_at,fetched_at)))::int age_s"
-                    " from news_items"
-                    " where processed_at is not null and skip_reason is null"
-                    "   and personal_score is not null" + vcond +
-                    "   and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
-                    f"   and exists (select 1 from unnest(tags) t {canon_lateral('t')}"
-                    "                where c.canon = :tag)"
+                    " from news_items where" + window +
+                    "   and tags && cast(:spellings as text[])"  # GIN по tags
                     " order by personal_score desc limit :win"
                 ),
-                params,
+                {**params, "spellings": spellings},
             )
         ).all()
     seen: set[int] = set()

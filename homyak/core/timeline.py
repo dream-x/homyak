@@ -18,7 +18,7 @@ from statistics import median
 from sqlalchemy import text
 
 from homyak.core.interests import load_interests
-from homyak.core.tags import ALIAS_CTE, alias_params, canon_lateral, normalize_tag
+from homyak.core.tags import normalize_tag, spelling_map, spellings_of
 from homyak.storage import db
 
 _WORD = re.compile(r"[0-9a-zA-Zа-яёА-ЯЁ]{2,}")
@@ -76,6 +76,27 @@ def sparkline(counts: list[int]) -> str:
     return "".join(_BARS[min(7, round(c / top * 7))] for c in counts)
 
 
+def _sql(window: str, conds: list[str], unit: str) -> str:
+    return (
+        "with hits as (select coalesce(cluster_id, -id) story, id, title, url, feed_name, vertical,"
+        "   personal_score, coalesce(published_at, fetched_at) at,"
+        "   date_trunc(:unit, coalesce(published_at, fetched_at)) bucket"
+        "   from news_items where " + window +
+        f"   and ({' or '.join(conds)})),"
+        " per_story as (select distinct on (story) story, bucket, id, title, url, feed_name,"
+        "   vertical, personal_score from hits"
+        "   order by story, personal_score desc nulls last, at desc),"
+        " grid as (select generate_series(date_trunc(:unit, now() - make_interval(days => :days)),"
+        f"   date_trunc(:unit, now()), interval '{UNITS[unit]}') bucket),"  # literal: свой словарь
+        " agg as (select bucket, count(*) n from per_story group by bucket),"
+        " top as (select distinct on (bucket) bucket, id, title, url, feed_name, vertical,"
+        "   personal_score from per_story order by bucket, personal_score desc nulls last)"
+        " select g.bucket, coalesce(a.n, 0) n, t.id, t.title, t.url, t.feed_name, t.vertical,"
+        "   t.personal_score from grid g left join agg a using (bucket) left join top t using (bucket)"
+        " order by g.bucket"
+    )
+
+
 async def timeline(
     query: str, days: int = 90, vertical: str | None = None, sf=None
 ) -> dict:
@@ -92,47 +113,36 @@ async def timeline(
     if not modes:
         return {"query": q, "modes": [], "unit": unit, "days": days, "total": 0, "buckets": []}
 
-    conds, params = [], {"days": days, "unit": unit, **alias_params()}
-    if watch:
-        conds.append("watch_topics @> array[cast(:watch as text)]")
-        params["watch"] = watch
-    if tags:
-        conds.append(
-            f"exists (select 1 from unnest(tags) t {canon_lateral('t')}"
-            " where c.canon = any(cast(:tags as text[])))"
-        )
-        params["tags"] = tags
-    if tsq:
-        conds.append("search_tsv @@ to_tsquery('simple', :tsq)")
-        params["tsq"] = tsq
+    conds, params = [], {"days": days, "unit": unit}
     vcond = ""
     if vertical in ("business", "it", "medical"):
         vcond = " and vertical = :v"
         params["v"] = vertical
-
-    sql = (
-        f"with {ALIAS_CTE},"
-        " hits as (select coalesce(cluster_id, -id) story, id, title, url, feed_name, vertical,"
-        "   personal_score, coalesce(published_at, fetched_at) at,"
-        "   date_trunc(:unit, coalesce(published_at, fetched_at)) bucket"
-        "   from news_items where processed_at is not null and skip_reason is null" + vcond +
-        "   and coalesce(published_at, fetched_at) > now() - make_interval(days => :days)"
-        f"   and ({' or '.join(conds)})),"
-        " per_story as (select distinct on (story) story, bucket, id, title, url, feed_name,"
-        "   vertical, personal_score from hits"
-        "   order by story, personal_score desc nulls last, at desc),"
-        " grid as (select generate_series(date_trunc(:unit, now() - make_interval(days => :days)),"
-        f"   date_trunc(:unit, now()), interval '{UNITS[unit]}') bucket),"  # literal: свой словарь
-        " agg as (select bucket, count(*) n from per_story group by bucket),"
-        " top as (select distinct on (bucket) bucket, id, title, url, feed_name, vertical,"
-        "   personal_score from per_story order by bucket, personal_score desc nulls last)"
-        " select g.bucket, coalesce(a.n, 0) n, t.id, t.title, t.url, t.feed_name, t.vertical,"
-        "   t.personal_score from grid g left join agg a using (bucket) left join top t using (bucket)"
-        " order by g.bucket"
+    window = (
+        "processed_at is not null and skip_reason is null" + vcond
+        + " and coalesce(published_at, fetched_at) > now() - make_interval(days => :days)"
     )
-    async with (sf or db.SessionFactory)() as s:
-        rows = (await s.execute(text(sql), params)).all()
+    if watch:
+        conds.append("watch_topics @> array[cast(:watch as text)]")
+        params["watch"] = watch
+    if tsq:
+        conds.append("search_tsv @@ to_tsquery('simple', :tsq)")
+        params["tsq"] = tsq
 
+    async with (sf or db.SessionFactory)() as s:
+        if tags:
+            # написания темы в окне (Python-канон по различным тегам) → GIN по tags; все три
+            # условия индексируемы, планировщик складывает их в BitmapOr
+            raws, canons = await spelling_map(s, window, params)
+            spellings = spellings_of(raws, canons, tags)
+            if spellings:
+                conds.append("tags && cast(:spellings as text[])")
+                params["spellings"] = spellings
+            else:
+                modes.remove("tag")
+        if not conds:
+            return {"query": q, "modes": [], "unit": unit, "days": days, "total": 0, "buckets": []}
+        rows = (await s.execute(text(_sql(window, conds, unit)), params)).all()
     counts = [int(r.n) for r in rows]
     flags = peaks(counts)
     buckets = []

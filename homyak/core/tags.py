@@ -177,3 +177,34 @@ def canon_lateral(col: str, name: str = "c") -> str:
         f" from (select {form_sql(col)} norm) f"
         f" left join tag_alias al on al.raw = f.norm) {name}"
     )
+
+
+async def spelling_map(session, where_sql: str, params: dict) -> tuple[list[str], list[str]]:
+    """(raws, canons) для всех различных тегов записей, удовлетворяющих `where_sql`.
+
+    Для больших окон (тренды, таймлайн) канон считается здесь, в Python, по ~10 тыс. различных
+    написаний, а не SQL-регэкспом по миллиону строк: `canon_lateral` внутри `exists` в WHERE
+    планировщик гонял на каждую строку окна (63 с на таймлайн за 90 дней). Результат уходит в
+    запрос параметрами — `unnest(:raws, :canons)` для свода или `tags && :raws` для поиска
+    написаний темы (GIN по tags). Паритет с SQL-двойником гарантирован: источник — normalize_tag.
+    """
+    from sqlalchemy import text
+
+    rows = (
+        await session.execute(
+            text(f"select distinct t from news_items, unnest(tags) t where {where_sql}"), params
+        )
+    ).all()
+    raws, canons = [], []
+    for (raw,) in rows:
+        canon = normalize_tag(raw)
+        if canon:
+            raws.append(raw)
+            canons.append(canon)
+    return raws, canons
+
+
+def spellings_of(raws: list[str], canons: list[str], wanted: list[str]) -> list[str]:
+    """Все написания из карты, чей канон — одна из нужных тем."""
+    want = set(wanted)
+    return [r for r, c in zip(raws, canons) if c in want]

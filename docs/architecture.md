@@ -231,14 +231,17 @@ vertical. Pure functions (`growth`, `share_growth`, `strength`, `direction`, `me
   the mean day of the previous week, week vs the previous four, month vs the previous two).
 - **Growth is growth of share**, `count/total` vs `prev/prev_total`: a collection outage (proxy down,
   LLM box hung) otherwise reads as every topic collapsing and its recovery as every topic spiking.
-- **Tags are folded to canonical form in SQL, before `distinct`** (`core/tags.py`): the tagger writes
+- **Tags are folded to canonical form before `distinct`** (`core/tags.py`): the tagger writes
   `canonical_tags` (`llms`, `large-language-models` → `llm`; `agentic-ai` → `ai-agents`; `m&a` →
-  `mergers` …); history is not rewritten, so every reader canonicalizes in the query with the SQL twin
-  of `normalize_tag` (`form_sql` + `ALIASES` bound through `ALIAS_CTE`, `canon_lateral`). Folding
-  after aggregation counted one story twice (`llm` + `llms`); now (story, canon) is one row, and the
-  drill-down (`trend_items`) matches with the same expression, so what is counted is what is shown.
-  A DB test pins SQL canon == Python canon. Broad tags (`ai`, `business`, `health` …) are excluded so
-  narrow topics surface.
+  `mergers` …); history is not rewritten, so every reader canonicalizes on the way in. Folding after
+  aggregation counted one story twice (`llm` + `llms`); now (story, canon) is one row. Two mechanisms,
+  same `normalize_tag`: big windows (trends, timeline, drill-down) take a **spelling map** — the
+  distinct tags of the window are canonicalized in Python (~10k strings) and passed back as arrays
+  (`unnest(raws, canons)` hash join for the fold, `tags && spellings` on the GIN index for lookups);
+  small tables (`tag_affinity`, `muted_tags`) use the **SQL twin** (`form_sql` + `ALIASES` through
+  `ALIAS_CTE`, `canon_lateral`), pinned to the Python version by a DB test. The SQL twin inside an
+  `exists` in a 90-day WHERE ran per row (63 s per timeline query), hence the split. Broad tags (`ai`,
+  `business`, `health` …) are excluded so narrow topics surface.
 - **Learned layer stays compatible**: `tag_affinity` and `muted_tags` keep their historical keys
   (`golang`, `self-hosted`, `ai agents`); `get_tag_affinities` folds them with the same SQL canon
   (several rows per canon → mean weighted by evidence `n_pos + n_neg + 1`), `get_muted_tags` and the
