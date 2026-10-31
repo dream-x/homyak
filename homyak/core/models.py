@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     Computed,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -267,3 +268,21 @@ class TasteState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class RepoStats(Base):
+    """Дневной снимок GitHub-репозитория из ленты (радар: скорость роста звёзд)."""
+
+    __tablename__ = "repo_stats"
+
+    repo: Mapped[str] = mapped_column(Text, primary_key=True)  # owner/name, lower-case
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    forks: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    open_issues: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("idx_repo_stats_day", sa_text("day DESC")),)

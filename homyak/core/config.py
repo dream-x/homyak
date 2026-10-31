@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Токен GitHub: нужен RSSHub для trending и нам — для README (без токена API даёт
     # 60 запросов в час на IP, а поток gh_search_* выбирает это за минуты).
     github_access_token: str = Field(default="", alias="GITHUB_ACCESS_TOKEN")
+    # GitHub-радар: дневной снимок звёзд по репозиториям из ленты (sweeper). 0 репозиториев =
+    # выключить. Без токена API даёт 60 запросов/час — снимок обрывается на лимите.
+    repo_stats_limit: int = Field(default=300, alias="REPO_STATS_LIMIT")
+    repo_stats_hour: int = Field(default=4, alias="REPO_STATS_HOUR")
 
     # Извлечение статей: фолбэк на reader-сервис (r.jina.ai) при бот-блоке/JS. Внешний вызов.
     article_reader_fallback: bool = Field(default=True, alias="ARTICLE_READER_FALLBACK")

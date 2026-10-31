@@ -45,6 +45,14 @@ async def reembed_stale(repo: NewsRepo) -> None:
     log.info("reembedded", done=done, left=await repo.stale_embedding_count())
 
 
+async def repo_stats_daily() -> None:
+    """GitHub-радар: дневной снимок звёзд/форков по репозиториям из ленты и ⭐ (core.radar)."""
+    from homyak.core.radar import snapshot
+
+    res = await snapshot()
+    log.info("repo_stats_snapshot", **res)
+
+
 async def main_async() -> None:
     repo = NewsRepo(SessionFactory)
     bus = NatsBus(settings.nats_url)
@@ -62,11 +70,19 @@ async def main_async() -> None:
             id="reembed",
             max_instances=1,  # долгий прогон не должен наслаиваться сам на себя
         )
+    if settings.repo_stats_limit > 0:
+        scheduler.add_job(
+            repo_stats_daily,
+            CronTrigger(hour=settings.repo_stats_hour, minute=20),
+            id="repo_stats",
+            max_instances=1,
+        )
     scheduler.start()
     log.info(
         "sweeper_started",
         reembed_every_min=settings.reembed_every_minutes,
         reembed_batch=settings.reembed_batch,
+        repo_stats_limit=settings.repo_stats_limit,
     )
 
     stop = asyncio.Event()

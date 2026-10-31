@@ -103,6 +103,20 @@ async def pulse_api(hours: int = 24, vertical: str = "business") -> dict:
     return await pulse(hours, _vertical(vertical))
 
 
+@app.get("/radar", response_class=HTMLResponse)
+async def radar_page() -> str:
+    """GitHub-радар: репозитории из ленты, набирающие звёзды быстрее всех."""
+    return dashboard.page(dashboard.RADAR_PAGE, "/radar")
+
+
+@app.get("/radar/api")
+async def radar_api(days: int = 7) -> dict:
+    from homyak.core.radar import radar
+
+    days = max(2, min(days, 90))
+    return {"days": days, "repos": await radar(days, limit=30)}
+
+
 def _vertical(v: str) -> str | None:
     return v if v in ("business", "it", "medical") else None
 

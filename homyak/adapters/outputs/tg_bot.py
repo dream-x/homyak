@@ -729,6 +729,33 @@ async def cmd_ask(m: Message, command: CommandObject) -> None:
         await m.answer(chunk)
 
 
+@dp.message(Command("radar"))
+async def cmd_radar(m: Message, command: CommandObject) -> None:
+    """🐙 GitHub-радар: /radar [дней] — репозитории из ленты, набирающие звёзды быстрее всех."""
+    from homyak.core.radar import radar
+
+    days = int(command.args) if command.args and command.args.strip().isdigit() else 7
+    try:
+        rows = await radar(days, limit=12)
+    except Exception as e:
+        log.warning("radar_failed", error=str(e)[:150])
+        await m.answer("Радар недоступен (БД). Попробуй позже.")
+        return
+    if not rows:
+        await m.answer("Скорости пока нет: радару нужны два дневных снимка в окне.")
+        return
+    lines = [f"🐙 <b>Радар · {days} дн.</b> <i>(звёзд/день · всего)</i>"]
+    for r in rows:
+        it = r.get("item") or {}
+        tail = f' — <a href="{_esc(it["url"])}">{_esc(it.get("title") or "")}</a>' if it.get("url") else ""
+        lines.append(
+            f"{'⭐' if r['starred'] else '•'} <a href=\"{_esc(r['url'])}\">{_esc(r['repo'])}</a>"
+            f" <b>+{r['per_day']:g}/д</b> · {r['stars']}★{tail}"
+        )
+    for chunk in _chunks("\n".join(lines), 4000):
+        await m.answer(chunk, disable_web_page_preview=True)
+
+
 @dp.message(Command("pulse"))
 async def cmd_pulse(m: Message, command: CommandObject) -> None:
     """💓 Пульс вертикали: /pulse [business|it|medical|all] [часов] — обсуждают все, вотчлист, темы."""

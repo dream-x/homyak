@@ -198,9 +198,9 @@ rebuild. Ollama stays on the host (Metal).
 | `telegram-ingest` | consume `homyak.telegram.raw` (tscrapper) |
 | `processor` | pipeline (url_dedup … title_gen … personalizer) |
 | `learner` | learning + profile refinement |
-| `sweeper` | re-publish stuck items · drain the re-embed queue |
+| `sweeper` | re-publish stuck items · drain the re-embed queue · daily `repo_stats` snapshot (radar) |
 | `tgbot` | Telegram bot |
-| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/trends`, `/timeline`, `/pulse`, `/dashboard`) |
+| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/trends`, `/timeline`, `/pulse`, `/radar`, `/dashboard`) |
 | `wiki` | LLM knowledge base from ⭐/👍 (below) |
 | `starchan` | ⭐ channel: starred items + daily digest (below) |
 
@@ -281,6 +281,18 @@ One screen for a vertical (business by default) over a window (24 h by default),
   seven previous windows (`growth`/`direction` from `core/trends.py`); a row links to its timeline.
 - **Темы за сутки** — the top of the day's trends for the same vertical.
 `GET /pulse/api?hours=&vertical=`; pure ranking/delta helpers are unit-tested, the SQL has a DB test.
+
+## GitHub radar (`/radar`, bot `/radar [days]`, `homyak-radar`, `core/radar.py`)
+
+The feed brings repositories (RSSHub trending/search/starred, links in posts, README as text) but
+not whether they are growing. The sweeper job `repo_stats` (daily at `REPO_STATS_HOUR`, up to
+`REPO_STATS_LIMIT` repos, `GITHUB_ACCESS_TOKEN`; a 403/429 stops the run, the rest waits for
+tomorrow) snapshots stars/forks/open issues/pushed_at for every ⭐-saved repository plus those seen
+in the feed in the last 30 days into `repo_stats (repo, day)` (re-run in a day overwrites). The
+radar ranks repositories by stars per day between the first and last snapshot of the window and
+attaches the feed item that brought the repo (prefers starred, then `personal_score`). Two snapshots
+in the window are needed, so the radar is empty on the first day after a deploy. `repo_key` /
+`REPO_KEY_SQL` normalize `github.com/Owner/Repo/…` to `owner/repo` on both sides.
 
 ## Curated export (`GET /saved`)
 

@@ -99,6 +99,7 @@ NAV_ITEMS = [
     ("/trends", "📈 Тренды"),
     ("/timeline", "📆 Таймлайн"),
     ("/pulse", "💓 Пульс"),
+    ("/radar", "🐙 Радар"),
     ("/wiki", "📚 База знаний"),
 ]
 NAV_MARK = "<!--NAV-->"  # плейсхолдер в шапке каждой страницы
@@ -1499,5 +1500,49 @@ async function load(){render();$('stories').innerHTML='<div class="muted">…</d
     $('trends').innerHTML=(d.trends||[]).map(t=>`<span class="tr" onclick="location.href='/trends'"><span>${t.direction}</span><span class="tag">#${esc(t.tag)}</span><span>${t.count}</span>${t.growth>0?`<span class="g">+${Math.round(t.growth*100)}%</span>`:''}</span>`).join('')||'<div class="muted">—</div>';
   }catch(e){$('stories').innerHTML='<div class="muted">ошибка</div>';}}
 (()=>{const p=new URLSearchParams(location.search);if(p.get('v'))vertical=p.get('v');if(p.get('h'))hours=+p.get('h')||24;load();})();
+</script>
+"""
+
+
+RADAR_PAGE = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🐙 Радар — Homyak</title>
+<style>
+/*BASE*/
+.wrap{max-width:1160px;margin:0 auto;padding:14px 20px 40px}
+.tabs{display:flex;gap:3px;margin-bottom:12px;flex-wrap:wrap}
+.tab{font:12px/1 var(--mono);color:var(--dim);background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 11px;cursor:pointer;user-select:none}
+.tab:hover{color:var(--txt);background:var(--panel)}
+.tab.on{color:var(--accent);border-color:var(--accent-dim);background:var(--panel)}
+.rp{display:grid;grid-template-columns:90px 1fr;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.rp .v{font:12px/1.3 var(--mono);color:var(--dim);text-align:right}
+.rp .v b{display:block;font-size:16px;color:var(--up)}
+.rp .nm{font-size:14px;font-weight:600}
+.rp .nm a{color:var(--txt);text-decoration:none}.rp .nm a:hover{color:var(--accent)}
+.rp .bar{height:4px;border-radius:2px;background:var(--accent-dim);margin:6px 0 4px;max-width:420px}
+.rp .mt{color:var(--faint);font:11px/1.5 var(--mono)}
+.rp .mt a{color:var(--dim);text-decoration:none}.rp .mt a:hover{color:var(--accent)}
+.muted{color:var(--faint);font-size:13px;padding:10px 0}
+</style>
+<div class="top"><h1>🐙 Радар</h1><span class="st">репозитории из ленты, набирающие звёзды быстрее всех</span><!--NAV--></div>
+<div class="wrap">
+  <div class="tabs" id="tabs"></div>
+  <div id="list"><div class="muted">Загрузка…</div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const safeUrl=u=>{try{const p=new URL(u).protocol;return(p==='http:'||p==='https:')?u:null;}catch(e){return null;}};
+const DAYS=[[3,'3 дня'],[7,'7 дней'],[14,'2 недели'],[30,'месяц']];
+let days=7;
+const fmt=n=>n>=1000?(n/1000).toFixed(n>=10000?0:1)+'k':String(n);
+function renderTabs(){$('tabs').innerHTML=DAYS.map(([k,l])=>`<span class="tab ${k===days?'on':''}" data-k="${k}">${esc(l)}</span>`).join('');[...$('tabs').children].forEach(c=>c.onclick=()=>{days=+c.dataset.k;load();});}
+async function load(){renderTabs();$('list').innerHTML='<div class="muted">…</div>';
+  try{const d=await(await fetch('/radar/api?days='+days)).json();const rows=d.repos||[];const max=Math.max(1,...rows.map(r=>r.per_day));
+    $('list').innerHTML=rows.map(r=>{const it=r.item||{};const iu=it.url?safeUrl(it.url):null;const pushed=r.pushed_at?new Date(r.pushed_at).toLocaleDateString('ru-RU',{day:'numeric',month:'short'}):'';
+      return `<div class="rp"><div class="v"><b>+${fmt(r.per_day)}/д</b>+${fmt(r.gained)} за ${r.span_days}д</div><div><div class="nm">${r.starred?'⭐ ':''}<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.repo)}</a> <span style="color:var(--faint);font-weight:400">${fmt(r.stars)}★ · ${fmt(r.forks)} форков${pushed?' · push '+pushed:''}</span></div><div class="bar" style="width:${Math.max(2,Math.round(r.per_day/max*100))}%"></div><div class="mt">${it.title?`в ленте: ${iu?`<a href="${esc(iu)}" target="_blank" rel="noopener">${esc(it.title)}</a>`:esc(it.title)}${it.feed?' · '+esc(it.feed):''}${it.score!=null?' · 🎯 '+Math.round(it.score*100)+'%':''}`:''}</div></div></div>`;
+    }).join('')||'<div class="muted">скорости пока нет — радару нужны два дневных снимка в окне</div>';
+  }catch(e){$('list').innerHTML='<div class="muted">ошибка</div>';}}
+load();
 </script>
 """
