@@ -1,0 +1,141 @@
+"""Канонизация тегов. Чистые функции, без БД.
+
+LLM-теггер пишет одну тему десятком способов: llm / llms / large-language-models, ai agents /
+ai-agents / agentic-ai. В проде 11,7 тыс. уникальных тегов, 6,8 тыс. из них встречаются один раз,
+и любой подсчёт «по темам» (тренды, таймлайны, пульс) без свода даёт шум. Здесь — форма
+(регистр, пробелы, подчёркивания, решётки) и короткий словарь синонимов для самых частых тем.
+Теггер применяет это при записи; читатели (тренды) — при чтении, потому что история тегов
+не переписывается.
+"""
+
+from __future__ import annotations
+
+import re
+
+_SEP = re.compile(r"[\s_/]+")
+_BAD = re.compile(r"[^0-9a-zA-Zа-яёА-ЯЁ+#.&-]+")
+MAX_TAG_LEN = 40
+
+# синоним → каноническая форма; значения тоже канонические (цепочек нет)
+ALIASES: dict[str, str] = {
+    # AI / LLM
+    "llms": "llm",
+    "large-language-model": "llm",
+    "large-language-models": "llm",
+    "language-models": "llm",
+    "artificial-intelligence": "ai",
+    "genai": "ai",
+    "generative-ai": "ai",
+    "ai-agent": "ai-agents",
+    "agents": "ai-agents",
+    "agentic-ai": "ai-agents",
+    "agentic": "ai-agents",
+    "multi-agent": "ai-agents",
+    "machine-learning": "ml",
+    "machinelearning": "ml",
+    "deep-learning": "ml",
+    "retrieval-augmented-generation": "rag",
+    "model-context-protocol": "mcp",
+    # engineering
+    "cybersecurity": "security",
+    "cyber-security": "security",
+    "infosec": "security",
+    "appsec": "security",
+    "self-hosted": "selfhosted",
+    "self-hosting": "selfhosted",
+    "selfhosting": "selfhosted",
+    "open-source": "opensource",
+    "open-source-software": "opensource",
+    "oss": "opensource",
+    "k8s": "kubernetes",
+    "database": "databases",
+    "db": "databases",
+    "dev-tools": "devtools",
+    "developer-tools": "devtools",
+    "tooling": "devtools",
+    "observability-tools": "observability",
+    "monitoring": "observability",
+    "rust-lang": "rust",
+    "rustlang": "rust",
+    "golang": "go",
+    "go-lang": "go",
+    "distributed-system": "distributed-systems",
+    "cloud-computing": "cloud",
+    # business / markets
+    "startup": "startups",
+    "venture-capital": "venture",
+    "vc": "venture",
+    "m&a": "mergers",
+    "mergers-and-acquisitions": "mergers",
+    "acquisitions": "mergers",
+    "earnings-report": "earnings",
+    "earnings-call": "earnings",
+    "earnings-reports": "earnings",
+    "quarterly-results": "earnings",
+    "federal-reserve": "fed",
+    "the-fed": "fed",
+    "interest-rate": "rates",
+    "interest-rates": "rates",
+    "rate-cut": "rates",
+    "rate-cuts": "rates",
+    "rate-hike": "rates",
+    "tariff": "tariffs",
+    "trade-tariffs": "tariffs",
+    "trade-war": "tariffs",
+    "cryptocurrency": "crypto",
+    "cryptocurrencies": "crypto",
+    "stock": "stocks",
+    "stock-market": "stocks",
+    "equities": "stocks",
+    "oil-prices": "oil",
+    "crude-oil": "oil",
+    "crude": "oil",
+    "gold-price": "gold",
+    "geopolitical": "geopolitics",
+    "macro-economics": "macro",
+    "macroeconomics": "macro",
+    "inflation-data": "inflation",
+    "cpi": "inflation",
+    "jobs-report": "labor-market",
+    "employment": "labor-market",
+    "unemployment": "labor-market",
+    "real-estate": "realestate",
+    "housing-market": "realestate",
+    "housing": "realestate",
+    # medical
+    "healthcare": "health",
+    "medicine": "medical",
+    "neonatal": "neonatology",
+    "preterm-birth": "prematurity",
+    "premature-birth": "prematurity",
+    "preterm": "prematurity",
+}
+
+
+def normalize_tag(raw: str | None) -> str | None:
+    """«AI Agents» / «ai_agents» / «#ai-agents» → «ai-agents»; llms → llm. Пусто/мусор → None."""
+    if not raw:
+        return None
+    tag = raw.strip().lower().lstrip("#").strip()
+    tag = _SEP.sub("-", tag)
+    tag = _BAD.sub("", tag)
+    tag = re.sub(r"-{2,}", "-", tag).strip("-.")
+    if not tag or len(tag) > MAX_TAG_LEN:
+        return None
+    return ALIASES.get(tag, tag)
+
+
+def canonical_tags(tags: list[str] | None) -> list[str]:
+    """Нормализует список, убирает дубли, порядок сохраняет (первый тег — главный, его мьютят)."""
+    out: list[str] = []
+    for raw in tags or []:
+        tag = normalize_tag(raw)
+        if tag and tag not in out:
+            out.append(tag)
+    return out
+
+
+def variants(tag: str) -> list[str]:
+    """Все написания темы, которые в истории могли лечь как отдельные теги (для SQL `tags && …`)."""
+    canon = normalize_tag(tag) or tag
+    return [canon] + sorted(k for k, v in ALIASES.items() if v == canon and k != canon)

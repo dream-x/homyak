@@ -77,14 +77,11 @@ def _vertical(v: str) -> str | None:
 
 @app.get("/trends/api/list")
 async def trends_list(period: str = "day", vertical: str = "all") -> dict:
-    from homyak.core.trends import PERIODS, compute_trends
+    from homyak.core.trends import PERIODS, trend_report
 
     period = period if period in PERIODS else "day"
-    return {
-        "period": period,
-        "vertical": vertical,
-        "trends": await compute_trends(period, _vertical(vertical)),
-    }
+    trends, fading = await trend_report(period, _vertical(vertical))
+    return {"period": period, "vertical": vertical, "trends": trends, "fading": fading}
 
 
 @app.get("/trends/api/items")

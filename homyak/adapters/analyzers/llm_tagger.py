@@ -6,6 +6,7 @@ import structlog
 
 from homyak.core.interfaces import AnalyzerContext
 from homyak.core.llm import OllamaLLM
+from homyak.core.tags import canonical_tags
 from homyak.core.verticals import norm_vertical
 
 log = structlog.get_logger(__name__)
@@ -85,7 +86,9 @@ class LlmTaggerAnalyzer:
             return
         tags = data.get("tags")
         if isinstance(tags, list):
-            ctx.tags = [t.lower().strip() for t in tags if isinstance(t, str) and t.strip()][:5]
+            # канонизация (core.tags): llm/llms/large-language-models — один тег, иначе тренды
+            # и мьюты считают одну тему тремя
+            ctx.tags = canonical_tags([t for t in tags if isinstance(t, str)])[:5]
         vertical = norm_vertical(data.get("vertical"))
         ctx.vertical = vertical
         ctx.item.vertical = vertical  # персистится processor'ом

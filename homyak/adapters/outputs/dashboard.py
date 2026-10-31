@@ -1276,6 +1276,7 @@ TRENDS_PAGE = r"""<!doctype html>
 .tr .tag{color:var(--txt);font-weight:600}
 .tr .n{color:var(--faint)}
 .tr .g.up{color:var(--up)}.tr .g.down{color:var(--down)}
+.tr.fade{cursor:default;opacity:.7;flex-basis:100%}
 .h{margin:6px 0 10px;font:11px/1 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:1px}
 .h b{color:var(--accent);font-weight:600}
 .frow{display:grid;grid-template-columns:3px 136px 1fr;gap:12px;align-items:start;padding:9px 10px 9px 0;border-bottom:1px solid var(--line)}
@@ -1325,6 +1326,7 @@ async function loadTrends(){$('trends').innerHTML='<div class="muted">…</div>'
     const g=t.growth>=3?`<span class="g up">🔥</span>`:(t.growth>0?`<span class="g up">+${Math.round(t.growth*100)}%</span>`:(t.growth<0?`<span class="g down">${Math.round(t.growth*100)}%</span>`:''));
     return `<div class="tr ${t.tag===curTag?'on':''}" data-t="${esc(t.tag)}"><span>${t.direction}</span><span class="tag">#${esc(t.tag)}</span><span class="n">${t.count}</span>${g}</div>`;
   }).join('');
+  if((d.fading||[]).length){$('trends').insertAdjacentHTML('beforeend',`<div class="tr fade" title="было историй в типичный период → стало">↓ затихло: ${d.fading.map(t=>`#${esc(t.tag)} ${Math.round(t.prev)}→${t.count}`).join(' · ')}</div>`);}
   [...$('trends').children].forEach(c=>{if(c.dataset.t)c.onclick=()=>openTag(c.dataset.t);});
 }catch(e){$('trends').innerHTML='<div class="muted">ошибка</div>';}}
 async function openTag(tag){curTag=tag;renderTrends();$('picked').innerHTML=`Подборка по <b>#${esc(tag)}</b>`;$('items').innerHTML='<div class="muted">…</div>';

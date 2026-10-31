@@ -432,15 +432,19 @@ _VDECODE = {"a": "all", "b": "business", "i": "it", "m": "medical"}
 _VBTN = {"all": "🌐 Все", "business": "💼", "it": "💻", "medical": "🩺"}
 
 
-def _trends_text(period: str, vertical: str, trends: list) -> str:
+def _trends_text(period: str, vertical: str, trends: list, fading: list | None = None) -> str:
     vsuf = "" if vertical == "all" else f" · {_VBTN[vertical]}"
     if not trends:
         return f"📈 <b>Тренды: {_PLABEL[period]}{vsuf}</b>\n\nПока пусто — мало данных за период."
-    return (
+    text = (
         f"📈 <b>Тренды: {_PLABEL[period]}{vsuf}</b>\n"
         "<i>что разгоняется · ↑ рост, → ровно · 🔥 всплеск</i>\n"
         "Жми тему — покажу подборку."
     )
+    if fading:  # что затихло: было prev историй в типичный период, стало count
+        quiet = " · ".join(f"#{_esc(t['tag'])} {round(t['prev'])}→{t['count']}" for t in fading)
+        text += f"\n\n↓ <i>затихло:</i> {quiet}"
+    return text
 
 
 def _trends_kb(period: str, vertical: str, trends: list) -> InlineKeyboardMarkup:
@@ -470,11 +474,13 @@ def _trends_kb(period: str, vertical: str, trends: list) -> InlineKeyboardMarkup
 
 
 async def _send_trends(send, period: str, vertical: str = "all") -> None:
-    from homyak.core.trends import compute_trends
+    from homyak.core.trends import trend_report
 
-    vq = None if vertical == "all" else vertical
-    trends = await compute_trends(period, vq)
-    await send(_trends_text(period, vertical, trends), reply_markup=_trends_kb(period, vertical, trends))
+    trends, fading = await trend_report(period, None if vertical == "all" else vertical)
+    await send(
+        _trends_text(period, vertical, trends, fading),
+        reply_markup=_trends_kb(period, vertical, trends),
+    )
 
 
 @dp.message(Command("trends"))
@@ -486,14 +492,15 @@ async def cmd_trends(m: Message) -> None:
 async def cb_trends_period(cb: CallbackQuery) -> None:
     _, p, v = cb.data.split(":", 2)
     period, vertical = _PDECODE.get(p, "day"), _VDECODE.get(v, "all")
-    from homyak.core.trends import compute_trends
+    from homyak.core.trends import trend_report
 
-    trends = await compute_trends(period, None if vertical == "all" else vertical)
+    trends, fading = await trend_report(period, None if vertical == "all" else vertical)
     with suppress(Exception):
         await cb.answer()
     with suppress(Exception):
         await cb.message.edit_text(
-            _trends_text(period, vertical, trends), reply_markup=_trends_kb(period, vertical, trends)
+            _trends_text(period, vertical, trends, fading),
+            reply_markup=_trends_kb(period, vertical, trends),
         )
 
 
