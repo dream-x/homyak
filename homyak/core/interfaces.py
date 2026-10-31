@@ -75,6 +75,10 @@ class AnalyzerContext:
     # прокидывается между стадиями:
     embedding: list[float] | None = None
     cluster_id: int | None = None
+    # url_dedup присоединил item к ЧУЖОМУ кластеру (по URL-близнецу). Запись членства в общий
+    # кластер (size, перепроверка близнеца) делает similarity_dedup под advisory-локом — один
+    # протокол блокировок для всех, кто двигает членство (мерж, split, присоединение).
+    cluster_joined: bool = False
     # Гейт предобработки: prefilter ставит skip=True → processor обрывает конвейер до дорогих
     # LLM-стадий. Причина пишется в БД, чтобы отсеянное было видно, а не терялось молча.
     skip: bool = False

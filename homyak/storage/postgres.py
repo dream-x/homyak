@@ -151,7 +151,10 @@ class NewsRepo:
     ) -> None:
         values: dict = {"processed_at": func.now(), "error": None, "retry_after": None}
         if cluster_id is not None:
-            values["cluster_id"] = cluster_id
+            # членство пишут стадии в своей транзакции под локом; сюда cluster_id попадает как
+            # запасной вариант и НЕ перекрывает уже стоящее — иначе split, прошедший между
+            # коммитом стадий и этой записью, откатывался бы устаревшим значением (ревью #007)
+            values["cluster_id"] = func.coalesce(NewsItem.cluster_id, cluster_id)
         if tags is not None:
             values["tags"] = tags
         if summary is not None:

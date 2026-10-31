@@ -112,10 +112,10 @@ Analyzers run sequentially in the `processor`, mutating a shared `AnalyzerContex
 | Stage | Analyzer | What it does |
 |---|---|---|
 | 0 | `article_fetch` | full text by URL: **README via the GitHub API** for repos, trafilatura otherwise, `r.jina.ai` when the site blocks bots |
-| 1 | `url_dedup` | normalizes URL, finds/creates a cluster by normalized URL; joining an existing cluster writes the item's `cluster_id` and bumps `Cluster.size` in the stage transaction (it used to leave the counter alone: 2483 clusters drifted from the real member count) |
+| 1 | `url_dedup` | normalizes URL, finds/creates a cluster by normalized URL. Joining an existing cluster is only *decided* here (`ctx.cluster_joined`, the item's own row); the shared rows are written by stage 3 under the lock. A re-run of an already clustered item keeps its cluster |
 | 2 | `watchlist_matcher` | marks `watch_topics` — before `prefilter`, which treats them as a whitelist |
 | 2 | `embedder` | bge-m3 via Ollama `/api/embed`, upsert to Qdrant, sets `embedding_model/version` |
-| 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters (advisory lock on both ids, ascending); a hit only counts if it is within `SIMILARITY_MAX_AGE_HOURS` (72) of the item. Under the lock the decision is re-made from the table, not from the cache: the hit must still sit in the target cluster (a split may have moved it), and the merge *result* (target members + moved + the item, counted, not `Cluster.size`) must stay below `SIMILARITY_MAX_CLUSTER` (60). The item's `cluster_id` and the moved rows go in the same transaction; `mark_processed` only repeats it |
+| 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters and finalizes cluster membership. One lock protocol for every writer of membership (merge, URL join, `split_cluster`): `pg_advisory_xact_lock` on every touched cluster in ascending id order, rows only after that. A hit only counts within `SIMILARITY_MAX_AGE_HOURS` (72) of the item. Under the lock every decision is re-made from the table: a URL join is kept only if the twin is still there (otherwise the item gets a fresh cluster), the hit must still sit in the target, and the merge *result* (target members + moved + the item, counted, not `Cluster.size`) must stay below `SIMILARITY_MAX_CLUSTER` (60). `size` is rewritten from the real count on every join/merge. Membership is committed with the stage transaction; `mark_processed` only fills a NULL `cluster_id`, never overwrites one (a split in between would be undone otherwise) |
 | 3 | `prefilter` | noise gate against the taste centroid — cuts the cheap way before any LLM stage |
 | 3 | `title_gen` | headline from the text when the source gave none (LLM, heuristic fallback) |
 | 4 | `llm_tagger` | tags + **vertical** (business/it/medical/other), JSON |
@@ -200,7 +200,7 @@ rebuild. Ollama stays on the host (Metal).
 | `learner` | learning + profile refinement |
 | `sweeper` | re-publish stuck items · drain the re-embed queue |
 | `tgbot` | Telegram bot |
-| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/dashboard`) |
+| `api` | FastAPI (`/feed*`, `/saved*`, `/lenta`, `/search`, `/ask`, `/trends`, `/dashboard`) |
 | `wiki` | LLM knowledge base from ⭐/👍 (below) |
 | `starchan` | ⭐ channel: starred items + daily digest (below) |
 
@@ -217,6 +217,31 @@ Hybrid retrieval over the whole corpus, `core/search.py`:
 
 The **Ответить** button (`POST /search/answer`) asks the wiki first (`wiki_query.answer_from_wiki`); if the
 wiki has nothing, it falls back to feed RAG (`core/ask.py`).
+
+## Trends (`/trends`, bot `/trends`, `core/trends.py`)
+
+What is accelerating in the feed and what went quiet, per period (day / week / month), optionally per
+vertical. Pure functions (`growth`, `share_growth`, `strength`, `direction`, `merge_canonical`,
+`rank_trends`, `select_fading`) are unit-tested; one SQL (`_windows`) feeds both lists.
+
+- **Unit is a story, not a row** — `count(distinct coalesce(cluster_id, -id))`: HN + Lobsters + TG on
+  the same release do not triple a topic.
+- **Both windows use the same slice** — items that reached the ranker (`personal_score is not null`,
+  not skipped). The base is the average of the same-length windows before the current one (day vs
+  the mean day of the previous week, week vs the previous four, month vs the previous two).
+- **Growth is growth of share**, `count/total` vs `prev/prev_total`: a collection outage (proxy down,
+  LLM box hung) otherwise reads as every topic collapsing and its recovery as every topic spiking.
+- **Tags are folded to canonical form** (`core/tags.py`): the tagger writes `canonical_tags` (`llms`,
+  `large-language-models` → `llm`; `agentic-ai` → `ai-agents`; `m&a` → `mergers` …), readers fold the
+  history on the way in and search items by every historical spelling (`variants`). Broad tags
+  (`ai`, `business`, `health` …) are excluded so narrow topics surface.
+- **Strength** = `count^0.6 · clamp(1+g, 0.1, 4)^1.5 · (0.4 + 0.6·avg personal_score)`: momentum, not
+  volume. **Fading** = topics that had ≥ `min_prev` stories in a typical base period and lost half
+  their share or more, ordered by stories lost.
+
+Surfaces: `/trends` page (`TRENDS_PAGE`), `GET /trends/api/list?period=&vertical=` → `{trends, fading}`,
+`GET /trends/api/items?tag=` (top stories carrying the tag in the window, one per cluster), bot
+`/trends` with period/vertical buttons; the weekly digest appends the week's trends.
 
 ## Curated export (`GET /saved`)
 

@@ -40,20 +40,21 @@ def make_handler(repo: NewsRepo, bus: NatsBus, analyzers):
                         if ctx.skip:  # гейт отсеял — дальше (LLM) не идём
                             item.skip_reason = ctx.skip_reason
                             break
-                    await s.commit()  # persist новые кластеры + мутации item'а
+                    await s.commit()  # persist кластеры, членство item'а + его мутации
                 except Exception:
                     await s.rollback()
                     raise
 
+            # cluster_id сюда не передаём: членство закоммичено стадиями под локом, а повторная
+            # запись после коммита перекрыла бы split, прошедший в промежутке (ревью #007)
             if ctx.skip:
                 # Помечаем обработанным без score → в ленты/пуши не попадёт, sweeper не воскресит.
-                await repo.mark_processed(item_id, cluster_id=ctx.cluster_id)
+                await repo.mark_processed(item_id)
                 log.info("prefiltered", news_item_id=item_id, reason=ctx.skip_reason)
                 return
 
             await repo.mark_processed(
                 item_id,
-                cluster_id=ctx.cluster_id,
                 tags=ctx.tags,
                 summary=ctx.summary,
                 score=ctx.score,

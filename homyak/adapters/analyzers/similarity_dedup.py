@@ -1,15 +1,19 @@
-"""Analyzer stage 3: semantic-дедупликация по эмбеддингам.
+"""Analyzer stage 3: semantic-дедупликация по эмбеддингам + финализация членства в кластере.
 
 Ищет в Qdrant похожие items (cosine >= threshold); если у похожего есть кластер — присоединяет
-текущий item к нему (мержит кластеры). Защита от гонок — pg_advisory_xact_lock на целевой кластер.
-Читает ctx.embedding от embedder'а (без повторного запроса в Qdrant).
+текущий item к нему (мержит кластеры). Читает ctx.embedding от embedder'а (без повторного
+запроса в Qdrant).
 
-Пределы мержа (ревью 31.10.2026): хит засчитывается только в окне по времени, а слияние — только
-если РЕЗУЛЬТАТ (цель + переносимые + текущий) не превышает потолка. Всё, что влияет на решение,
-перечитывается под локом: принадлежность хита (split мог увести его в другой кластер между чтением
-и локом) и фактическое число членов (Cluster.size исторически расходился с реальностью).
-Членство текущего item'а пишется в ту же транзакцию, что и перенос, а не отдельным
-mark_processed'ом позже — иначе split между ними не видит присоединяемую запись.
+Протокол блокировок (ревью #006/#007) — один для всех, кто двигает членство: advisory-лок на
+каждый затронутый кластер, по возрастанию id, и только потом строки. Так же работает split
+(`NewsRepo.split_cluster`). Отсюда:
+- присоединение по URL (url_dedup, стадия 1) только решается, а пишется здесь: под локом
+  проверяем, что URL-близнец всё ещё в том кластере (split мог увести), и ставим size по факту;
+- хит засчитывается только в окне по времени, а слияние — только если РЕЗУЛЬТАТ (цель +
+  переносимые + текущий) не превышает потолка; считаем членов, а не Cluster.size (он врал);
+- под локом перечитываем принадлежность хита и существование цели;
+- членство текущего item'а — в транзакции стадий, mark_processed его потом не перекрывает.
+Свежий кластер, созданный url_dedup для одинокого item'а, никто не видит — для него лок не нужен.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import delete, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homyak.core.config import settings
@@ -93,29 +97,23 @@ class SimilarityDedupAnalyzer:
         found = await s.scalar(select(NewsItem.cluster_id).where(NewsItem.id == item_id))
         return int(found) if found is not None else None
 
-    async def analyze(self, ctx: AnalyzerContext) -> None:
+    async def _pick_target(self, ctx: AnalyzerContext) -> tuple[int | None, int | None]:
+        """(кластер лучшего хита в окне, сам хит) по Qdrant — до лока, как подсказка."""
         if ctx.embedding is None:
-            return
+            return None, None
         hits = await self._q.search_similar(
-            ctx.embedding,
-            limit=5,
-            score_threshold=self._threshold,
-            exclude_id=ctx.item_id,
+            ctx.embedding, limit=5, score_threshold=self._threshold, exclude_id=ctx.item_id
         )
         if not hits:
-            return
-
-        s = ctx.session
-        hit_ids = [h[0] for h in hits]
+            return None, None
         rows = (
-            await s.execute(
-                select(NewsItem.id, NewsItem.cluster_id).where(NewsItem.id.in_(hit_ids))
+            await ctx.session.execute(
+                select(NewsItem.id, NewsItem.cluster_id).where(
+                    NewsItem.id.in_([h[0] for h in hits])
+                )
             )
         ).all()
         id_to_cluster = {r[0]: r[1] for r in rows}
-
-        target: int | None = None
-        chosen_hit: int | None = None
         for hid, _score, payload in hits:  # hits уже отсортированы по score desc
             cluster = id_to_cluster.get(hid)
             if cluster is None:
@@ -125,50 +123,94 @@ class SimilarityDedupAnalyzer:
             ):
                 log.info("similarity_merge_skipped", item=ctx.item_id, hit=hid, reason="too_old")
                 continue
-            target, chosen_hit = int(cluster), int(hid)
-            break
-        if target is None or target == ctx.cluster_id:
-            return
+            return int(cluster), int(hid)
+        return None, None
 
-        # Сериализуем мержи. Лочим ОБА кластера, и всегда по возрастанию id: с параллельной
-        # обработкой пачки два item'а могут мержить встречно (A: 1→2, B: 2→1), и лока только на
-        # target не хватало — один удалял кластер, на который в этот момент ссылался другой
-        # (ForeignKeyViolation). Единый порядок захвата исключает и гонку, и взаимоблокировку.
-        old = ctx.cluster_id
-        keys = sorted({int(target), int(old)} if old is not None else {int(target)})
-        for k in keys:
-            await s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": k})
-
-        # Под локом решение принимается заново по фактическим данным: хит мог переехать (split),
-        # целевой кластер — исчезнуть (встречный мерж), а счётчик size — врать.
-        if await self._cluster_of(s, chosen_hit) != target:
-            log.info(
-                "similarity_merge_skipped", item=ctx.item_id, into_cluster=target,
-                reason="hit_moved",
-            )
-            return
-        if await s.scalar(select(Cluster.id).where(Cluster.id == target)) is None:
-            return
-
-        target_members = await _members(s, target, exclude_id=ctx.item_id)
-        moved = await _members(s, old, exclude_id=ctx.item_id) if old is not None else 0
-        result = target_members + moved + 1  # + текущий item
-        if cluster_full(result, self._max_cluster):
-            log.info(
-                "similarity_merge_skipped", item=ctx.item_id, into_cluster=target,
-                reason=f"cluster_full:{target_members}+{moved}+1",
-            )
-            return
-
-        ctx.cluster_id = target
-        ctx.item.cluster_id = target  # членство — в этой же транзакции, не в mark_processed
-
-        if old is not None and old != target:
-            if moved:
-                await s.execute(
-                    update(NewsItem).where(NewsItem.cluster_id == old).values(cluster_id=target)
+    async def _twin_still_in(self, ctx: AnalyzerContext, cluster_id: int) -> bool:
+        """URL-близнец, к которому url_dedup присоединил item, всё ещё в этом кластере?"""
+        return bool(
+            await ctx.session.scalar(
+                select(
+                    exists().where(
+                        NewsItem.url_normalized == ctx.item.url_normalized,
+                        NewsItem.id != ctx.item_id,
+                        NewsItem.cluster_id == cluster_id,
+                    )
                 )
-            await s.execute(delete(Cluster).where(Cluster.id == old))
+            )
+        )
 
-        await s.execute(update(Cluster).where(Cluster.id == target).values(size=result))
-        log.info("similarity_merge", item=ctx.item_id, into_cluster=target, moved=moved, size=result)
+    async def _fresh_cluster(self, ctx: AnalyzerContext) -> int:
+        cluster = Cluster(representative_id=ctx.item_id, size=1)
+        ctx.session.add(cluster)
+        await ctx.session.flush()
+        ctx.item.cluster_id = cluster.id
+        return int(cluster.id)
+
+    async def analyze(self, ctx: AnalyzerContext) -> None:
+        s = ctx.session
+        target, chosen_hit = await self._pick_target(ctx)
+        old = ctx.cluster_id
+        if target == old:
+            target = None
+        if target is None and not ctx.cluster_joined:
+            return  # свой свежий (или давно свой) кластер, ни с кем не делимся — лочить нечего
+
+        # Лочим ВСЕ затронутые кластеры разом, по возрастанию id: с параллельной обработкой два
+        # item'а могут мержить встречно (A: 1→2, B: 2→1), и лока только на target не хватало —
+        # один удалял кластер, на который в этот момент ссылался другой (ForeignKeyViolation).
+        # Единый порядок захвата исключает и гонку, и взаимоблокировку.
+        for k in sorted({k for k in (old, target) if k is not None}):
+            await s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": int(k)})
+
+        # Под локом решения принимаются заново по таблице, не по тому, что читали до него.
+        if ctx.cluster_joined and old is not None and not await self._twin_still_in(ctx, old):
+            # split увёл близнеца между стадией 1 и локом: присоединение устарело, item — в свой
+            # кластер (его кластер мы не лочили и под чужой лок не лезем)
+            log.info("url_join_stale", item=ctx.item_id, cluster=old)
+            old = await self._fresh_cluster(ctx)
+            ctx.cluster_joined = False
+
+        final, merged = old, False
+        if target is not None:
+            if await self._cluster_of(s, chosen_hit) != target or (
+                await s.scalar(select(Cluster.id).where(Cluster.id == target)) is None
+            ):
+                log.info(
+                    "similarity_merge_skipped", item=ctx.item_id, into_cluster=target,
+                    reason="hit_moved",
+                )
+            else:
+                target_members = await _members(s, target, exclude_id=ctx.item_id)
+                moved = await _members(s, old, exclude_id=ctx.item_id) if old is not None else 0
+                result = target_members + moved + 1  # + текущий item
+                if cluster_full(result, self._max_cluster):
+                    log.info(
+                        "similarity_merge_skipped", item=ctx.item_id, into_cluster=target,
+                        reason=f"cluster_full:{target_members}+{moved}+1",
+                    )
+                else:
+                    if old is not None:
+                        if moved:
+                            await s.execute(
+                                update(NewsItem)
+                                .where(NewsItem.cluster_id == old)
+                                .values(cluster_id=target)
+                            )
+                        await s.execute(delete(Cluster).where(Cluster.id == old))
+                    await s.execute(
+                        update(Cluster).where(Cluster.id == target).values(size=result)
+                    )
+                    final, merged = target, True
+                    log.info(
+                        "similarity_merge", item=ctx.item_id, into_cluster=target,
+                        moved=moved, size=result,
+                    )
+
+        ctx.cluster_id = final
+        ctx.item.cluster_id = final  # членство — в этой же транзакции, не в mark_processed
+        if not merged and ctx.cluster_joined and final is not None:
+            # присоединение по URL: size по факту (url_dedup раньше его не трогал — в проде 2483
+            # кластера разошлись со счётом; теперь каждый join подлечивает)
+            size = await _members(s, final, exclude_id=ctx.item_id) + 1
+            await s.execute(update(Cluster).where(Cluster.id == final).values(size=size))

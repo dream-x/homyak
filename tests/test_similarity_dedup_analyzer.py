@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
+from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
 from homyak.core.interfaces import AnalyzerContext, NewsItemDTO
 from homyak.core.models import Cluster, NewsItem
 from homyak.storage.postgres import NewsRepo
@@ -26,14 +27,14 @@ class _Qdrant:
         return self.hits
 
 
-async def _items(repo, n: int, prefix: str) -> list[int]:
+async def _items(repo, n: int, prefix: str, url: str | None = None) -> list[int]:
     ids = []
     for i in range(n):
         iid, _ = await repo.upsert_item(
             NewsItemDTO(
                 source_type="rss",
                 source_id=f"{prefix}{i}",
-                url=f"https://x.test/{prefix}/{i}",
+                url=url or f"https://x.test/{prefix}/{i}",
                 published_at=_NOW,
             )
         )
@@ -147,3 +148,84 @@ async def test_old_hit_is_ignored(session_factory):
 
     assert await _run(session_factory, analyzer, new_id, old) == old
     assert await _members(session_factory, target) == target_ids
+
+
+# --- присоединение по URL финализируется здесь, под тем же локом, что и мерж/split ---
+
+
+async def _stage1(s, item_id: int) -> AnalyzerContext:
+    item = await s.get(NewsItem, item_id)
+    ctx = AnalyzerContext(item_id=item_id, item=item, session=s)
+    ctx.embedding = [0.1] * 4
+    await UrlDedupAnalyzer().analyze(ctx)
+    return ctx
+
+
+async def test_url_join_writes_membership_and_exact_size(session_factory):
+    repo = NewsRepo(session_factory)
+    (twin,) = await _items(repo, 1, "t", url="https://x.test/same")
+    (new_id,) = await _items(repo, 1, "n", url="https://x.test/same?utm_source=rss")
+    target = await _cluster(session_factory, [twin], size=7)  # size врёт
+    analyzer = SimilarityDedupAnalyzer(_Qdrant([]), max_age_hours=0)
+
+    async with session_factory() as s:
+        ctx = await _stage1(s, new_id)
+        assert ctx.cluster_joined and ctx.cluster_id == target
+        await analyzer.analyze(ctx)
+        await s.commit()
+
+    assert await _members(session_factory, target) == sorted([twin, new_id])
+    assert await _size(session_factory, target) == 2
+
+
+async def test_split_between_url_join_and_the_lock_detaches_the_item(session_factory):
+    """Две настоящие транзакции: стадия 1 присоединила item к C по близнецу, split(C) увёл
+    близнеца в D раньше, чем стадия 3 взяла лок. Item не должен остаться в C без близнеца и не
+    должен лезть в D под чужой лок — он уходит в свой свежий кластер."""
+    repo = NewsRepo(session_factory)
+    (x,) = await _items(repo, 1, "x", url="https://x.test/first")
+    (twin,) = await _items(repo, 1, "t", url="https://x.test/same")
+    (new_id,) = await _items(repo, 1, "n", url="https://x.test/same")
+    c = await _cluster(session_factory, [x, twin])  # группа x (меньший id) остаётся в C
+    analyzer = SimilarityDedupAnalyzer(_Qdrant([]), max_age_hours=0)
+
+    async with session_factory() as s:
+        ctx = await _stage1(s, new_id)
+        assert ctx.cluster_id == c
+        split = await repo.split_cluster(c)  # другая сессия, коммитит сама
+        assert split["clusters"] == 2
+        await analyzer.analyze(ctx)
+        await s.commit()
+        fresh = ctx.cluster_id
+
+    d = (await _cluster_of(session_factory, twin))
+    assert d != c
+    assert fresh not in (c, d)
+    assert await _members(session_factory, c) == [x]
+    assert await _members(session_factory, d) == [twin]
+    assert await _members(session_factory, fresh) == [new_id]
+    assert (await _size(session_factory, c), await _size(session_factory, d), await _size(session_factory, fresh)) == (1, 1, 1)
+
+
+async def test_mark_processed_does_not_undo_a_split(session_factory):
+    """Коммит стадий → split → mark_processed со старым cluster_id: запись остаётся там, куда её
+    положил split; пустое членство fallback по-прежнему заполняет."""
+    repo = NewsRepo(session_factory)
+    (x,) = await _items(repo, 1, "x", url="https://x.test/first")
+    (item,) = await _items(repo, 1, "i", url="https://x.test/second")
+    (orphan,) = await _items(repo, 1, "o")
+    c = await _cluster(session_factory, [x, item])
+
+    await repo.split_cluster(c)
+    d = await _cluster_of(session_factory, item)
+    assert d != c
+
+    await repo.mark_processed(item, cluster_id=c)
+    assert await _cluster_of(session_factory, item) == d
+    await repo.mark_processed(orphan, cluster_id=c)
+    assert await _cluster_of(session_factory, orphan) == c
+
+
+async def _cluster_of(session_factory, item_id: int) -> int | None:
+    async with session_factory() as s:
+        return await s.scalar(select(NewsItem.cluster_id).where(NewsItem.id == item_id))
