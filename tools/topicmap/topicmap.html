@@ -200,9 +200,14 @@ $('tblX').onclick = () => { $('tbl').hidden = true; };
 
 // ---------- геометрия ----------
 function resize(){
+  // при смене размера (поворот телефона, сворачивание панели) держим в центре ту же точку карты
+  const had = W > 0 && H > 0; let cx0 = 0.5, cy0 = 0.5;
+  if (had) { const s = base()*k; cx0 = (W/2 - sx(0))/s; cy0 = 1 - (H/2 - sy(1))/s; }
   const r = $('map').getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1);
   W = r.width; H = r.height; cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); colors(); render();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); colors();
+  if (had) { tx = 0; ty = 0; tx = W/2 - sx(cx0); ty = H/2 - sy(cy0); }
+  render();
 }
 window.addEventListener('resize', resize);
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { colors(); render(); });

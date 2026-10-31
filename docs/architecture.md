@@ -376,6 +376,16 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
   which the wiki page opens directly. On the IT feed most items match (the wiki is built from IT ⭐);
   on the mixed feed roughly one in ten does.
 
+## Topic map (offline, `tools/topicmap/`)
+
+Not a service: a snapshot computed on the laptop. 20k random processed items over 90 days → their
+bge-m3 vectors from the VM's Qdrant → UMAP (cosine, n_neighbors 15, min_dist 0.1) → HDBSCAN (leaf,
+min_cluster_size 30; ~150 themes, eom collapses IT into one giant cluster) → `topicmap.json` →
+`topicmap.html` published as an Artifact. Theme labels are the tags with the highest lift inside the
+cluster (`count × log(N/df)`), title words only as a fallback; broad tags are excluded. The page is a
+canvas scatter coloured by vertical, with the reader's ⭐/👍 as gold rings, a theme list that zooms the
+map and a table twin per theme. See `tools/topicmap/README.md` for the exact commands.
+
 ---
 
 ## Failure modes
