@@ -206,7 +206,7 @@ def _fmt(item) -> str:
     wiki = related_pages(item.title, item.tags)
     if wiki:
         foot += "\n📚 в базе знаний: " + ", ".join(
-            f'<a href="{_esc(w["url"])}">{_esc(w["title"])}</a>' for w in wiki
+            f'<a href="{_esc(w["url"])}">{_esc(w["title"])}</a>·{w["n"]}' for w in wiki
         )
     card = f"{head}\n\n{body}\n\n{foot}"
     if len(card) > _TG_SAFE:

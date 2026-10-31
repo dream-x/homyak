@@ -47,13 +47,13 @@ def test_card_links_wiki_pages(monkeypatch):
     import homyak.adapters.outputs.tg_bot as bot
 
     pages = [
-        {"kind": "entities", "slug": "ollama", "title": "ollama", "url": "http://h/wiki?kind=entities&slug=ollama"},
-        {"kind": "concepts", "slug": "self-hosting", "title": "self hosting", "url": "http://h/wiki?kind=concepts&slug=self-hosting"},
+        {"kind": "entities", "slug": "ollama", "title": "ollama", "n": 9, "url": "http://h/wiki?kind=entities&slug=ollama"},
+        {"kind": "concepts", "slug": "self-hosting", "title": "self hosting", "n": 2, "url": "http://h/wiki?kind=concepts&slug=self-hosting"},
     ]
     monkeypatch.setattr(bot, "related_pages", lambda title, tags: pages)
     card = _fmt(_Item(summary="x"))
-    assert '📚 в базе знаний: <a href="http://h/wiki?kind=entities&amp;slug=ollama">ollama</a>, ' in card
-    assert "self hosting</a>" in card
+    assert '📚 в базе знаний: <a href="http://h/wiki?kind=entities&amp;slug=ollama">ollama</a>·9, ' in card
+    assert "self hosting</a>·2" in card
     # длинная карточка режет саммари, а вика остаётся в подвале
     long_card = _fmt(_Item(summary="б" * 9000))
     assert len(long_card) <= _TG_LIMIT and "📚 в базе знаний" in long_card

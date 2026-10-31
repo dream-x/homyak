@@ -956,7 +956,7 @@ async function openItem(id,fromQueue){try{
   h+=`<h3>${esc(it.title||'(без заголовка)')}</h3>`;
   h+=`<div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
-  if(it.wiki&&it.wiki.length)h+=`<div class="mmeta"><span>📚 в базе знаний: ${it.wiki.map(w=>`<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a>`).join(', ')}</span></div>`;
+  if(it.wiki&&it.wiki.length)h+=`<div class="mmeta"><span>📚 в базе знаний: ${it.wiki.map(w=>`<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a> ·${w.n}`).join(', ')}</span></div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
   if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
   h+=`<div style="margin:12px 0 4px"><span class="vbtn" onclick="openRazbor(${it.id})">📝 Разбор</span></div><div id="razbor-${it.id}"></div>`;
@@ -1047,7 +1047,7 @@ async function loadFeed(){try{
     return `<div class="row" style="--p:${pct||0}%">`
       +`<span class="rel" data-lvl="${lvl(pct||0)}" title="релевантность ${pct!=null?pct+'%':'—'}"></span>`
       +`<span class="src" title="${esc(nm)}">${be} ${esc(nm)}</span>`
-      +`<span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}${(it.wiki&&it.wiki.length)?' · 📚 в базе знаний: '+esc(it.wiki.map(w=>w.title).join(', ')):''}">${(it.wiki&&it.wiki.length)?'📚 ':''}${esc(it.title||'—')}</span>`
+      +`<span class="ttl" onclick="openItem(${it.id})" title="${esc(it.title||'')}${(it.wiki&&it.wiki.length)?' · 📚 в базе знаний: '+esc(it.wiki.map(w=>w.title+' ·'+w.n).join(', ')):''}">${(it.wiki&&it.wiki.length)?'📚 ':''}${esc(it.title||'—')}</span>`
       +`<span class="tm" title="${fmtFull(whenOf(it))}">${fmtWhen(whenOf(it))}<span style="opacity:.5"> ${fmtAge(it.age_s)}</span></span>`
       +`<span class="sc">${pct!=null?pct+'%':'—'}</span>`
       +`<span class="act"><button class="b up ${on('up')}" title="нравится" onclick="vote(${it.id},'up',this)">👍</button>`
@@ -1066,7 +1066,7 @@ async function openItem(id){try{
   const meta=[src,when,it.vertical?VLABEL[it.vertical]:'',(it.watch&&it.watch.length)?'👁 '+it.watch.join(', '):'',it.score!=null?'🎯 '+Math.round(it.score*100)+'%':''].filter(Boolean);
   let h=`<h3>${esc(it.title||'(без заголовка)')}</h3><div class="mmeta">${meta.map(m=>'<span>'+esc(m)+'</span>').join('')}</div>`;
   if(it.tags&&it.tags.length)h+=`<div class="mmeta">${it.tags.map(t=>'#'+esc(t)).join(' ')}</div>`;
-  if(it.wiki&&it.wiki.length)h+=`<div class="mmeta"><span>📚 в базе знаний: ${it.wiki.map(w=>`<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a>`).join(', ')}</span></div>`;
+  if(it.wiki&&it.wiki.length)h+=`<div class="mmeta"><span>📚 в базе знаний: ${it.wiki.map(w=>`<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a> ·${w.n}`).join(', ')}</span></div>`;
   h+=`<div class="mlbl">Исходное сообщение</div><div class="mtext">${esc(it.text)||'(нет текста)'}</div>`;
   if(it.summary)h+=`<div class="mlbl">Саммари</div><div class="mtext">${esc(it.summary)}</div>`;
   h+=`<div style="margin:12px 0 4px"><span class="vbtn" onclick="openRazbor(${it.id})">📝 Разбор</span></div><div id="razbor-${it.id}"></div>`;

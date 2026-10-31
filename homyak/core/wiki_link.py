@@ -5,8 +5,8 @@
 появляется «📚 в базе знаний: ollama, self-hosting» со ссылками. Это ответ на «почему мне это
 показали» через твою же историю, а не ещё один вес в формуле: ранкер этого слоя не видит.
 
-Сопоставление лексическое: slugify(канон тега) и slugify(слово/биграмма заголовка) против
-slug'ов страниц. Индекс страниц — листинг каталога с TTL, файлы заново не читаются.
+Сопоставление лексическое: slugify(тег / канон тега) и slugify(слово/биграмма заголовка) против
+slug'ов страниц. Индекс страниц (slug, вес = число датированных пунктов, H1) — с TTL 5 минут.
 """
 
 from __future__ import annotations
@@ -19,19 +19,33 @@ from homyak.core.config import settings
 from homyak.core.tags import normalize_tag
 
 _WORD = re.compile(r"[0-9a-zA-Zа-яёА-ЯЁ+#.]{2,}")
+_BULLET = re.compile(r"^- \[\d{4}-\d{2}-\d{2}\]", re.M)  # датированный пункт = один источник
 _KINDS = ("entities", "concepts")
 _TTL = 300.0
-_cache: dict = {"at": 0.0, "root": None, "slugs": {}}
+_cache: dict = {"at": 0.0, "root": None, "pages": {}}
 
 
-def _index(ttl: float = _TTL) -> dict[str, set[str]]:
-    root = str(wiki.wiki_root())
+def _read_page(path) -> dict:
+    """Вес страницы = число датированных пунктов (сколько твоих ⭐/👍 в неё легло) + заголовок H1."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"n": 0, "title": path.stem.replace("-", " ")}
+    head = text.lstrip().split("\n", 1)[0]
+    title = head[2:].strip() if head.startswith("# ") else path.stem.replace("-", " ")
+    return {"n": len(_BULLET.findall(text)), "title": title or path.stem}
+
+
+def _index(ttl: float = _TTL) -> dict[str, dict[str, dict]]:
+    root = wiki.wiki_root()
     now = time.monotonic()
-    if _cache["root"] != root or now - _cache["at"] > ttl:
-        _cache.update(
-            at=now, root=root, slugs={k: set(wiki.list_pages(k)) for k in _KINDS}
-        )
-    return _cache["slugs"]
+    if _cache["root"] != str(root) or now - _cache["at"] > ttl:
+        pages = {}
+        for k in _KINDS:
+            d = root / k
+            pages[k] = {p.stem: _read_page(p) for p in d.glob("*.md")} if d.exists() else {}
+        _cache.update(at=now, root=str(root), pages=pages)
+    return _cache["pages"]
 
 
 def page_url(kind: str, slug: str) -> str:
@@ -43,17 +57,25 @@ def related_pages(
 ) -> list[dict]:
     """Страницы вики, лексически совпавшие с тегами записи и сущностями из заголовка.
 
-    Порядок: теги (явные темы) — сущности раньше концептов, затем слова и биграммы заголовка
-    (только сущности: концепт по одному слову заголовка — почти всегда ложный).
+    Кандидаты: теги (сырое написание и канон; сущности раньше концептов), затем слова и биграммы
+    заголовка (только сущности: концепт по одному слову заголовка — почти всегда ложный).
+    Один slug — одна страница (entities/rust и concepts/rust не двоятся: берётся тяжелее).
+    Порядок выдачи — по весу: страница с 35 твоими источниками объясняет больше, чем с одним.
     """
     idx = _index(ttl)
     if not any(idx.values()):
         return []
-    found: list[tuple[str, str]] = []
+    found: dict[str, tuple[int, str, dict]] = {}  # slug → (порядок, kind, page)
 
     def add(kind: str, slug: str) -> None:
-        if slug and slug in idx[kind] and (kind, slug) not in found:
-            found.append((kind, slug))
+        page = idx[kind].get(slug) if slug else None
+        if page is None:
+            return
+        cur = found.get(slug)
+        if cur is None:
+            found[slug] = (len(found), kind, page)
+        elif page["n"] > cur[2]["n"]:
+            found[slug] = (cur[0], kind, page)
 
     for tag in tags or []:
         # и сырое написание, и канон: вика зовёт страницу так, как её назвала LLM
@@ -67,7 +89,8 @@ def related_pages(
             add("entities", wiki.slugify(w))
         if i + 1 < len(words):
             add("entities", wiki.slugify(f"{w} {words[i + 1]}"))
+    ranked = sorted(found.items(), key=lambda kv: (-kv[1][2]["n"], kv[1][0]))
     return [
-        {"kind": kind, "slug": slug, "title": slug.replace("-", " "), "url": page_url(kind, slug)}
-        for kind, slug in found[:limit]
+        {"kind": kind, "slug": slug, "title": page["title"], "n": page["n"], "url": page_url(kind, slug)}
+        for slug, (_, kind, page) in ranked[:limit]
     ]

@@ -369,9 +369,12 @@ an LLM compiles saved items into a compounding, interlinked markdown base. Scope
   the hashtags; dashboard: 📚 before the title in `/lenta`, links in the item modal). This answers "why was
   this shown to me" through the reader's own ⭐/👍 history; **the ranker does not see it** — no boost, only
   the explanation. Matching is lexical: `slugify(raw tag)` and `slugify(canonical tag)` against page slugs
-  (entities before concepts), then title words/bigrams against entities only. The slug index is a directory
-  listing cached for 5 minutes; nothing is read from the pages. Links go to `/wiki?kind=&slug=` on
-  `PUBLIC_BASE_URL`, which the wiki page opens directly.
+  (entities before concepts), then title words/bigrams against entities only. One page per slug
+  (`entities/rust` and `concepts/rust` don't double up), ranked by **weight** = number of dated bullets on
+  the page, i.e. how many of the reader's ⭐/👍 fed it — shown as «rust ·35». The index (slug, weight, H1)
+  is rebuilt from the page files every 5 minutes. Links go to `/wiki?kind=&slug=` on `PUBLIC_BASE_URL`,
+  which the wiki page opens directly. On the IT feed most items match (the wiki is built from IT ⭐);
+  on the mixed feed roughly one in ten does.
 
 ---
 
