@@ -48,7 +48,10 @@ async def test_timeline_counts_stories_per_window_through_every_path(session_fac
     # неделя 0 (сейчас): watch-запись + её кластерный близнец (одна история) + текстовая
     a, c = await _item(session_factory, repo, "a", days_ago=1, title="Iran talks", watch=["Iran"], score=0.6)
     await _item(session_factory, repo, "a2", days_ago=1, title="Iran talks (TG)", watch=["Iran"], score=0.9, cluster=c)
+    await _item(session_factory, repo, "a3", days_ago=0, title="Iran talks (repost)", watch=["Iran"], score=0.95, cluster=c)
     await _item(session_factory, repo, "b", days_ago=2, title="Tehran markets", text="Иранский риал упал", score=0.3)
+    # дата из будущего (бывает у источников): считается сегодняшним окном, а не выпадает из сетки
+    await _item(session_factory, repo, "f", days_ago=-3, title="Iran deal (dated ahead)", watch=["Iran"], score=0.2)
     # 3 недели назад: по тегу
     await _item(session_factory, repo, "d", days_ago=22, title="sanctions", tags=["Iran"], score=0.5)
     # мимо: другая тема
@@ -57,16 +60,19 @@ async def test_timeline_counts_stories_per_window_through_every_path(session_fac
     r = await timeline("иран", days=30, sf=session_factory)
 
     assert r["modes"] == ["watch", "tag", "text"] and r["watch"] == "Iran" and r["unit"] == "day"
-    assert r["total"] == 3  # a+a2 — одна история, b, d
+    assert r["total"] == 4  # a+a2+a3 — одна история, b, d, f
     assert len(r["buckets"]) == 31  # окна с нулями
     by_day = {b["start"][:10]: b for b in r["buckets"]}
     d1 = (_NOW - timedelta(days=1)).date().isoformat()
     d2 = (_NOW - timedelta(days=2)).date().isoformat()
     d22 = (_NOW - timedelta(days=22)).date().isoformat()
-    assert by_day[d1]["count"] == 1 and by_day[d1]["top"]["title"] == "Iran talks (TG)"
+    d0 = _NOW.date().isoformat()
+    # история a живёт в окне первого появления (d1), даже если лучший перепост пришёл сегодня
+    assert by_day[d1]["count"] == 1 and by_day[d1]["top"]["title"] == "Iran talks (repost)"
+    assert by_day[d0]["count"] == 1 and by_day[d0]["top"]["title"] == "Iran deal (dated ahead)"
     assert by_day[d2]["count"] == 1 and by_day[d2]["top"]["title"] == "Tehran markets"
     assert by_day[d22]["count"] == 1
-    assert sum(b["count"] for b in r["buckets"]) == 3
+    assert sum(b["count"] for b in r["buckets"]) == 4
     assert len(r["spark"]) == 31
 
 

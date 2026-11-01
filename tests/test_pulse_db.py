@@ -61,6 +61,7 @@ async def test_pulse_ranks_by_independent_feeds_and_tracks_the_watchlist(session
     assert r["stories"][0]["feeds"] == 3 and r["stories"][0]["items"] == 4 and r["stories"][0]["wide"]
     assert r["stories"][1]["feeds"] == 1 and r["stories"][1]["items"] == 6
     watch = {w["name"]: w for w in r["watch"]}
-    assert watch["Iran"]["count"] == 1 and watch["Iran"]["base"] == 1.0 and watch["Iran"]["direction"] == "→"
+    # Iran: 1 история из 3 в окне против 1 из 1 в типичном окне — ДОЛЯ упала, хотя счёт тот же
+    assert watch["Iran"]["count"] == 1 and watch["Iran"]["base"] == 1.0 and watch["Iran"]["direction"] == "↓"
     assert watch["Oil"]["count"] == 1 and watch["Oil"]["base"] == 0.0  # IT-запись не считается
     assert r["vertical"] == "business" and r["hours"] == 24

@@ -19,3 +19,16 @@ def test_watch_delta_against_the_typical_window():
     assert watch_delta("Oil", 0, 2.0)["direction"] == "↓"
     assert watch_delta("New", 2, 0.0)["growth"] == 2.0  # новая тема: умеренный буст, не ∞
     assert watch_delta("Flat", 3, 3.0)["direction"] == "→"
+
+
+def test_watch_delta_by_share_when_totals_are_known():
+    # 6 из 60 сейчас против 1.5 из 15 обычно — та же доля, хотя сырой счёт вырос вчетверо
+    d = watch_delta("Iran", 6, 1.5, total=60, base_total=15)
+    assert d["growth"] == 0.0 and d["direction"] == "→"
+    # лента утроилась, тема осталась при своих — доля упала
+    assert watch_delta("Iran", 2, 2.0, total=60, base_total=20)["direction"] == "↓"
+    # провал сбора: в базе историй не было вовсе — не «+200%», а «→»
+    gap = watch_delta("Iran", 6, 0.0, total=60, base_total=0.0)
+    assert gap["growth"] == 0.0 and gap["direction"] == "→"
+    # сбор стоит сейчас: не «−100%», а «→»
+    assert watch_delta("Iran", 0, 2.0, total=0, base_total=20)["direction"] == "→"

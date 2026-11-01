@@ -1435,7 +1435,7 @@ async function load(){const q=$('q').value.trim();cur=q;renderChips();
       return `<div class="r ${x.peak?'peak':''}" data-i="${i}"><span class="d">${esc(fmtStart(x.start,d.unit))}${x.peak?' · пик':''}</span><span class="n">${x.count}</span><span>${u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t.title||'—')}</a>`:esc(t.title||'—')}<span class="sc">${esc(srcLabel(t))}${t.score!=null?' · 🎯 '+Math.round(t.score*100)+'%':''}</span></span></div>`;}).join('');
   }catch(e){$('rows').innerHTML='<div class="muted">ошибка</div>';}}
 $('f').onsubmit=e=>{e.preventDefault();load();};
-(async()=>{const p=new URLSearchParams(location.search);if(p.get('days'))$('days').value=p.get('days');if(p.get('v'))$('vert').value=p.get('v');$('q').value=p.get('q')||'';
+(async()=>{const p=new URLSearchParams(location.search);const pick=(id,v)=>{if(v&&[...$(id).options].some(o=>o.value===v))$(id).value=v;};pick('days',p.get('days'));pick('vert',p.get('v'));$('q').value=p.get('q')||'';
   try{const d=await(await fetch('/timeline/api?q=')).json();watchTopics=d.watch_topics||[];}catch(e){}
   load();})();
 </script>
@@ -1504,10 +1504,10 @@ async function load(){render();$('stories').innerHTML='<div class="muted">…</d
     $('stories').innerHTML=(d.stories||[]).map(s=>{const u=safeUrl(s.url);const sc=s.score!=null?Math.round(s.score*100)+'%':'—';
       return `<div class="st ${s.wide?'wide':''}" title="${s.feeds} лент · ${s.items} записей"><div class="w"><b>${s.feeds}</b>лент</div><div><div class="ttl">${u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(s.title||'—')}</a>`:esc(s.title||'—')}</div>${s.summary?`<div class="sm">${esc(s.summary)}</div>`:''}<div class="mt">🎯 ${sc} · ${esc(srcLabel(s))} · ${s.items} зап.${s.age_s!=null?' · 🕒 '+fmtAge(s.age_s):''}${s.tags&&s.tags.length?' · '+s.tags.map(t=>'#'+esc(t)).join(' '):''}</div></div></div>`;
     }).join('')||'<div class="muted">за это окно историй нет</div>';
-    $('watch').innerHTML=(d.watch||[]).map(w=>`<div class="wr" onclick="location.href='/timeline?q=${encodeURIComponent(w.name)}&days=30&v=${vertical}'"><span>${w.direction}</span><span class="n">${esc(w.name)}</span><span class="c">${w.count}</span><span class="b">/ ${w.base}</span>${w.growth>0.25?`<span class="up">+${Math.round(w.growth*100)}%</span>`:(w.growth<-0.25?`<span class="down">${Math.round(w.growth*100)}%</span>`:'')}</div>`).join('')||'<div class="muted">тихо</div>';
+    $('watch').innerHTML=(d.watch||[]).map(w=>`<div class="wr" onclick="location.href='/timeline?q=${encodeURIComponent(w.name)}&days=30&v=${encodeURIComponent(vertical)}'"><span>${w.direction}</span><span class="n">${esc(w.name)}</span><span class="c">${w.count}</span><span class="b">/ ${w.base}</span>${w.growth>0.25?`<span class="up">+${Math.round(w.growth*100)}%</span>`:(w.growth<-0.25?`<span class="down">${Math.round(w.growth*100)}%</span>`:'')}</div>`).join('')||'<div class="muted">тихо</div>';
     $('trends').innerHTML=(d.trends||[]).map(t=>`<span class="tr" onclick="location.href='/trends'"><span>${t.direction}</span><span class="tag">#${esc(t.tag)}</span><span>${t.count}</span>${t.growth>0?`<span class="g">+${Math.round(t.growth*100)}%</span>`:''}</span>`).join('')||'<div class="muted">—</div>';
   }catch(e){$('stories').innerHTML='<div class="muted">ошибка</div>';}}
-(()=>{const p=new URLSearchParams(location.search);if(p.get('v'))vertical=p.get('v');if(p.get('h'))hours=+p.get('h')||24;load();})();
+(()=>{const p=new URLSearchParams(location.search);if(VERTS.some(([k])=>k===p.get('v')))vertical=p.get('v');if(p.get('h'))hours=+p.get('h')||24;load();})();
 </script>
 """
 

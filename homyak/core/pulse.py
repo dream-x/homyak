@@ -4,7 +4,10 @@
 - «Обсуждают все»: история (кластер) ранжируется по ШИРИНЕ — числу независимых лент, которые её
   принесли, затем по числу записей и по personal_score. Одна лента с десятью постами — не событие;
   пять лент с одним постом каждая — событие.
-- Вотчлист: сколько историй упоминали тему в окне против типичного окна (среднее по 7 предыдущим).
+- Вотчлист: доля историй темы в окне против типичного окна (среднее по 7 предыдущим). По доле,
+  а не по сырому числу — как в трендах: провал сбора (прокси лёг, tscrapper без сессии) иначе
+  выглядит как спад всех тем разом, а возвращение — как всплеск всего. Если в окне или в базе
+  историй нет вовсе, сравнивать не с чем: «→» без процентов.
 - Темы: верх дневных трендов той же вертикали (core.trends).
 Чистые части (ранжирование, дельта вотчлиста) тестируются без БД.
 """
@@ -14,7 +17,7 @@ from __future__ import annotations
 from sqlalchemy import text
 
 from homyak.core.interests import watch_topic_names
-from homyak.core.trends import direction, growth, trend_report
+from homyak.core.trends import direction, growth, share_growth, trend_report
 from homyak.storage import db
 
 _VERTICALS = ("business", "it", "medical")
@@ -33,9 +36,16 @@ def breadth_rank(stories: list[dict], limit: int) -> list[dict]:
     return out[:limit]
 
 
-def watch_delta(name: str, count: int, base: float) -> dict:
-    """Тема вотчлиста: сколько историй в окне против типичного окна."""
-    g = growth(count, base)
+def watch_delta(
+    name: str, count: int, base: float, total: float | None = None, base_total: float | None = None
+) -> dict:
+    """Тема вотчлиста: доля историй в окне против типичного окна (без итогов — сырой рост)."""
+    if total is None or base_total is None:
+        g = growth(count, base)
+    elif total < 1 or base_total < 1:  # сбор стоял: сравнивать не с чем
+        g = 0.0
+    else:
+        g = share_growth(count, total, base, base_total)
     return {
         "name": name,
         "count": int(count),
@@ -95,6 +105,20 @@ async def pulse(
                 params,
             )
         ).all()
+        totals = (
+            await s.execute(
+                text(
+                    "select count(distinct coalesce(cluster_id, -id)) filter (where recent) cur,"
+                    "  count(distinct coalesce(cluster_id, -id)) filter (where not recent) / 7.0 base"
+                    " from (select cluster_id, id,"
+                    "   coalesce(published_at, fetched_at) > now() - make_interval(hours => :h) recent"
+                    + base_filter +
+                    "   and coalesce(published_at, fetched_at) > now() - make_interval(hours => :h * 8)"
+                    ") x"
+                ),
+                params,
+            )
+        ).one()
 
     stories = breadth_rank(
         [
@@ -118,7 +142,7 @@ async def pulse(
     )
     known = set(watch_topic_names())
     watch = [
-        watch_delta(r.topic, int(r.cur), float(r.base or 0))
+        watch_delta(r.topic, int(r.cur), float(r.base or 0), float(totals.cur), float(totals.base or 0))
         for r in watch_rows
         if r.topic in known and (int(r.cur) > 0 or float(r.base or 0) >= 1)
     ]

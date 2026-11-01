@@ -5,8 +5,11 @@
 `search_tsv` (AND всех слов, префиксы для словоформ: «иран» ловит «иранский»). Три пути
 объединяются OR — всё, что «про тему», в одну историю (кластер) считается один раз.
 
+История считается в окне своего первого появления (кластеры цепные: перепост через два дня —
+та же история), представляет её лучшая по personal_score запись.
+
 Чистые части (единица времени, пики, спарклайн, tsquery, разбор режима) тестируются без БД;
-один SQL (`_rows`) отдаёт окна с нулями, счёт историй и лучшую запись окна.
+один SQL (`_sql`) отдаёт окна с нулями, счёт историй и лучшую запись окна.
 """
 
 from __future__ import annotations
@@ -78,13 +81,17 @@ def sparkline(counts: list[int]) -> str:
 
 def _sql(window: str, conds: list[str], unit: str) -> str:
     return (
+        # дата в будущем (источники такое дают) иначе выпадала бы за сетку и из счёта
         "with hits as (select coalesce(cluster_id, -id) story, id, title, url, feed_name, vertical,"
-        "   personal_score, coalesce(published_at, fetched_at) at,"
-        "   date_trunc(:unit, coalesce(published_at, fetched_at)) bucket"
+        "   personal_score, least(coalesce(published_at, fetched_at), now()) at,"
+        "   date_trunc(:unit, least(coalesce(published_at, fetched_at), now())) bucket"
         "   from news_items where " + window +
         f"   and ({' or '.join(conds)})),"
-        " per_story as (select distinct on (story) story, bucket, id, title, url, feed_name,"
-        "   vertical, personal_score from hits"
+        # история живёт в окне своего ПЕРВОГО появления (кластеры цепные, перепост через два
+        # дня не сдвигает её), а представляет её лучшая запись
+        " per_story as (select distinct on (story) story, first_bucket bucket, id, title, url,"
+        "   feed_name, vertical, personal_score"
+        "   from (select h.*, min(bucket) over (partition by story) first_bucket from hits h) x"
         "   order by story, personal_score desc nulls last, at desc),"
         " grid as (select generate_series(date_trunc(:unit, now() - make_interval(days => :days)),"
         f"   date_trunc(:unit, now()), interval '{UNITS[unit]}') bucket),"  # literal: свой словарь

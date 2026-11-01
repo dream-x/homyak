@@ -322,7 +322,7 @@ async def _send_digest(m: Message, n: int = 10) -> None:
 
 @dp.message(Command("digest"))
 async def cmd_digest(m: Message, command: CommandObject) -> None:
-    n = int(command.args) if command.args and command.args.strip().isdigit() else 10
+    n = int(command.args) if command.args and command.args.strip().isdecimal() else 10
     await _send_digest(m, n)
 
 
@@ -689,7 +689,7 @@ async def cmd_stats(m: Message) -> None:
 
 @dp.message(Command("why"))
 async def cmd_why(m: Message, command: CommandObject) -> None:
-    if not command.args or not command.args.strip().isdigit():
+    if not command.args or not command.args.strip().isdecimal():
         await m.answer("Использование: /why &lt;id&gt;")
         return
     item = await _repo.get_by_id(int(command.args.strip()))
@@ -772,7 +772,7 @@ async def cmd_pulse(m: Message, command: CommandObject) -> None:
 
     args = (command.args or "").split()
     hours = 24
-    if args and args[-1].isdigit():
+    if args and args[-1].isdecimal():
         hours = int(args.pop())
     vertical = args[0].lower() if args else "business"
     if vertical not in ("business", "it", "medical", "all"):
@@ -821,7 +821,7 @@ async def cmd_timeline(m: Message, command: CommandObject) -> None:
 
     args = (command.args or "").split()
     days = 90
-    if args and args[-1].isdigit():
+    if args and args[-1].isdecimal():
         days = int(args.pop())
     q = " ".join(args).strip()
     if not q:
@@ -837,7 +837,8 @@ async def cmd_timeline(m: Message, command: CommandObject) -> None:
         log.warning("timeline_failed", error=str(e)[:150])
         await m.answer("Таймлайн недоступен (БД). Попробуй позже.")
         return
-    await m.answer(_timeline_text(d), disable_web_page_preview=True)
+    for chunk in _chunks(_timeline_text(d), 4000):  # до 7 ссылок с длинными URL — бывает > 4096
+        await m.answer(chunk, disable_web_page_preview=True)
 
 
 _UNIT_LABEL = {"day": "по дням", "week": "по неделям", "month": "по месяцам"}
@@ -975,7 +976,7 @@ async def cmd_pause(m: Message, command: CommandObject) -> None:
     if not is_owner(m.from_user.id if m.from_user else None):
         await m.answer("Эта настройка общая на всю ленту — менять её может только владелец.")
         return
-    hours = int(command.args) if command.args and command.args.strip().isdigit() else 8
+    hours = int(command.args) if command.args and command.args.strip().isdecimal() else 8
     await _repo.save_cursor(PAUSED_KEY, str(time.time() + hours * 3600))
     await m.answer(f"⏸ Пауза пушей на {hours}ч.")
 
@@ -1521,7 +1522,7 @@ async def _publish_channel(item_id: int) -> None:
     if scope and (item.vertical or "") not in {v.strip() for v in scope.split(",") if v.strip()}:
         return
     chan = settings.feed_channel_id
-    target = int(chan) if chan.lstrip("-").isdigit() else chan  # -100… (id) или @username
+    target = int(chan) if chan.lstrip("-").isdecimal() else chan  # -100… (id) или @username
     # Ошибку отправки НЕ глотаем: она уходит в consume → nak с backoff, и после того как
     # прокси/Telegram оживут, запись всё-таки попадёт в канал (дедуп по channel_posted_at).
     await _bot.send_message(target, _fmt(item))
