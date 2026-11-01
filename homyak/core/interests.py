@@ -23,10 +23,11 @@ from typing import Literal
 
 import structlog
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from homyak.core.config import settings
 from homyak.core.tags import normalize_tag
+from homyak.core.verticals import VERTICALS
 from homyak.core.watchlist import CompiledTopic, compile_watchlist
 
 log = structlog.get_logger(__name__)
@@ -53,6 +54,17 @@ class WatchTopic(BaseModel):
     name: str
     aliases: list[str] = Field(default_factory=list)
     boost: bool = True
+    # пусто = любая вертикаль; иначе матчер смотрит только на записи этих вертикалей
+    verticals: list[str] = Field(default_factory=list)
+
+    @field_validator("verticals")
+    @classmethod
+    def _known_verticals(cls, v: list[str]) -> list[str]:
+        # опечатка (buisness) иначе молча выключила бы тему везде
+        unknown = sorted(set(v) - set(VERTICALS))
+        if unknown:
+            raise ValueError(f"watch: неизвестные вертикали {unknown}; есть {list(VERTICALS)}")
+        return v
 
 
 class Weights(BaseModel):

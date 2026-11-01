@@ -26,4 +26,4 @@ class WatchlistAnalyzer:
         if not wl:
             return
         item = ctx.item
-        item.watch_topics = match(item.title, item.text, wl)
+        item.watch_topics = match(item.title, item.text, wl, item.vertical)
