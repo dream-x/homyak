@@ -9,8 +9,10 @@
 
 Тема может быть ограничена вертикалями (`verticals: [business, medical]`): английские алиасы
 стихии (storm, tornado, cyclone, flood) в IT — это Storm ORM, Tornado, Cyclone DDS и защита от
-flood'а, и README репозиториев получали метку «Природные явления». Вертикаль у записи известна
-с ингеста (конфиг источника), поэтому фильтр — здесь, а не после.
+flood'а, и README репозиториев получали метку «Природные явления». Вертикаль записи ставит
+LLM-теггер (стадия 4), матчер (стадия 2, до префильтра) её не знает — поэтому `match` метит всё,
+а снимает лишнее отдельная стадия `watch_verticals` после теггера (`restrict_to_verticals`).
+Неизвестная вертикаль (теггер отнёс к other — так у большинства записей о стихии) метку не снимает.
 """
 
 from __future__ import annotations
@@ -43,18 +45,24 @@ def compile_watchlist(topics: list[dict]) -> list[CompiledTopic]:
     return out
 
 
-def match(
-    title: str | None, text: str | None, compiled: list[CompiledTopic], vertical: str | None = None
-) -> list[str]:
-    """Список имён тем, под которые попадает айтем. Тема с `verticals` смотрит только на свои;
-    запись без вертикали под такую тему не попадает."""
+def match(title: str | None, text: str | None, compiled: list[CompiledTopic]) -> list[str]:
+    """Список имён тем, под которые попадает айтем (без учёта вертикали — она ещё неизвестна)."""
     hay = f"{title or ''} {text or ''}"[:4000].lower()
     hits: list[str] = []
-    for name, aliases, verts in compiled:
-        if verts is not None and (vertical or "") not in verts:
-            continue
+    for name, aliases, _verts in compiled:
         for is_phrase, needle in aliases:
             if (needle in hay) if is_phrase else needle.search(hay):
                 hits.append(name)
                 break
     return hits
+
+
+def restrict_to_verticals(
+    hits: list[str], vertical: str | None, compiled: list[CompiledTopic]
+) -> list[str]:
+    """Снять с записи темы, ограниченные вертикалями, если её вертикаль известна и не в списке.
+    None (теггер отнёс к other) — не повод снимать: стихию он чаще всего относит именно туда."""
+    if not hits or vertical is None:
+        return list(hits)
+    limits = {name: verts for name, _, verts in compiled}
+    return [h for h in hits if limits.get(h) is None or vertical in limits[h]]

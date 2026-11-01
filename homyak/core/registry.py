@@ -16,6 +16,7 @@ from homyak.adapters.analyzers.scorer import ScorerAnalyzer
 from homyak.adapters.analyzers.similarity_dedup import SimilarityDedupAnalyzer
 from homyak.adapters.analyzers.title_gen import TitleGenAnalyzer
 from homyak.adapters.analyzers.url_dedup import UrlDedupAnalyzer
+from homyak.adapters.analyzers.watch_verticals import WatchVerticalsAnalyzer
 from homyak.adapters.analyzers.watchlist_matcher import WatchlistAnalyzer
 from homyak.adapters.sources.github_topic import GithubTopicSource
 from homyak.adapters.sources.miniflux import MinifluxSource
@@ -56,6 +57,7 @@ def build_analyzers(
         analyzers.append(TitleGenAnalyzer(llm))
         if with_llm:
             analyzers.append(LlmTaggerAnalyzer(llm))
+            analyzers.append(WatchVerticalsAnalyzer())  # темы с verticals — по вертикали от теггера
             analyzers.append(LlmSummarizerAnalyzer())  # своя модель (SUMMARY_MODEL, побольше)
         analyzers.append(ScorerAnalyzer())
         if with_llm and repo is not None:

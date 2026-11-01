@@ -107,18 +107,19 @@ hundreds of GitHub repos by the one-line blurb they no longer stored.
 ## Processing pipeline
 
 Analyzers run sequentially in the `processor`, mutating a shared `AnalyzerContext`, ordered by `stage`
-(`registry.build_analyzers`; ties keep registration order, hence the two entries each at 2 and 3):
+(`registry.build_analyzers`; ties keep registration order, hence the two entries each at 2, 3 and 4):
 
 | Stage | Analyzer | What it does |
 |---|---|---|
 | 0 | `article_fetch` | full text by URL: **README via the GitHub API** for repos, trafilatura otherwise, `r.jina.ai` when the site blocks bots |
 | 1 | `url_dedup` | normalizes URL, finds/creates a cluster by normalized URL. Joining an existing cluster is only *decided* here (`ctx.cluster_joined`): not even the item's FK is written before stage 3 takes the lock, because an autoflushed FK holds the cluster row (KEY SHARE) and deadlocks with a concurrent merge deleting it. A re-run of an already clustered item (`ctx.cluster_kept`) keeps its cluster and takes part in no merge: its row is already visible to `split`, and a stage transaction that has flushed the body holds that row |
-| 2 | `watchlist_matcher` | marks `watch_topics` — before `prefilter`, which treats them as a whitelist; a topic with `verticals:` only looks at items of those verticals (English nature aliases matched Storm ORM / Tornado READMEs in IT) |
+| 2 | `watchlist_matcher` | marks `watch_topics` — before `prefilter`, which treats them as a whitelist. The vertical is not known yet (the tagger sets it), so every topic matches here |
 | 2 | `embedder` | bge-m3 via Ollama `/api/embed`, upsert to Qdrant, sets `embedding_model/version` |
 | 3 | `similarity_dedup` | Qdrant top-5, threshold 0.88, merges clusters and finalizes cluster membership. One lock protocol for every writer of membership (merge, URL join, `split_cluster`): `pg_advisory_xact_lock` on every touched cluster in ascending id order, rows only after that. A hit only counts within `SIMILARITY_MAX_AGE_HOURS` (72) of the item. Under the lock every decision is re-made from the table: a URL join is kept only if the twin is still there (otherwise the item gets a fresh cluster), the hit must still sit in the target, and the merge *result* (target members + moved + the item, counted, not `Cluster.size`) must stay below `SIMILARITY_MAX_CLUSTER` (60). `size` is rewritten from the real count on every join/merge. Membership is committed with the stage transaction; `mark_processed` only fills a NULL `cluster_id`, never overwrites one (a split in between would be undone otherwise) |
 | 3 | `prefilter` | noise gate against the taste centroid — cuts the cheap way before any LLM stage |
 | 3 | `title_gen` | headline from the text when the source gave none (LLM, heuristic fallback) |
 | 4 | `llm_tagger` | tags + **vertical** (business/it/medical/other), JSON |
+| 4 | `watch_verticals` | drops watch topics limited by `verticals:` from items of other verticals (English nature aliases matched Storm ORM / Tornado READMEs in IT); an unknown vertical keeps the label, the prefilter whitelist is unaffected |
 | 5 | `llm_summarizer` | gist + takeaways in an engineer's voice, language pinned to the source text (`detect_lang`) |
 | 6 | `scorer` | base `freshness · (1+raw) · (1+ln(cluster_size))` |
 | 7 | `llm_relevance` | **LLM judge**: relevance to the item's vertical profile (0..1) + reason, cached by `scored_profile_version` |

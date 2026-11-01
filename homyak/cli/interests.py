@@ -28,6 +28,7 @@ from homyak.core.interests import (
     VerticalInterest,
     diff_declaration,
     fold_topics,
+    load_error,
     load_interests,
 )
 from homyak.core.interfaces import AnalyzerContext
@@ -59,6 +60,11 @@ def _check_verticals(inter) -> None:
     тихо осталась бы на прежнем профиле. Пропавший ключ не менее коварен: судья продолжит
     читать старый профиль из БД, а в файле его уже нет — тот самый невидимый дрейф.
     """
+    err = load_error()
+    if err:  # битый файл ≠ «нет в файле»: иначе CLI врал бы про три пропавшие вертикали
+        console.print(f"[red]✗ файл интересов не разобран, ничего не применяю:[/red] {err}")
+        console.print("[dim]процессы держатся за последнюю рабочую версию файла[/dim]")
+        raise SystemExit(1)
     keys = set(inter.verticals)
     known = set(VERTICALS)
     for unknown in sorted(keys - known):

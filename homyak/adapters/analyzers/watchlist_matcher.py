@@ -26,4 +26,6 @@ class WatchlistAnalyzer:
         if not wl:
             return
         item = ctx.item
-        item.watch_topics = match(item.title, item.text, wl, item.vertical)
+        # вертикали здесь ещё нет (её ставит llm_tagger, стадия 4) — ограничение тем по
+        # вертикалям снимает стадия watch_verticals после него
+        item.watch_topics = match(item.title, item.text, wl)

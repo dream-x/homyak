@@ -1,4 +1,4 @@
-from homyak.core.watchlist import compile_watchlist, match
+from homyak.core.watchlist import compile_watchlist, match, restrict_to_verticals
 
 WL = compile_watchlist(
     [
@@ -46,11 +46,11 @@ def test_nature_topic_avoids_false_friends():
     from homyak.core.interests import compiled_watchlist
 
     wl = compiled_watchlist("config/interests.yaml")
-    assert "Природные явления" in match("МЧС предупредило о ливнях и урагане", "", wl, "business")
-    assert "Природные явления" in match("Hurricane makes landfall in Florida", "", wl, "business")
+    assert "Природные явления" in match("МЧС предупредило о ливнях и урагане", "", wl)
+    assert "Природные явления" in match("Hurricane makes landfall in Florida", "", wl)
     # 'температура 5 градусов' и стихи — НЕ стихия
-    assert "Природные явления" not in match("Температура выросла на 5 градусов", "", wl, "business")
-    assert "Природные явления" not in match("Поэт прочитал свои стихи", "", wl, "business")
+    assert "Природные явления" not in match("Температура выросла на 5 градусов", "", wl)
+    assert "Природные явления" not in match("Поэт прочитал свои стихи", "", wl)
 
 
 def test_nature_is_tracked_but_not_boosted():
@@ -60,21 +60,23 @@ def test_nature_is_tracked_but_not_boosted():
     assert "Нефть" not in no_boost_topics("config/interests.yaml")  # остальные бустятся
 
 
-def test_topic_limited_to_verticals_ignores_the_others():
-    """storm/tornado в IT — Storm ORM и Tornado, а не стихия: тема с verticals смотрит только на свои.
-    Тема без verticals — на любую; запись без вертикали под ограниченную тему не попадает."""
+def test_topic_limited_to_verticals_is_matched_then_restricted():
+    """Матчер (стадия 2) вертикали не знает и метит всё; после теггера restrict снимает тему
+    с записей других вертикалей. storm/tornado в IT — Storm ORM и Tornado, а не стихия.
+    Неизвестная вертикаль (other) метку не снимает; тема без verticals остаётся везде."""
     wl = compile_watchlist(
         [
             {"name": "Природные явления", "aliases": ["storm", "tornado"], "verticals": ["business", "medical"]},
             {"name": "Claude", "aliases": ["claude"]},
         ]
     )
-    readme = "Storm is an ORM; works with Tornado and Claude Code"
-    assert match("storm-framework", readme, wl, "it") == ["Claude"]
-    assert match("storm-framework", readme, wl, None) == ["Claude"]
-    assert match("Tropical storm hits Florida", "", wl, "business") == ["Природные явления"]
-    assert match("Storm season and hospitals", "", wl, "medical") == ["Природные явления"]
-    assert match("Claude 5 released", "", wl, None) == ["Claude"]
+    hits = match("storm-framework", "Storm is an ORM; works with Tornado and Claude Code", wl)
+    assert hits == ["Природные явления", "Claude"]
+    assert restrict_to_verticals(hits, "it", wl) == ["Claude"]
+    assert restrict_to_verticals(hits, None, wl) == hits
+    assert restrict_to_verticals(hits, "business", wl) == hits
+    assert restrict_to_verticals(hits, "medical", wl) == hits
+    assert restrict_to_verticals([], "it", wl) == []
 
 
 def test_watch_topic_rejects_an_unknown_vertical():
@@ -91,5 +93,7 @@ def test_live_config_keeps_nature_out_of_it():
     from homyak.core.interests import compiled_watchlist
 
     wl = compiled_watchlist("config/interests.yaml")
-    assert "Природные явления" not in match("storm-framework", "Storm ORM for Python", wl, "it")
-    assert "Природные явления" in match("Tropical storm hits Florida", "", wl, "business")
+    hits = match("storm-framework", "Storm ORM for Python", wl)
+    assert "Природные явления" in hits  # стадия 2: вертикали ещё нет
+    assert "Природные явления" not in restrict_to_verticals(hits, "it", wl)
+    assert "Природные явления" in restrict_to_verticals(hits, None, wl)

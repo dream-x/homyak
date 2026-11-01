@@ -54,13 +54,15 @@ class WatchTopic(BaseModel):
     name: str
     aliases: list[str] = Field(default_factory=list)
     boost: bool = True
-    # пусто = любая вертикаль; иначе матчер смотрит только на записи этих вертикалей
+    # пусто = любая вертикаль; иначе после теггера метка снимается с записей других вертикалей
+    # (вертикаль неизвестна → остаётся)
     verticals: list[str] = Field(default_factory=list)
 
     @field_validator("verticals")
     @classmethod
     def _known_verticals(cls, v: list[str]) -> list[str]:
-        # опечатка (buisness) иначе молча выключила бы тему везде
+        # опечатка (buisness) ловится при разборе: процессы держатся за последнюю рабочую
+        # версию файла, CLI печатает «не разобран» (load_error) и выходит с ошибкой
         unknown = sorted(set(v) - set(VERTICALS))
         if unknown:
             raise ValueError(f"watch: неизвестные вертикали {unknown}; есть {list(VERTICALS)}")
@@ -91,6 +93,8 @@ class Interests(BaseModel):
 _CACHE: dict[str, tuple[float, Interests, list[CompiledTopic]]] = {}
 # Последняя УСПЕШНО разобранная версия — подстилка под битую правку (см. _load).
 _LAST_GOOD: dict[str, tuple[Interests, list[CompiledTopic]]] = {}
+# Почему текущая версия файла не разобрана (для CLI: «нет в файле» и «файл битый» — разные вещи).
+_LOAD_ERROR: dict[str, str] = {}
 
 
 def _resolve(path: str | None) -> str:
@@ -117,6 +121,7 @@ def _load(path: str | None = None) -> tuple[Interests, list[CompiledTopic]]:
             data = yaml.safe_load(Path(p).read_text(encoding="utf-8")) or {}
             parsed = Interests.model_validate(data)
             compiled = compile_watchlist([t.model_dump() for t in parsed.watch])
+            _LOAD_ERROR.pop(p, None)
         except Exception as e:
             # Файл правится руками на живой системе, и нас зовёт prefilter на КАЖДЫЙ айтем
             # (stage 3). Пробрось мы исключение — опечатка роняла бы весь поток: mark_failed
@@ -124,6 +129,7 @@ def _load(path: str | None = None) -> tuple[Interests, list[CompiledTopic]]:
             # за последнюю рабочую версию и кэшируем битый mtime, чтобы не парсить её заново
             # на каждый айтем.
             log.error("interests_invalid", path=p, error=str(e)[:200])
+            _LOAD_ERROR[p] = str(e)[:300]
             good = _LAST_GOOD.get(p)
             parsed, compiled = good if good is not None else (Interests(), [])
             _CACHE[p] = (mtime, parsed, compiled)
@@ -135,6 +141,12 @@ def _load(path: str | None = None) -> tuple[Interests, list[CompiledTopic]]:
 
 def load_interests(path: str | None = None) -> Interests:
     return _load(path)[0]
+
+
+def load_error(path: str | None = None) -> str | None:
+    """Текст ошибки разбора текущей версии файла, если она не применилась (иначе None)."""
+    _load(path)
+    return _LOAD_ERROR.get(_resolve(path))
 
 
 def compiled_watchlist(path: str | None = None) -> list[CompiledTopic]:
