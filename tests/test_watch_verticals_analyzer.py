@@ -42,6 +42,16 @@ async def test_label_survives_stage_2_without_a_vertical_and_is_restricted_after
     assert other.item.watch_topics == ["Природные явления"]
 
 
+def test_restrictor_is_registered_right_after_the_tagger():
+    from homyak.core.registry import build_analyzers
+    from homyak.storage.qdrant import QdrantStore
+
+    names = [a.name for a in build_analyzers(QdrantStore.__new__(QdrantStore), repo=None, with_llm=True)]
+    assert names.index("watch_verticals") == names.index("llm_tagger") + 1
+    assert names.index("watch_verticals") < names.index("llm_summarizer")
+    assert "watch_verticals" not in [a.name for a in build_analyzers(QdrantStore.__new__(QdrantStore), with_llm=False)]
+
+
 def test_cli_reports_a_broken_interests_file_instead_of_missing_verticals(tmp_path, monkeypatch, capsys):
     from homyak.cli import interests as cli
     from homyak.core import interests
@@ -54,3 +64,7 @@ def test_cli_reports_a_broken_interests_file_instead_of_missing_verticals(tmp_pa
     with pytest.raises(SystemExit) as e:
         cli._check_verticals(inter)
     assert e.value.code == 1 and "не разобран" in capsys.readouterr().out
+
+    bad.unlink()  # файл пропал: ошибка — «файла нет», а не прошлая опечатка
+    interests.load_interests()
+    assert interests.load_error() == "файла нет"

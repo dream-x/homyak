@@ -138,6 +138,8 @@ async def cmd_apply(repo: NewsRepo) -> None:
 
 async def cmd_show(repo: NewsRepo) -> None:
     inter = load_interests()
+    if err := load_error():  # show не применяет, поэтому только предупреждение, без exit
+        console.print(f"[red]✗ файл интересов не разобран:[/red] {err} — ниже пусто не потому, что ты так решил")
 
     console.print("\n[bold]1. ДЕКЛАРАЦИЯ[/bold] [dim]— твои слова, config/interests.yaml[/dim]")
     for vertical, decl in inter.verticals.items():

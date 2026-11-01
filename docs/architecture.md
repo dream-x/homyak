@@ -107,7 +107,7 @@ hundreds of GitHub repos by the one-line blurb they no longer stored.
 ## Processing pipeline
 
 Analyzers run sequentially in the `processor`, mutating a shared `AnalyzerContext`, ordered by `stage`
-(`registry.build_analyzers`; ties keep registration order, hence the two entries each at 2, 3 and 4):
+(`registry.build_analyzers`; ties keep registration order — stages 2, 3 and 4 each hold several analyzers):
 
 | Stage | Analyzer | What it does |
 |---|---|---|

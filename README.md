@@ -93,7 +93,7 @@ flowchart LR
     A["article_fetch<br/>full text · GitHub README"] --> B["url_dedup"]
     B --> W["watchlist_matcher"] --> C["embedder<br/>bge-m3"] --> D["similarity_dedup"]
     D --> P["prefilter<br/>noise gate"] --> T["title_gen<br/>LLM headline"]
-    T --> E["llm_tagger<br/>tags + vertical"] --> F["llm_summarizer"]
+    T --> E["llm_tagger<br/>tags + vertical"] --> WV["watch_verticals"] --> F["llm_summarizer"]
     F --> G["scorer"] --> H["llm_relevance<br/>judge vs profile"]
     H --> I["personalizer<br/>personal_score"]
 ```
@@ -330,7 +330,7 @@ homyak/
   adapters/
     sources/   rss · miniflux · telegram_relay
     analyzers/ article_fetch · url_dedup · watchlist_matcher · embedder · similarity_dedup ·
-               prefilter · title_gen · llm_tagger · llm_summarizer · scorer · llm_relevance ·
+               prefilter · title_gen · llm_tagger · watch_verticals · llm_summarizer · scorer · llm_relevance ·
                personalizer
     outputs/   api · tg_bot · dashboard · cli · rss_out · json_feed · sse
   pipeline/    ingest_poll · telegram_ingest · processor · learner · sweeper · wiki · starchan · serve

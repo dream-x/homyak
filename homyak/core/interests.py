@@ -115,7 +115,10 @@ def _load(path: str | None = None) -> tuple[Interests, list[CompiledTopic]]:
         # Молча уехать на дефолты нельзя: prefilter_min_sim решает, что вообще дойдёт до LLM,
         # push_threshold — что прилетит в телегу. Подмена таких ручек обязана быть громкой.
         log.error("interests_file_missing", path=p, effect="работаем на дефолтах")
+        _LOAD_ERROR[p] = "файла нет"  # не прошлая ошибка валидации: CLI скажет именно это
         parsed, compiled = Interests(), []
+        _CACHE[p] = (mtime, parsed, compiled)  # last-good не трогаем: файл вернётся — подстилка цела
+        return parsed, compiled
     else:
         try:
             data = yaml.safe_load(Path(p).read_text(encoding="utf-8")) or {}
