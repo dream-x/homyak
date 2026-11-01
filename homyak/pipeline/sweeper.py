@@ -76,6 +76,7 @@ async def main_async() -> None:
             CronTrigger(hour=settings.repo_stats_hour, minute=20),
             id="repo_stats",
             max_instances=1,
+            misfire_grace_time=3600,  # дефолт 1 с: занятый луп в 04:20:00 = пропущенный день
         )
     scheduler.start()
     log.info(

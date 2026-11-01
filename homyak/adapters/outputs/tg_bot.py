@@ -742,7 +742,8 @@ async def cmd_radar(m: Message, command: CommandObject) -> None:
     """🐙 GitHub-радар: /radar [дней] — репозитории из ленты, набирающие звёзды быстрее всех."""
     from homyak.core.radar import radar
 
-    days = int(command.args) if command.args and command.args.strip().isdigit() else 7
+    days = int(command.args) if command.args and command.args.strip().isdecimal() else 7
+    days = max(2, min(days, 90))  # как в radar(): заголовок не должен врать про окно
     try:
         rows = await radar(days, limit=12)
     except Exception as e:
@@ -758,7 +759,7 @@ async def cmd_radar(m: Message, command: CommandObject) -> None:
         tail = f' — <a href="{_esc(it["url"])}">{_esc(it.get("title") or "")}</a>' if it.get("url") else ""
         lines.append(
             f"{'⭐' if r['starred'] else '•'} <a href=\"{_esc(r['url'])}\">{_esc(r['repo'])}</a>"
-            f" <b>+{r['per_day']:g}/д</b> · {r['stars']}★{tail}"
+            f" <b>{r['per_day']:+g}/д</b> · {r['stars']}★{tail}"
         )
     for chunk in _chunks("\n".join(lines), 4000):
         await m.answer(chunk, disable_web_page_preview=True)

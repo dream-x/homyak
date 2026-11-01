@@ -18,7 +18,7 @@ from typing import Awaitable, Callable
 
 import httpx
 import structlog
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from homyak.core.config import settings
@@ -30,11 +30,25 @@ log = structlog.get_logger(__name__)
 
 _API = "https://api.github.com/repos/{repo}"
 # та же нормализация, что repo_key, но в SQL — чтобы связать repo_stats с записями ленты
-REPO_KEY_SQL = (
+REPO_KEY_SQL = (  # 'i' — как и в REPO_URL_SQL: GitHub.com/A/B — тот же репозиторий
     "lower(regexp_replace(regexp_replace(url,"
-    " '^https?://(www\\.)?github\\.com/([^/#?]+)/([^/#?]+).*$', '\\2/\\3'), '\\.git$', ''))"
+    " '^https?://(www\\.)?github\\.com/([^/#?]+)/([^/#?]+).*$', '\\2/\\3', 'i'), '\\.git$', ''))"
 )
 REPO_URL_SQL = "url ~* '^https?://(www\\.)?github\\.com/[^/#?]+/[^/#?]+'"
+_MAX_ERROR_STREAK = 5  # столько сетевых ошибок подряд = сеть легла, дальше только шум
+
+
+class RateLimited(RuntimeError):
+    "GitHub сказал «хватит»: в этом прогоне дальше смысла нет, остальное — завтра."
+
+
+def is_rate_limit(status: int, headers) -> bool:
+    "403 у GitHub — не только лимит (TOS-блок репозитория, SAML, abuse): лимит узнаём по заголовкам."
+    if status == 429:
+        return True
+    return status == 403 and (
+        headers.get("x-ratelimit-remaining") == "0" or "retry-after" in headers
+    )
 
 
 def repo_key(url: str | None) -> str | None:
@@ -55,7 +69,13 @@ def velocity(points: list[tuple[date, int]]) -> dict | None:
 
 
 async def candidate_repos(sf=None, days: int = 30, limit: int = 300) -> list[str]:
-    """Репозитории для снимка: все ⭐-помеченные + из ленты за `days` дней, свежие первыми."""
+    """Репозитории для снимка: все ⭐-помеченные, затем те, у кого в окне уже есть снимок, затем
+    свежие из ленты за `days` дней.
+
+    Порядок важен, когда бюджет меньше числа кандидатов (без токена — 60 запросов/час): без
+    второго приоритета свежие URL из gh_*-фидов каждый день вытесняли бы вчерашние, первые
+    точки никогда не замыкались бы в пару, и радар вырождался бы в «только ⭐».
+    """
     async with (sf or db.SessionFactory)() as s:
         rows = (
             await s.execute(
@@ -72,14 +92,27 @@ async def candidate_repos(sf=None, days: int = 30, limit: int = 300) -> list[str
                 {"d": days},
             )
         ).all()
-    out: list[str] = []
+        snapped = {
+            r[0]
+            for r in await s.execute(
+                text("select distinct repo from repo_stats where day >= current_date - cast(:d as integer)"),
+                {"d": days},
+            )
+        }
+    agg: dict[str, list] = {}  # key → [starred, has_snapshot, last_seen]
     for r in rows:
         key = repo_key(r.url)
-        if key and key not in out:
-            out.append(key)
-        if len(out) >= limit:
-            break
-    return out
+        if not key:
+            continue
+        a = agg.setdefault(key, [False, key in snapped, None])
+        a[0] = a[0] or bool(r.starred)
+        if r.last_seen and (a[2] is None or r.last_seen > a[2]):
+            a[2] = r.last_seen
+    ordered = sorted(
+        agg,
+        key=lambda k: (not agg[k][0], not agg[k][1], -(agg[k][2].timestamp() if agg[k][2] else 0)),
+    )
+    return ordered[:limit]
 
 
 async def fetch_repo(repo: str, client: httpx.AsyncClient) -> dict | None:
@@ -88,9 +121,9 @@ async def fetch_repo(repo: str, client: httpx.AsyncClient) -> dict | None:
     if settings.github_access_token:
         headers["Authorization"] = f"Bearer {settings.github_access_token}"
     resp = await client.get(_API.format(repo=repo), headers=headers)
-    if resp.status_code in (403, 429):
-        raise RuntimeError(f"github rate limit: {resp.status_code}")
-    if resp.status_code != 200:
+    if is_rate_limit(resp.status_code, resp.headers):
+        raise RateLimited(f"github rate limit: {resp.status_code}")
+    if resp.status_code != 200:  # 404 — нет/переименован, 403 без лимита — заблокирован
         return None
     d = resp.json()
     pushed = d.get("pushed_at")
@@ -108,21 +141,35 @@ Fetcher = Callable[[str], Awaitable[dict | None]]
 async def snapshot(
     sf=None, fetch: Fetcher | None = None, limit: int | None = None, today: date | None = None
 ) -> dict:
-    """Дневной снимок всех кандидатов. Возвращает {repos, saved, missing, stopped}."""
+    """Дневной снимок всех кандидатов. Возвращает {repos, saved, missing, errors, stopped}.
+
+    Останавливается только по лимиту GitHub (RateLimited) или после _MAX_ERROR_STREAK сетевых
+    ошибок подряд; таймаут одного репозитория — его проблема, а не всего снимка.
+    """
     limit = limit if limit is not None else settings.repo_stats_limit
     repos = await candidate_repos(sf, limit=limit)
     day = today or date.today()
-    saved = missing = 0
+    saved = missing = errors = streak = 0
     stopped: str | None = None
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
         _fetch = fetch or (lambda r: fetch_repo(r, client))
         for i, repo in enumerate(repos):
             try:
                 stats = await _fetch(repo)
-            except Exception as e:  # лимит/сеть: дальше смысла нет, остальное — завтра
+            except RateLimited as e:  # дальше смысла нет, остальное — завтра
                 stopped = str(e)[:120]
                 log.warning("repo_stats_stopped", at=i, repo=repo, error=stopped)
                 break
+            except Exception as e:  # сеть/JSON одного репозитория — пропускаем
+                errors += 1
+                streak += 1
+                log.warning("repo_stats_fetch_failed", repo=repo, error=str(e)[:120])
+                if streak >= _MAX_ERROR_STREAK:
+                    stopped = f"{streak} ошибок подряд: {str(e)[:80]}"
+                    log.warning("repo_stats_stopped", at=i, repo=repo, error=stopped)
+                    break
+                continue
+            streak = 0
             if stats is None:
                 missing += 1
                 continue
@@ -131,14 +178,16 @@ async def snapshot(
                 await s.execute(
                     stmt.on_conflict_do_update(
                         index_elements=["repo", "day"],
-                        set_={k: getattr(stmt.excluded, k) for k in stats},
+                        set_={k: getattr(stmt.excluded, k) for k in stats} | {"fetched_at": func.now()},
                     )
                 )
                 await s.commit()
             saved += 1
             if fetch is None and i % 20 == 19:
                 await asyncio.sleep(0.5)  # вежливость к API
-    return {"repos": len(repos), "saved": saved, "missing": missing, "stopped": stopped}
+    return {
+        "repos": len(repos), "saved": saved, "missing": missing, "errors": errors, "stopped": stopped,
+    }
 
 
 async def radar(days: int = 7, limit: int = 20, sf=None) -> list[dict]:
