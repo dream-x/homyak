@@ -15,6 +15,13 @@ import re
 _SEP = re.compile(r"[\s_/]+")
 _BAD = re.compile(r"[^0-9a-zA-Zа-яёА-ЯЁ+#.&-]+")
 MAX_TAG_LEN = 40
+# всё, что Python считает пробелом (`str.isspace()`), кодами — для SQL-двойника
+_WS_CODES = [
+    *range(0x09, 0x0E), *range(0x1C, 0x20), 0x85, 0xA0, 0x1680, *range(0x2000, 0x200B),
+    0x2028, 0x2029, 0x202F, 0x205F, 0x3000,
+]
+_WS_RE = "".join(f"\\u{c:04x}" for c in _WS_CODES)  # внутрь [...] регэкспа ARE
+_WS_TRIM = f"E' {_WS_RE}'"  # второй аргумент btrim (E-строка понимает те же \uXXXX)
 
 # синоним → каноническая форма; значения тоже канонические (цепочек нет)
 ALIASES: dict[str, str] = {
@@ -161,9 +168,14 @@ def alias_params() -> dict[str, list[str]]:
 
 def form_sql(col: str) -> str:
     """Форма тега в SQL (регистр, #, разделители, мусор, длина) — без словаря. NULL для пустого."""
+    # Python `strip()`/`\s` — Unicode-широкие (NBSP, табуляция, U+3000), а `btrim(col)` и
+    # `[[:space:]]` в PG — нет: строка `ai\u00a0agents` уходила в другую группу, и политика
+    # профиля / unmute её не видели. Перечисляем пробелы явно с обеих сторон.
+    ws, trim_chars = _WS_RE, _WS_TRIM
     f = (
         "trim(both '-.' from regexp_replace(regexp_replace(regexp_replace("
-        f"btrim(ltrim(lower(btrim({col})), '#')), '[\\s_/]+', '-', 'g'),"
+        f"btrim(ltrim(lower(btrim({col}, {trim_chars})), '#'), {trim_chars}),"
+        f" '[ {ws}_/]+', '-', 'g'),"
         " '[^0-9a-zа-яё+#.&-]+', '', 'g'), '-{2,}', '-', 'g'))"
     )
     return f"nullif(case when length({f}) <= {MAX_TAG_LEN} then {f} end, '')"

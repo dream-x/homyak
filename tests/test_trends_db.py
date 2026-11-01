@@ -55,6 +55,7 @@ async def test_sql_canon_matches_python(session_factory):
         "  AI Agents ", "ai_agents", "#AI-agents", "ai--agents-", "c++", "m&a", "LLMs",
         "large language models", "Federal Reserve", "self hosted", "Rust-lang", "x" * 41,
         "   ", "#", "ИИ-Агенты", "golang", "k8s", "open-source", "a/b testing",
+        "ai\u00a0agents", "\t#go", "\u3000Rust\u3000", "\u00a0", "ai\u2003agents",
     ]
     async with session_factory() as s:
         rows = (

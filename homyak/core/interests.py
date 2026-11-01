@@ -26,6 +26,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from homyak.core.config import settings
+from homyak.core.tags import normalize_tag
 from homyak.core.watchlist import CompiledTopic, compile_watchlist
 
 log = structlog.get_logger(__name__)
@@ -140,6 +141,35 @@ def no_boost_topics(path: str | None = None) -> frozenset[str]:
 
 def weights(path: str | None = None) -> Weights:
     return load_interests(path).weights
+
+
+def fold_topics(topics: list[dict] | list[Topic]) -> tuple[dict[str, str], list[str]]:
+    """Декларация → {канон темы: полярность} + предупреждения о схлопнувшихся парах.
+
+    Теггер пишет теги в каноне (`core/tags`), и tag_affinity живёт под каноном, поэтому два
+    написания одной темы в файле (observability + monitoring, self-hosted + self-hosting) — ОДНА
+    тема. Первая в файле задаёт полярность; если вторая с ней спорит — это видно в diff/apply,
+    а не молча «последний побеждает» (так один apply ронял посев дублем ключа, а каждый
+    следующий перетирал выученный вес группы — ревью круга 3).
+    """
+    folded: dict[str, str] = {}
+    first: dict[str, str] = {}
+    warnings: list[str] = []
+    for t in topics:
+        raw = t.get("name") if isinstance(t, dict) else t.name
+        if not raw:
+            continue
+        pol = (t.get("polarity", "like") if isinstance(t, dict) else t.polarity) or "like"
+        canon = normalize_tag(raw) or raw
+        if canon not in folded:
+            folded[canon] = pol
+            first[canon] = raw
+        elif folded[canon] != pol:
+            warnings.append(
+                f"⚠ {first[canon]} и {raw} — одна тема ({canon}) с разной полярностью"
+                f" ({folded[canon]} / {pol}); действует {folded[canon]}, первая в файле"
+            )
+    return folded, warnings
 
 
 def diff_declaration(

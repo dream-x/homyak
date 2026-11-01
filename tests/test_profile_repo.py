@@ -196,6 +196,37 @@ async def test_unmute_clears_every_spelling_of_the_topic(session_factory):
     assert await repo.unmute_topic("it", "go") == 0
 
 
+async def test_two_spellings_in_one_declaration_are_one_topic(session_factory):
+    """observability + monitoring в одной декларации (живой файл): один посев, не дубль PK;
+    переприменение с правкой description не трогает выученный вес группы."""
+    from homyak.core.models import TagAffinity
+    from sqlalchemy import update
+
+    repo = NewsRepo(session_factory)
+    decl = [
+        {"name": "observability", "polarity": "love"},
+        {"name": "monitoring", "polarity": "like"},
+        {"name": "self-hosted", "polarity": "love"},
+        {"name": "self-hosting", "polarity": "love"},
+    ]
+    await repo.set_profile("it", "v1", decl)
+    assert await _rows(session_factory) == {("observability", 0.8, 0), ("selfhosted", 0.8, 0)}
+
+    async with session_factory() as s:  # learner накопил свидетельства и сдвинул вес
+        await s.execute(
+            update(TagAffinity)
+            .where(TagAffinity.vertical == "it", TagAffinity.tag == "observability")
+            .values(weight=-0.2, n_pos=6)
+        )
+        await s.commit()
+    await repo.set_profile("it", "v2 — правка описания", decl)
+    assert await _rows(session_factory) == {("observability", -0.2, 6), ("selfhosted", 0.8, 0)}
+
+    decl[0]["polarity"] = "dislike"  # ты передумал — приказ группе, свидетельства остаются
+    await repo.set_profile("it", "v3", decl)
+    assert await _rows(session_factory) == {("observability", -0.5, 6), ("selfhosted", 0.8, 0)}
+
+
 async def _rows(session_factory) -> set[tuple[str, float, int]]:
     from sqlalchemy import select
 

@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homyak.core.config import settings
+from homyak.core.interests import fold_topics
 from homyak.core.interfaces import Feed, FeedQuery, NewsItemDTO
 from homyak.core.tags import ALIAS_CTE, alias_params, canon_lateral, canonical_tags, normalize_tag
 from homyak.core.models import (
@@ -280,12 +281,10 @@ class NewsRepo:
                 or []
             )
             # имена тем — в каноне (как теггер пишет теги), иначе посеянный golang не находил
-            # бы записи с go
-            prev_pol = {
-                normalize_tag(t["name"]) or t["name"]: t.get("polarity", "like")
-                for t in prev_topics
-                if isinstance(t, dict) and t.get("name")
-            }
+            # бы записи с go; два написания в одной декларации — одна тема, первое задаёт
+            # полярность (fold_topics), иначе второй посев дублировал PK, а «последний
+            # побеждает» в prev_pol перетирал выученный вес группы при каждом apply
+            prev_pol, _ = fold_topics([t for t in prev_topics if isinstance(t, dict)])
             await s.execute(
                 update(Profile)
                 .where(Profile.active, Profile.vertical == vertical)
@@ -311,17 +310,19 @@ class NewsRepo:
             # историческим сдвигал бы вес при обычном переприменении, а смена полярности
             # не перекрывала бы старую строку (ревью #011).
             groups = await self._affinity_groups(s, vertical)
-            names = [normalize_tag(t["name"]) or t["name"] for t in topics if t.get("name")]
-            for t in topics:
-                name = t.get("name")
-                if not name:
-                    continue
-                name = normalize_tag(name) or name
-                pol = t.get("polarity", "like")
+            folded, _ = fold_topics(topics)
+            names = list(folded)
+            for name, pol in folded.items():
                 weight = _POLARITY_WEIGHT.get(pol, 0.0)
                 group = groups.get(name, [])
                 if not group:
-                    s.add(TagAffinity(vertical=vertical, tag=name, weight=weight))
+                    # upsert, не add: learner пишет те же ключи параллельно (bump_tag_affinity),
+                    # и голый INSERT в это окно падал бы дублем PK
+                    await s.execute(
+                        pg_insert(TagAffinity)
+                        .values(vertical=vertical, tag=name, weight=weight)
+                        .on_conflict_do_nothing()
+                    )
                 elif prev_pol.get(name) != pol:
                     # приказ — всей группе; счётчики свидетельств остаются
                     await s.execute(

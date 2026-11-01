@@ -27,6 +27,7 @@ from homyak.core.interests import (
     MUTE_SKIP_PREFIX,
     VerticalInterest,
     diff_declaration,
+    fold_topics,
     load_interests,
 )
 from homyak.core.interfaces import AnalyzerContext
@@ -75,11 +76,18 @@ async def _diff_one(repo: NewsRepo, vertical: str, decl: VerticalInterest) -> li
     return diff_declaration(decl, desc, topics)
 
 
+def _fold_warnings(decl: VerticalInterest) -> list[str]:
+    """Пары написаний одной темы с разной полярностью — показать, а не схлопнуть молча."""
+    return fold_topics(decl.topics)[1]
+
+
 async def cmd_diff(repo: NewsRepo) -> bool:
     inter = load_interests()
     _check_verticals(inter)
     dirty = False
     for vertical, decl in inter.verticals.items():
+        for w in _fold_warnings(decl):
+            console.print(f"[yellow]{vertical}: {w}[/yellow]")
         lines = await _diff_one(repo, vertical, decl)
         if not lines:
             console.print(f"[green]✓ {vertical}[/green] — совпадает с БД")
@@ -105,6 +113,8 @@ async def cmd_apply(repo: NewsRepo) -> None:
         if not decl.description.strip():
             console.print(f"[yellow]{vertical}: пустое description — пропускаю[/yellow]")
             continue
+        for w in _fold_warnings(decl):
+            console.print(f"[yellow]{vertical}: {w}[/yellow]")
         lines = await _diff_one(repo, vertical, decl)
         if not lines:
             console.print(f"[dim]{vertical}: без изменений[/dim]")
