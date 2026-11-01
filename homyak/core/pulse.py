@@ -9,6 +9,8 @@
   выглядит как спад всех тем разом, а возвращение — как всплеск всего. Если в окне или в базе
   историй нет вовсе, сравнивать не с чем: «→» без процентов.
 - Темы: верх дневных трендов той же вертикали (core.trends).
+Все три блока — по одному срезу записей (`trends.ITEM_FILTER`: обработанные, не пропущенные, с
+personal_score), иначе доли и базы между блоками несопоставимы.
 Чистые части (ранжирование, дельта вотчлиста) тестируются без БД.
 """
 
@@ -17,7 +19,7 @@ from __future__ import annotations
 from sqlalchemy import text
 
 from homyak.core.interests import watch_topic_names
-from homyak.core.trends import direction, growth, share_growth, trend_report
+from homyak.core.trends import ITEM_FILTER, direction, growth, share_growth, trend_report
 from homyak.storage import db
 
 _VERTICALS = ("business", "it", "medical")
@@ -64,9 +66,10 @@ async def pulse(
     params: dict = {"h": hours}
     if vcond:
         params["v"] = vertical
-    base_filter = (
-        " from news_items where processed_at is not null and skip_reason is null" + vcond
-    )
+    # тот же срез, что у трендов (дошедшие до ранкера: personal_score не NULL): иначе истории,
+    # вотчлист и знаменатель доли считали бы и неоценённые записи (на проде ~19% окна), а темы
+    # дня — нет, и сравнение между блоками одного экрана было бы несопоставимым (ревью #016)
+    base_filter = " from news_items where" + ITEM_FILTER + vcond
     async with (sf or db.SessionFactory)() as s:
         rows = (
             await s.execute(

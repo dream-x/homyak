@@ -54,6 +54,10 @@ async def test_pulse_ranks_by_independent_feeds_and_tracks_the_watchlist(session
     for i in range(7):
         await _item(session_factory, repo, f"old{i}", hours_ago=30 + 24 * i, feed="ft", watch=["Iran"])
     await _item(session_factory, repo, "it", hours_ago=1, feed="hn", vertical="it", watch=["Oil"])  # чужая вертикаль
+    # не дошли до ранкера (personal_score NULL) — мимо всех трёх блоков, как в трендах: ни история,
+    # ни счёт вотчлиста, ни знаменатель доли, ни база
+    await _item(session_factory, repo, "raw", hours_ago=1, feed="reuters", score=None, watch=["Iran", "Oil"])
+    await _item(session_factory, repo, "rawold", hours_ago=40, feed="ft", score=None, watch=["Oil"])
 
     r = await pulse(24, "business", limit=5, sf=session_factory)
 
@@ -63,5 +67,6 @@ async def test_pulse_ranks_by_independent_feeds_and_tracks_the_watchlist(session
     watch = {w["name"]: w for w in r["watch"]}
     # Iran: 1 история из 3 в окне против 1 из 1 в типичном окне — ДОЛЯ упала, хотя счёт тот же
     assert watch["Iran"]["count"] == 1 and watch["Iran"]["base"] == 1.0 and watch["Iran"]["direction"] == "↓"
-    assert watch["Oil"]["count"] == 1 and watch["Oil"]["base"] == 0.0  # IT-запись не считается
+    assert watch["Oil"]["count"] == 1 and watch["Oil"]["base"] == 0.0  # IT-запись и NULL-score не считаются
+    assert watch["Iran"]["growth"] == round((1 / 3) / (1 / 1) - 1, 2)  # знаменатель — 3 оценённые истории
     assert r["vertical"] == "business" and r["hours"] == 24

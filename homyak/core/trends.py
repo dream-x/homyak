@@ -42,7 +42,9 @@ _BROAD_TAGS = {
 }
 
 _VERTICALS = ("business", "it", "medical")
-_ITEM_FILTER = (
+# единый срез для трендов и пульса: дошедшие до ранкера. Неоценённые (судья/ранкер не успел) —
+# мимо, иначе окно и база, истории и темы считаются по разным популяциям
+ITEM_FILTER = (
     " processed_at is not null and skip_reason is null and personal_score is not null"
 )
 
@@ -155,12 +157,12 @@ async def _windows(
         params["v"] = vertical
     cur_items = (
         "select coalesce(cluster_id, -id) story, tags, personal_score from news_items where"
-        + _ITEM_FILTER + vcond
+        + ITEM_FILTER + vcond
         + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
     )
     base_items = (
         "select coalesce(cluster_id, -id) story, tags from news_items where"
-        + _ITEM_FILTER + vcond
+        + ITEM_FILTER + vcond
         + " and coalesce(published_at,fetched_at) <= now() - make_interval(hours=>:h)"
         + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:total)"
     )
@@ -169,7 +171,7 @@ async def _windows(
     async with (sf or db.SessionFactory)() as s:
         raws, canons = await spelling_map(
             s,
-            _ITEM_FILTER + vcond
+            ITEM_FILTER + vcond
             + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:total)",
             params,
         )
@@ -247,7 +249,7 @@ async def trend_items(
     if vcond:
         params["v"] = vertical
     window = (
-        _ITEM_FILTER + vcond
+        ITEM_FILTER + vcond
         + " and coalesce(published_at,fetched_at) > now() - make_interval(hours=>:h)"
     )
     async with (sf or db.SessionFactory)() as s:
