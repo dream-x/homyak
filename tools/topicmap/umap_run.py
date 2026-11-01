@@ -13,11 +13,13 @@ print("loaded", V.shape, f"{time.time()-t0:.0f}s", flush=True)
 
 import umap, hdbscan
 import os, sys
-if os.path.exists("xy.npy"):
+# кэш проекции привязан к выборке: новая sample.csv + старый xy.npy — те же 20k строк по форме,
+# и заголовки молча легли бы на чужие координаты
+if os.path.exists("xy.npy") and os.path.exists("xy_ids.npy") and np.array_equal(np.load("xy_ids.npy"), I):
     xy = np.load("xy.npy"); print("umap cached", flush=True)
 else:
     xy = umap.UMAP(n_neighbors=15, min_dist=0.1, metric="cosine", random_state=42, n_jobs=1).fit_transform(V)
-    np.save("xy.npy", xy); print("umap", f"{time.time()-t0:.0f}s", flush=True)
+    np.save("xy.npy", xy); np.save("xy_ids.npy", I); print("umap", f"{time.time()-t0:.0f}s", flush=True)
 MCS = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 MS = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 METHOD = sys.argv[3] if len(sys.argv) > 3 else "eom"

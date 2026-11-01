@@ -14,6 +14,15 @@ def wiki_tmp(tmp_path, monkeypatch):
     return tmp_path
 
 
+def test_page_path_stays_inside_the_kind_directory(wiki_tmp):
+    (wiki_tmp / "index.md").write_text("# index")
+    wiki.write_page("concepts", "rag", "# RAG")
+    assert wiki.read_page("concepts", "rag") == "# RAG\n"
+    for bad in ("../index", "../../etc/passwd", "a/b", "", "x\\y"):
+        with pytest.raises(ValueError):
+            wiki.read_page("concepts", bad)
+
+
 def test_slugify():
     assert slugify("Continuous Batching") == "continuous-batching"
     assert slugify("  vLLM / PagedAttention!! ") == "vllm-pagedattention"

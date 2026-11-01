@@ -50,7 +50,12 @@ def ensure_dirs() -> None:
 def page_path(kind: str, slug: str) -> Path:
     if kind not in KINDS:
         raise ValueError(f"wiki: неизвестный тип страницы {kind!r}")
-    return wiki_root() / kind / f"{slug}.md"
+    base = wiki_root() / kind
+    p = base / f"{slug}.md"
+    # slug приходит и из URL (/wiki?kind=&slug=): «../index» не должен выводить за каталог типа
+    if not slug or "/" in slug or "\\" in slug or p.resolve().parent != base.resolve():
+        raise ValueError(f"wiki: недопустимый slug {slug!r}")
+    return p
 
 
 def read_page(kind: str, slug: str) -> str | None:

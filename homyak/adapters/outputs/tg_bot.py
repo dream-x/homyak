@@ -180,7 +180,8 @@ def _item_when(item) -> str:
     return _when_age(getattr(item, "published_at", None) or getattr(item, "fetched_at", None))
 
 
-def _fmt(item) -> str:
+def _fmt(item, *, wiki: bool = True) -> str:
+    """Карточка записи. `wiki=False` — для канала: ссылки на твою вику подписчикам ни к чему."""
     pct = int(round((item.personal_score or 0) * 100))
     vlabel = LABELS.get(item.vertical, "")
     watch = getattr(item, "watch_topics", None) or []
@@ -203,10 +204,10 @@ def _fmt(item) -> str:
     foot = src + (f"\n{tags}" if tags else "")
     # «почему это тебе»: страницы твоей же вики, совпавшие с тегами/заголовком. Ранкер этого
     # не видит — только объяснение на карточке; ссылка ведёт в /wiki на дашборде.
-    wiki = related_pages(item.title, item.tags)
-    if wiki:
+    pages = related_pages(item.title, item.tags) if wiki else []
+    if pages:
         foot += "\n📚 в базе знаний: " + ", ".join(
-            f'<a href="{_esc(w["url"])}">{_esc(w["title"])}</a>·{w["n"]}' for w in wiki
+            f'<a href="{_esc(w["url"])}">{_esc(w["title"])}</a>·{w["n"]}' for w in pages
         )
     card = f"{head}\n\n{body}\n\n{foot}"
     if len(card) > _TG_SAFE:
@@ -1525,7 +1526,7 @@ async def _publish_channel(item_id: int) -> None:
     target = int(chan) if chan.lstrip("-").isdecimal() else chan  # -100… (id) или @username
     # Ошибку отправки НЕ глотаем: она уходит в consume → nak с backoff, и после того как
     # прокси/Telegram оживут, запись всё-таки попадёт в канал (дедуп по channel_posted_at).
-    await _bot.send_message(target, _fmt(item))
+    await _bot.send_message(target, _fmt(item, wiki=False))
     await _repo.mark_channel_posted(item.id)
     log.info("channel_posted", item=item.id, score=round(item.personal_score, 3))
 

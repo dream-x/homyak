@@ -172,7 +172,10 @@ async def wiki_get_page(kind: str, slug: str) -> dict:
 
     if kind not in wiki.KINDS:
         raise HTTPException(status_code=400, detail="bad kind")
-    body = wiki.read_page(kind, slug)
+    try:
+        body = wiki.read_page(kind, slug)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bad slug") from None
     if body is None:
         raise HTTPException(status_code=404, detail="page not found")
     return {"kind": kind, "slug": slug, "markdown": body}

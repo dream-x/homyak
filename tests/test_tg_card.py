@@ -54,6 +54,7 @@ def test_card_links_wiki_pages(monkeypatch):
     card = _fmt(_Item(summary="x"))
     assert '📚 в базе знаний: <a href="http://h/wiki?kind=entities&amp;slug=ollama">ollama</a>·9, ' in card
     assert "self hosting</a>·2" in card
+    assert "📚" not in _fmt(_Item(summary="x"), wiki=False)  # канальный пост — без твоей вики
     # длинная карточка режет саммари, а вика остаётся в подвале
     long_card = _fmt(_Item(summary="б" * 9000))
     assert len(long_card) <= _TG_LIMIT and "📚 в базе знаний" in long_card

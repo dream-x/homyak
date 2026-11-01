@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import re
 import time
+from urllib.parse import quote
 
 from homyak.core import wiki
 from homyak.core.config import settings
 from homyak.core.tags import normalize_tag
 
-_WORD = re.compile(r"[0-9a-zA-Zа-яёА-ЯЁ+#.]{2,}")
+_WORD = re.compile(r"[0-9a-zA-Zа-яёА-ЯЁ+#.-]{2,}")  # дефис внутри: meta-analysis ≠ Meta
+_MIN_WORD_SLUG = 3  # слово заголовка: «c» из C++ — шум; тег «go» при этом остаётся сигналом
 _BULLET = re.compile(r"^- \[\d{4}-\d{2}-\d{2}\]", re.M)  # датированный пункт = один источник
 _KINDS = ("entities", "concepts")
 _TTL = 300.0
@@ -49,7 +51,15 @@ def _index(ttl: float = _TTL) -> dict[str, dict[str, dict]]:
 
 
 def page_url(kind: str, slug: str) -> str:
-    return f"{settings.public_base_url.rstrip('/')}/wiki?kind={kind}&slug={slug}"
+    return f"{settings.public_base_url.rstrip('/')}/wiki?kind={kind}&slug={quote(slug)}"
+
+
+def _slug(text: str | None, min_len: int = 1) -> str | None:
+    """slugify без запасного «untitled»: мусорный тег или «...» иначе матчили бы страницу untitled."""
+    if not text:
+        return None
+    s = wiki.slugify(text)
+    return s if s != "untitled" and len(s) >= min_len else None
 
 
 def related_pages(
@@ -59,17 +69,19 @@ def related_pages(
 
     Кандидаты: теги (сырое написание и канон; сущности раньше концептов), затем слова и биграммы
     заголовка (только сущности: концепт по одному слову заголовка — почти всегда ложный).
-    Один slug — одна страница (entities/rust и concepts/rust не двоятся: берётся тяжелее).
-    Порядок выдачи — по весу: страница с 35 твоими источниками объясняет больше, чем с одним.
+    Одиночное слово заголовка — только если у страницы ≥2 твоих источников: «Apple cider» →
+    Apple по одной случайной ⭐ объясняет не то. Один slug — одна страница (entities/rust и
+    concepts/rust не двоятся: берётся тяжелее). Порядок выдачи — по весу: страница с 35 твоими
+    источниками объясняет больше, чем с одним.
     """
     idx = _index(ttl)
     if not any(idx.values()):
         return []
     found: dict[str, tuple[int, str, dict]] = {}  # slug → (порядок, kind, page)
 
-    def add(kind: str, slug: str) -> None:
+    def add(kind: str, slug: str | None, min_n: int = 1) -> None:
         page = idx[kind].get(slug) if slug else None
-        if page is None:
+        if page is None or page["n"] < min_n:
             return
         cur = found.get(slug)
         if cur is None:
@@ -80,15 +92,14 @@ def related_pages(
     for tag in tags or []:
         # и сырое написание, и канон: вика зовёт страницу так, как её назвала LLM
         # (self-hosting), а канон тега — selfhosted; совпасть может любое
-        for form in {wiki.slugify(tag), wiki.slugify(normalize_tag(tag) or "")}:
+        for form in {_slug(tag), _slug(normalize_tag(tag))} - {None}:
             for kind in _KINDS:
                 add(kind, form)
     words = [w.lower() for w in _WORD.findall(title or "")]
     for i, w in enumerate(words):
-        if len(w) >= 3:
-            add("entities", wiki.slugify(w))
+        add("entities", _slug(w, _MIN_WORD_SLUG), min_n=2)
         if i + 1 < len(words):
-            add("entities", wiki.slugify(f"{w} {words[i + 1]}"))
+            add("entities", _slug(f"{w} {words[i + 1]}"))
     ranked = sorted(found.items(), key=lambda kv: (-kv[1][2]["n"], kv[1][0]))
     return [
         {"kind": kind, "slug": slug, "title": page["title"], "n": page["n"], "url": page_url(kind, slug)}

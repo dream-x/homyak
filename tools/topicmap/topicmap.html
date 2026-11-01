@@ -136,9 +136,9 @@ td .fd{color:var(--faint);font:11.5px/1.4 var(--mono)}
   <div class="sc"><table><thead><tr><th>запись</th><th>лента</th><th class="num">🎯</th><th>дата</th></tr></thead><tbody id="tblB"></tbody></table></div>
 </div>
 
-<p class="foot">Случайные <b>20 000</b> обработанных записей за последние 90 дней (из 244 тыс. в Qdrant). Расстояние на карте — близость
-векторов bge-m3, спроецированных UMAP (n_neighbors 15, min_dist 0.1); темы — кластеры HDBSCAN (min_cluster_size 30, leaf),
-подписаны тегами с наибольшим «лифтом» внутри кластера. Точки вне кластеров остаются на карте, но без подписи.
+<p class="foot">Случайные <b id="fN">—</b> обработанных записей за последние 90 дней. Расстояние на карте — близость
+векторов bge-m3, спроецированных UMAP (<span id="fU">—</span>); темы — кластеры HDBSCAN (<span id="fH">—</span>),
+подписаны тегами с наибольшим весом (частота в теме × log(N/df)) внутри кластера. Точки вне кластеров остаются на карте, но без подписи.
 Золотое кольцо — записи, которые ты отметил ⭐ или 👍. Карта статична: это снимок, а не живая лента.</p>
 
 <div class="tip" id="tip" hidden role="status"></div>
@@ -158,6 +158,7 @@ let COL = {};
 function colors(){ COL = {it:css('--it'), business:css('--business'), medical:css('--medical'), star:css('--star'), fg:css('--fg'), halo:css('--halo'), faint:css('--faint'), dim:css('--dim'), panel:css('--panel')}; }
 
 // ---------- данные ----------
+const httpUrl = u => /^https?:\/\//i.test(u || '');  // ссылка из ленты — только http(s), не javascript:
 fetch('topicmap.json').then(r => r.json()).then(d => {
   D = d; pts = d.points; clusters = d.clusters;
   const byCl = new Map(); clusters.forEach(c => byCl.set(c.id, c));
@@ -167,6 +168,7 @@ fetch('topicmap.json').then(r => r.json()).then(d => {
   const nv = {it:0, business:0, medical:0}; pts.forEach(p => nv[d.verts[p[3]]]++);
   $('sub').textContent = `${fmt(pts.length)} записей · 90 дней · ${clusters.length} тем · ${d.meta.fb} с твоей оценкой`;
   $('gen').textContent = d.meta.generated;
+  $('fN').textContent = fmt(pts.length); $('fU').textContent = d.meta.umap || ''; $('fH').textContent = d.meta.hdbscan || '';
   $('fbN').textContent = d.meta.fb;
   // легенда = фильтр: три серии, цвет закреплён за вертикалью
   VORDER.forEach(v => {
@@ -326,7 +328,7 @@ function showTip(i, cx, cy, pin){
   cd.append(sw, document.createTextNode(cl ? 'тема: ' + cl.label : 'вне тем'));
   tip.append(cd);
   if (pin) {
-    if (p[7]) { const a = el('a', '', 'открыть источник →'); a.href = p[7]; a.target = '_blank'; a.rel = 'noopener'; tip.append(a); }
+    if (httpUrl(p[7])) { const a = el('a', '', 'открыть источник →'); a.href = p[7]; a.target = '_blank'; a.rel = 'noopener'; tip.append(a); }
     const x = el('button', 'x', '×'); x.setAttribute('aria-label', 'закрыть'); x.onclick = () => { pinned = -1; tip.hidden = true; render(); }; tip.append(x);
   }
   tip.hidden = false;
@@ -380,7 +382,7 @@ function renderTable(c, m){
   for (const p of rows) {
     const tr = document.createElement('tr');
     const td1 = document.createElement('td'); const dot = el('span', 'dot'); dot.style.setProperty('--c', `var(--${D.verts[p[3]]})`); td1.append(dot);
-    if (p[7]) { const a = el('a', '', p[6]); a.href = p[7]; a.target = '_blank'; a.rel = 'noopener'; td1.append(a); } else td1.append(document.createTextNode(p[6]));
+    if (httpUrl(p[7])) { const a = el('a', '', p[6]); a.href = p[7]; a.target = '_blank'; a.rel = 'noopener'; td1.append(a); } else td1.append(document.createTextNode(p[6]));
     if (p[11] === 's') td1.append(document.createTextNode(' ⭐')); else if (p[11] === 'u') td1.append(document.createTextNode(' 👍'));
     const td2 = document.createElement('td'); td2.append(el('span', 'fd', p[8] || '—'));
     const td3 = el('td', 'num', Math.round(p[4]*100) + '%');
